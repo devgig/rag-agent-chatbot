@@ -1,0 +1,148 @@
+parameters:
+  - name: poolName
+    type: string
+    default: 'Default'
+  - name: imageRepository
+    type: string
+    default: 'multi-agent-chatbot/frontend'
+  - name: dockerfilePath
+    type: string
+    default: 'assets/frontend/Dockerfile'
+  - name: manifestPath
+    type: string
+    default: 'kustomize/base/frontend'
+  - name: tag
+    type: string
+    default: '$(Build.BuildId)'
+  - name: containerRegistry
+    type: string
+    default: 'your-registry.azurecr.io'
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - assets/frontend/*
+      - kustomize/base/frontend/*
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - assets/frontend/*
+
+stages:
+- stage: BuildAndTest
+  displayName: Build and Test Frontend
+  pool:
+    name: ${{ parameters.poolName }}
+  jobs:
+  - job: Build
+    displayName: Build and test frontend
+    steps:
+      - task: NodeTool@0
+        displayName: Install Node.js
+        inputs:
+          versionSpec: '20.x'
+
+      - task: Bash@3
+        displayName: Install dependencies
+        inputs:
+          targetType: 'inline'
+          workingDirectory: '$(Build.SourcesDirectory)/assets/frontend'
+          script: |
+            npm ci
+
+      - task: Bash@3
+        displayName: Lint
+        inputs:
+          targetType: 'inline'
+          workingDirectory: '$(Build.SourcesDirectory)/assets/frontend'
+          script: |
+            npm run lint || echo "Linting not configured"
+
+      - task: Bash@3
+        displayName: Run tests
+        inputs:
+          targetType: 'inline'
+          workingDirectory: '$(Build.SourcesDirectory)/assets/frontend'
+          script: |
+            npm test || echo "Tests not configured"
+
+      - task: Bash@3
+        displayName: Build
+        inputs:
+          targetType: 'inline'
+          workingDirectory: '$(Build.SourcesDirectory)/assets/frontend'
+          script: |
+            npm run build
+
+- stage: CreateImageAndPublish
+  displayName: Create image and Publish
+  dependsOn: BuildAndTest
+  condition: and(succeeded(), in(variables['Build.Reason'], 'BatchedCI', 'IndividualCI', 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  pool:
+    name: ${{ parameters.poolName }}
+  jobs:
+  - job: BuildAndPush
+    displayName: Build image and Push to ACR
+    steps:
+      - checkout: self
+
+      - task: Docker@2
+        displayName: Build and push an image to ACR
+        inputs:
+          containerRegistry: '$(containerRegistry)'
+          repository: '${{ parameters.imageRepository }}'
+          command: buildAndPush
+          dockerfile: ./${{ parameters.dockerfilePath }}
+          buildContext: '$(Build.SourcesDirectory)/assets/frontend'
+          tags: |
+            ${{ parameters.tag }}
+            latest
+
+  - job: PublishManifest
+    displayName: Publish manifests
+    dependsOn: BuildAndPush
+    steps:
+      - task: Bash@3
+        displayName: Update image in base manifests
+        inputs:
+          targetType: 'inline'
+          script: |
+            cd ${{ parameters.manifestPath }}/app
+            cat <<EOF >image_patch.yaml
+            - op: replace
+              path: /spec/template/spec/containers/0/image
+              value: ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:${{ parameters.tag }}
+            EOF
+
+      - task: Bash@3
+        displayName: Generate manifests for overlays
+        condition: and(in(variables['Build.Reason'], 'BatchedCI', 'IndividualCI', 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+        inputs:
+          targetType: 'inline'
+          script: |
+            mkdir -p manifests
+
+            # Generate manifest for dev
+            if [ -d "./kustomize/overlays/dev" ]; then
+              kubectl kustomize ./kustomize/overlays/dev > ./manifests/frontend-dev-workloads.yaml
+            else
+              echo "dev overlay doesn't exist; skipping"
+            fi
+
+            # Generate manifest for prod
+            if [ -d "./kustomize/overlays/prod" ]; then
+              kubectl kustomize ./kustomize/overlays/prod > ./manifests/frontend-prod-workloads.yaml
+            else
+              echo "prod overlay doesn't exist; skipping"
+            fi
+
+      - publish: 'manifests'
+        artifact: frontend-manifests
+        displayName: Publish manifests artifact

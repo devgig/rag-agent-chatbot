@@ -1,0 +1,27 @@
+resources:
+- ../../base
+
+namespace: multi-agent-prod
+
+namePrefix: prod-
+
+patches:
+- path: prod-patches.yaml
+
+secretGenerator:
+- name: postgres-credentials
+  literals:
+  - username=chatbot_user
+  - password=CHANGE_ME_IN_PRODUCTION
+
+configMapGenerator:
+- name: backend-config
+  literals:
+  - MODELS=gpt-oss-120b
+  - LOG_LEVEL=INFO
+
+replicas:
+- name: multi-agent-frontend
+  count: 2
+- name: multi-agent-backend
+  count: 2

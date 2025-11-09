@@ -1,0 +1,5 @@
+resources:
+- postgres-deployment.yaml
+- milvus-deployment.yaml
+- etcd-deployment.yaml
+- minio-deployment.yaml

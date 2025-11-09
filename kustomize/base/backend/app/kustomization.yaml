@@ -1,0 +1,9 @@
+resources:
+- deployment.yaml
+patches:
+- path: image_patch.yaml
+  target:
+    group: apps
+    kind: Deployment
+    name: multi-agent-backend
+    version: v1
