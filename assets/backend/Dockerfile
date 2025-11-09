@@ -14,20 +14,47 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-FROM python:3.12
 
+# Build stage
+FROM python:3.12-slim AS builder
+
+# Install curl for uv installation
 RUN apt-get update && \
-    apt-get install -y curl && \
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+    apt-get install -y --no-install-recommends curl && \
+    curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/root/.local/bin:$PATH"
 
 WORKDIR /app
 
-RUN . $HOME/.local/bin/env 
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies
+RUN uv sync --frozen --no-dev
+
+# Production stage
+FROM python:3.12-slim AS runner
+
+WORKDIR /app
+
+# Copy uv from builder
+COPY --from=builder /root/.local /root/.local
 ENV PATH="/root/.local/bin:$PATH"
 
-COPY pyproject.toml uv.lock ./
+# Copy installed dependencies and application
+COPY --from=builder /app/.venv /app/.venv
 COPY . .
 
-RUN uv sync
+# Create non-root user
+RUN useradd --system --uid 1001 appuser && \
+    chown -R appuser:appuser /app
 
-CMD ["uv", "run", "--", "uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+USER appuser
+
+EXPOSE 8000
+
+# Run in production mode (no --reload)
+CMD ["uv", "run", "--", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

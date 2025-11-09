@@ -7,6 +7,7 @@ metadata:
 namespace: multi-agent-dev
 
 resources:
+  - namespace.yaml
   - ../../base
 
 labels:
@@ -17,12 +18,6 @@ labels:
 replicas:
   - name: multi-agent-backend
     count: 1
-
-secretGenerator:
-- name: postgres-credentials
-  literals:
-  - username=chatbot_user
-  - password=chatbot_password_dev
 
 configMapGenerator:
 - name: backend-config

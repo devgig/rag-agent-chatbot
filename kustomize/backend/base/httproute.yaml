@@ -1,0 +1,17 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: multi-agent-backend-httproute
+spec:
+  parentRefs:
+  - name: private-gateway
+  hostnames:
+  - "multi-agent-backend.internal"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: multi-agent-backend
+      port: 8000

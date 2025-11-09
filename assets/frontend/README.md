@@ -24,6 +24,46 @@ The frontend provides a chat interface with support for:
 
 Built with Next.js 14, TypeScript, and CSS modules. Communicates with the backend via REST API and WebSocket connections for real-time chat streaming.
 
+## Local Development
+
+### Prerequisites
+- Node.js 20.x or higher
+- npm or yarn package manager
+
+### Setup
+
+1. **Install dependencies**:
+   ```bash
+   cd assets/frontend
+   npm install
+   ```
+
+2. **Configure environment variables** (optional):
+   Create a `.env.local` file:
+   ```bash
+   NEXT_PUBLIC_API_URL=http://localhost:8000
+   ```
+
+3. **Start development server**:
+   ```bash
+   npm run dev
+   ```
+
+   The frontend will be available at [http://localhost:3000](http://localhost:3000)
+
+### Available Scripts
+
+- `npm run dev` - Start development server with Turbopack
+- `npm run build` - Build production bundle
+- `npm start` - Start production server
+- `npm run lint` - Run ESLint
+
+### Development Workflow
+
+1. Make changes to components in `src/` directory
+2. Hot reload will automatically refresh the browser
+3. Backend should be running on port 8000 for full functionality
+
 ## Docker Troubleshooting
 
 ### Container Issues

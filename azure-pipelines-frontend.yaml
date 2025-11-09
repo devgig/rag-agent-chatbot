@@ -1,31 +1,11 @@
-parameters:
-  - name: poolName
-    type: string
-    default: 'Default'
-  - name: imageRepository
-    type: string
-    default: 'multi-agent-chatbot/frontend'
-  - name: dockerfilePath
-    type: string
-    default: 'assets/frontend/Dockerfile'
-  - name: manifestPath
-    type: string
-    default: 'kustomize/frontend/base'
-  - name: tag
-    type: string
-    default: '$(Build.BuildId)'
-  - name: containerRegistry
-    type: string
-    default: 'your-registry.azurecr.io'
-
 trigger:
   branches:
     include:
       - main
   paths:
     include:
-      - assets/frontend/*
-      - kustomize/frontend/*
+      - assets/frontend/**
+      - kustomize/frontend/**
 
 pr:
   branches:
@@ -33,13 +13,35 @@ pr:
       - main
   paths:
     include:
-      - assets/frontend/*
+      - assets/frontend/**
+      - kustomize/frontend/**
+
+resources:
+- repo: self
+
+variables:
+  system.debug: false
+  NODE_ENV: production
+  CI: true
+  imageRepository: 'multi-agent-chatbot-frontend'
+  containerRegistry: 'acr-bytecourier'
+  kubernetesServiceConnection: 'k3s-cluster'
+  environment: 'K3s'
+  dockerfilePath: './assets/frontend/Dockerfile'
+  manifestPath: 'kustomize/frontend/base'
+  tag: '$(Build.SourceVersion)'
+  poolName: '$(buildAgentPool)'
+  base_path: '$(Build.SourceBranchName)'
+  source_branch_name: '$(Build.SourceBranchName)'
+  imagePullSecret: 'acr-secret'
+  namespace: 'multi-agent-chatbot'
+  sourceNamespace: 'bytecourier-apps'
 
 stages:
 - stage: BuildAndTest
   displayName: Build and Test Frontend
   pool:
-    name: ${{ parameters.poolName }}
+    name: $(poolName)
   jobs:
   - job: Build
     displayName: Build and test frontend
@@ -86,7 +88,7 @@ stages:
   dependsOn: BuildAndTest
   condition: and(succeeded(), in(variables['Build.Reason'], 'BatchedCI', 'IndividualCI', 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
   pool:
-    name: ${{ parameters.poolName }}
+    name: $(poolName)
   jobs:
   - job: BuildAndPush
     displayName: Build image and Push to ACR
@@ -97,12 +99,12 @@ stages:
         displayName: Build and push an image to ACR
         inputs:
           containerRegistry: '$(containerRegistry)'
-          repository: '${{ parameters.imageRepository }}'
+          repository: '$(imageRepository)'
           command: buildAndPush
-          dockerfile: ./${{ parameters.dockerfilePath }}
+          dockerfile: $(dockerfilePath)
           buildContext: '$(Build.SourcesDirectory)/assets/frontend'
           tags: |
-            ${{ parameters.tag }}
+            $(tag)
             latest
 
   - job: PublishManifest
@@ -110,15 +112,30 @@ stages:
     dependsOn: BuildAndPush
     steps:
       - task: Bash@3
+        displayName: Create namespace and copy ACR secret
+        inputs:
+          targetType: 'inline'
+          script: |
+            # Create namespace if it doesn't exist
+            kubectl create namespace $(namespace) --dry-run=client -o yaml | kubectl apply -f -
+
+            # Copy ACR secret from source namespace to target namespace
+            kubectl get secret $(imagePullSecret) --namespace=$(sourceNamespace) -oyaml | \
+              grep -v '^\s*namespace:\s' | \
+              kubectl apply --namespace=$(namespace) -f -
+
+            echo "Namespace $(namespace) and ACR secret $(imagePullSecret) configured"
+
+      - task: Bash@3
         displayName: Update image in base manifests
         inputs:
           targetType: 'inline'
           script: |
-            cd ${{ parameters.manifestPath }}
+            cd $(manifestPath)
             cat <<EOF >image-patch.yaml
             - op: replace
               path: /spec/template/spec/containers/0/image
-              value: ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:${{ parameters.tag }}
+              value: $(containerRegistry)/$(imageRepository):$(tag)
             EOF
 
       - task: Bash@3

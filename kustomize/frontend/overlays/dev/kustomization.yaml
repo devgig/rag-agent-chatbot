@@ -7,6 +7,7 @@ metadata:
 namespace: multi-agent-dev
 
 resources:
+  - namespace.yaml
   - ../../base
 
 labels:

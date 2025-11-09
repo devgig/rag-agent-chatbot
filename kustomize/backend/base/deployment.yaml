@@ -14,6 +14,8 @@ spec:
       labels:
         app: multi-agent-backend
     spec:
+      imagePullSecrets:
+      - name: acr-secret
       containers:
       - name: backend
         image: multi-agent-chatbot/backend:latest
@@ -23,9 +25,12 @@ spec:
           name: http
         env:
         - name: POSTGRES_HOST
-          value: "postgres"
+          value: "postgresql.postgres-system.svc.cluster.local"
         - name: POSTGRES_DB
-          value: "chatbot"
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: database
         - name: POSTGRES_USER
           valueFrom:
             secretKeyRef:
@@ -36,12 +41,8 @@ spec:
             secretKeyRef:
               name: postgres-credentials
               key: password
-        - name: ETCD_ENDPOINTS
-          value: "etcd:2379"
-        - name: MINIO_ADDRESS
-          value: "minio:9000"
         - name: MILVUS_ADDRESS
-          value: "milvus:19530"
+          value: "milvus.milvus-system.svc.cluster.local:19530"
         - name: MODELS
           value: "gpt-oss-120b"
         resources:
