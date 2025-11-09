@@ -10,7 +10,7 @@ parameters:
     default: 'assets/frontend/Dockerfile'
   - name: manifestPath
     type: string
-    default: 'kustomize/base/frontend'
+    default: 'kustomize/frontend/base'
   - name: tag
     type: string
     default: '$(Build.BuildId)'
@@ -25,7 +25,7 @@ trigger:
   paths:
     include:
       - assets/frontend/*
-      - kustomize/base/frontend/*
+      - kustomize/frontend/*
 
 pr:
   branches:
@@ -114,8 +114,8 @@ stages:
         inputs:
           targetType: 'inline'
           script: |
-            cd ${{ parameters.manifestPath }}/app
-            cat <<EOF >image_patch.yaml
+            cd ${{ parameters.manifestPath }}
+            cat <<EOF >image-patch.yaml
             - op: replace
               path: /spec/template/spec/containers/0/image
               value: ${{ parameters.containerRegistry }}/${{ parameters.imageRepository }}:${{ parameters.tag }}
@@ -130,17 +130,10 @@ stages:
             mkdir -p manifests
 
             # Generate manifest for dev
-            if [ -d "./kustomize/overlays/dev" ]; then
-              kubectl kustomize ./kustomize/overlays/dev > ./manifests/frontend-dev-workloads.yaml
+            if [ -d "./kustomize/frontend/overlays/dev" ]; then
+              kubectl kustomize ./kustomize/frontend/overlays/dev > ./manifests/frontend-dev-workloads.yaml
             else
               echo "dev overlay doesn't exist; skipping"
-            fi
-
-            # Generate manifest for prod
-            if [ -d "./kustomize/overlays/prod" ]; then
-              kubectl kustomize ./kustomize/overlays/prod > ./manifests/frontend-prod-workloads.yaml
-            else
-              echo "prod overlay doesn't exist; skipping"
             fi
 
       - publish: 'manifests'

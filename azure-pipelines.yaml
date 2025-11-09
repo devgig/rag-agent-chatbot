@@ -170,16 +170,16 @@ stages:
           targetType: 'inline'
           script: |
             # Update frontend image
-            cd kustomize/base/frontend/app
-            cat <<EOF >image_patch.yaml
+            cd kustomize/frontend/base
+            cat <<EOF >image-patch.yaml
             - op: replace
               path: /spec/template/spec/containers/0/image
               value: ${{ parameters.containerRegistry }}/multi-agent-chatbot/frontend:${{ parameters.tag }}
             EOF
 
             # Update backend image
-            cd ../../backend/app
-            cat <<EOF >image_patch.yaml
+            cd ../../backend/base
+            cat <<EOF >image-patch.yaml
             - op: replace
               path: /spec/template/spec/containers/0/image
               value: ${{ parameters.containerRegistry }}/multi-agent-chatbot/backend:${{ parameters.tag }}
@@ -192,20 +192,28 @@ stages:
           script: |
             mkdir -p manifests
 
-            # Generate dev manifests
-            if [ -d "./kustomize/overlays/dev" ]; then
-              kubectl kustomize ./kustomize/overlays/dev > ./manifests/dev-workloads.yaml
-              echo "Dev manifests generated"
+            # Generate dev manifests for frontend
+            if [ -d "./kustomize/frontend/overlays/dev" ]; then
+              kubectl kustomize ./kustomize/frontend/overlays/dev > ./manifests/frontend-dev-workloads.yaml
+              echo "Frontend dev manifests generated"
             else
-              echo "dev overlay doesn't exist; skipping"
+              echo "frontend dev overlay doesn't exist; skipping"
             fi
 
-            # Generate prod manifests
-            if [ -d "./kustomize/overlays/prod" ]; then
-              kubectl kustomize ./kustomize/overlays/prod > ./manifests/prod-workloads.yaml
-              echo "Prod manifests generated"
+            # Generate dev manifests for backend
+            if [ -d "./kustomize/backend/overlays/dev" ]; then
+              kubectl kustomize ./kustomize/backend/overlays/dev > ./manifests/backend-dev-workloads.yaml
+              echo "Backend dev manifests generated"
             else
-              echo "prod overlay doesn't exist; skipping"
+              echo "backend dev overlay doesn't exist; skipping"
+            fi
+
+            # Generate dev manifests for database
+            if [ -d "./kustomize/database/overlays/dev" ]; then
+              kubectl kustomize ./kustomize/database/overlays/dev > ./manifests/database-dev-workloads.yaml
+              echo "Database dev manifests generated"
+            else
+              echo "database dev overlay doesn't exist; skipping"
             fi
 
       - publish: 'manifests'

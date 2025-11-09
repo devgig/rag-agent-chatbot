@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: multi-agent-backend-dev
+
+namespace: multi-agent-dev
+
+resources:
+  - ../../base
+
+labels:
+- includeSelectors: false
+  pairs:
+    environment: dev
+
+replicas:
+  - name: multi-agent-backend
+    count: 1
+
+secretGenerator:
+- name: postgres-credentials
+  literals:
+  - username=chatbot_user
+  - password=chatbot_password_dev
+
+configMapGenerator:
+- name: backend-config
+  literals:
+  - MODELS=gpt-oss-120b
+  - LOG_LEVEL=DEBUG

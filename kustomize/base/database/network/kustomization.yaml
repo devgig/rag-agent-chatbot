@@ -1,5 +1,0 @@
-resources:
-- postgres-service.yaml
-- milvus-service.yaml
-- etcd-service.yaml
-- minio-service.yaml
