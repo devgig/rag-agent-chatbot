@@ -20,7 +20,7 @@ import styles from "@/styles/QuerySection.module.css";
 import ReactMarkdown from 'react-markdown'; // NEW
 import remarkGfm from 'remark-gfm'; // NEW
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"; // NEW
-import { oneDark, oneLight, Dark, Light } from "react-syntax-highlighter/dist/esm/styles/prism"; // NEW
+import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism"; // NEW
 import WelcomeSection from "./WelcomeSection";
 
 export function makeChatTheme(isDark: boolean) {
@@ -526,13 +526,18 @@ export default function QuerySection({
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
-                    code({ inline, className, children, ...props }) {
+                    code(props) {
+                      const { inline, className, children, ...rest } = props as {
+                        inline?: boolean;
+                        className?: string;
+                        children?: React.ReactNode;
+                      };
                       const match = /language-(\w+)/.exec(className || "");
                       const code = String(children ?? "").replace(/\n$/, "");
 
                       if (inline || !match) {
                         return (
-                          <code className={className} {...props}>
+                          <code className={className} {...rest}>
                             {code}
                           </code>
                         );
