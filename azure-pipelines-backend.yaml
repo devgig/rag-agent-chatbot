@@ -44,11 +44,11 @@ stages:
   - job: Build
     displayName: Build and test backend
     steps:
-      - task: UsePythonVersion@0
-        displayName: Install Python
-        inputs:
-          versionSpec: '3.12'
-          addToPath: true
+      # - task: UsePythonVersion@0
+      #   displayName: Install Python
+      #   inputs:
+      #     versionSpec: '3.12'
+      #     addToPath: true
 
       - task: Bash@3
         displayName: Install uv
