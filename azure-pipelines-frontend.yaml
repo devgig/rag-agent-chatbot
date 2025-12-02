@@ -25,6 +25,7 @@ variables:
   CI: true
   imageRepository: 'multi-agent-chatbot-frontend'
   containerRegistry: 'acr-bytecourier'
+  containerRegistryUrl: 'acrbytecourier.azurecr.io'
   kubernetesServiceConnection: 'k3s-cluster'
   environment: 'K3s'
   dockerfilePath: './assets/frontend/Dockerfile'
@@ -135,7 +136,7 @@ stages:
             cat <<EOF >image-patch.yaml
             - op: replace
               path: /spec/template/spec/containers/0/image
-              value: $(containerRegistry)/$(imageRepository):$(tag)
+              value: $(containerRegistryUrl)/$(imageRepository):$(tag)
             EOF
 
       - task: Bash@3
