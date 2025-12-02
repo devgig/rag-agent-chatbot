@@ -1,3 +1,3 @@
 - op: replace
   path: /spec/template/spec/containers/0/image
-  value: multi-agent-chatbot/frontend:latest
+  value: bytecourier.azurecr.io/multi-agent-chatbot-frontend:latest
