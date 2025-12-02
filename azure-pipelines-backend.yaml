@@ -23,7 +23,7 @@ variables:
   system.debug: false
   imageRepository: 'multi-agent-chatbot-backend'
   containerRegistry: 'acr-bytecourier'
-  containerRegistryUrl: 'acrbytecourier.azurecr.io'
+  containerRegistryUrl: 'bytecourier.azurecr.io'
   kubernetesServiceConnection: 'k3s-cluster'
   environment: 'K3s'
   dockerfilePath: './assets/backend/Dockerfile'

@@ -25,7 +25,7 @@ variables:
   CI: true
   imageRepository: 'multi-agent-chatbot-frontend'
   containerRegistry: 'acr-bytecourier'
-  containerRegistryUrl: 'acrbytecourier.azurecr.io'
+  containerRegistryUrl: 'bytecourier.azurecr.io'
   kubernetesServiceConnection: 'k3s-cluster'
   environment: 'K3s'
   dockerfilePath: './assets/frontend/Dockerfile'
