@@ -113,47 +113,34 @@ stages:
     dependsOn: BuildAndPush
     steps:
       - task: Bash@3
-        displayName: Create namespace and copy ACR secret
+        displayName: Update image in manifests
         inputs:
           targetType: 'inline'
           script: |
-            # Create namespace if it doesn't exist
-            kubectl create namespace $(namespace) --dry-run=client -o yaml | kubectl apply -f -
-
-            # Copy ACR secret from source namespace to target namespace
-            kubectl get secret $(imagePullSecret) --namespace=$(sourceNamespace) -oyaml | \
-              grep -v '^\s*namespace:\s' | \
-              kubectl apply --namespace=$(namespace) -f -
-
-            echo "Namespace $(namespace) and ACR secret $(imagePullSecret) configured"
-
-      - task: Bash@3
-        displayName: Update image in base manifests
-        inputs:
-          targetType: 'inline'
-          script: |
-            cd $(manifestPath)
+            cd kustomize/frontend/base
             cat <<EOF >image-patch.yaml
             - op: replace
               path: /spec/template/spec/containers/0/image
-              value: $(containerRegistryUrl)/$(imageRepository):$(tag)
+              value: bytecourier.azurecr.io/$(imageRepository):$(tag)
             EOF
 
       - task: Bash@3
-        displayName: Generate manifests for overlays
-        condition: and(in(variables['Build.Reason'], 'BatchedCI', 'IndividualCI', 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+        displayName: Generate manifests for main branch
         inputs:
           targetType: 'inline'
           script: |
-            mkdir -p manifests
-
-            # Generate manifest for dev
+            mkdir manifests
             if [ -d "./kustomize/frontend/overlays/dev" ]; then
-              kubectl kustomize ./kustomize/frontend/overlays/dev > ./manifests/frontend-dev-workloads.yaml
+              kubectl kustomize ./kustomize/frontend/overlays/dev > ./manifests/$(imageRepository)-dev-workloads.yaml
             else
               echo "dev overlay doesn't exist; skipping"
             fi
 
+            if [ -d "./kustomize/frontend/overlays/prod" ]; then
+              kubectl kustomize ./kustomize/frontend/overlays/prod > ./manifests/$(imageRepository)-prod-workloads.yaml
+            else
+              echo "prod overlay doesn't exist; skipping"
+            fi
+
       - publish: 'manifests'
-        artifact: frontend-manifests
-        displayName: Publish manifests artifact
+        artifact: manifests
