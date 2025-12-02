@@ -48,8 +48,8 @@ ENV PATH="/root/.local/bin:$PATH"
 COPY --from=builder /app/.venv /app/.venv
 COPY . .
 
-# Create non-root user
-RUN useradd --system --uid 1001 appuser && \
+# Create non-root user with home directory
+RUN useradd --system --uid 1001 --create-home appuser && \
     chown -R appuser:appuser /app
 
 USER appuser
