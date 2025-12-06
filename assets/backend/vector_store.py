@@ -65,9 +65,9 @@ class VectorStore:
     """
     
     def __init__(
-        self, 
-        embeddings=None, 
-        uri: str = "http://milvus:19530",
+        self,
+        embeddings=None,
+        uri: str = "milvus:19530",
         on_source_deleted: Optional[Callable[[str], None]] = None
     ):
         """Initialize the vector store.
@@ -365,7 +365,7 @@ class VectorStore:
             return False
 
 
-def create_vector_store_with_config(config_manager, uri: str = "http://milvus:19530") -> VectorStore:
+def create_vector_store_with_config(config_manager, uri: str = "milvus:19530") -> VectorStore:
     """Factory function to create a VectorStore with ConfigManager integration.
     
     Args:
