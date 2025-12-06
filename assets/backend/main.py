@@ -59,7 +59,7 @@ postgres_storage = PostgreSQLConversationStorage(
     password=POSTGRES_PASSWORD
 )
 
-vector_store = create_vector_store_with_config(config_manager, uri=MILVUS_ADDRESS)
+vector_store = create_vector_store_with_config(config_manager, uri=f"tcp://{MILVUS_ADDRESS}")
 
 vector_store._initialize_store()
 
