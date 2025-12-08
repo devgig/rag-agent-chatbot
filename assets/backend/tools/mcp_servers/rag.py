@@ -84,8 +84,8 @@ class RAGAgent:
         """Initialize the RAG agent with model client, configuration, and graph."""
         config_path = self._get_config_path()
         self.config_manager = ConfigManager(config_path)
-        milvus_address = os.getenv("MILVUS_ADDRESS", "milvus:19530")
-        self.vector_store = create_vector_store_with_config(self.config_manager, uri=f"tcp://{milvus_address}")
+        milvus_address = os.getenv("MILVUS_ADDRESS", "http://milvus:19530")
+        self.vector_store = create_vector_store_with_config(self.config_manager, uri=milvus_address)
         self.model_name = self.config_manager.get_selected_model()
         self.model_client = AsyncOpenAI(
             base_url=f"http://{self.model_name}:8000/v1",
@@ -207,8 +207,8 @@ class RAGAgent:
 
 mcp = FastMCP("RAG")
 rag_agent = RAGAgent()
-milvus_address = os.getenv("MILVUS_ADDRESS", "milvus:19530")
-vector_store = create_vector_store_with_config(rag_agent.config_manager, uri=f"tcp://{milvus_address}")
+milvus_address = os.getenv("MILVUS_ADDRESS", "http://milvus:19530")
+vector_store = create_vector_store_with_config(rag_agent.config_manager, uri=milvus_address)
 
 
 @mcp.tool()
