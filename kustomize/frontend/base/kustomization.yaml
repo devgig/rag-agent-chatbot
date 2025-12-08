@@ -8,7 +8,6 @@ resources:
   - deployment.yaml
   - service.yaml
   - acr-external-secret.yaml
-  - httproute.yaml
 
 patches:
   - target:

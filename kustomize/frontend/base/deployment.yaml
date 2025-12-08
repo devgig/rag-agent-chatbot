@@ -25,7 +25,7 @@ spec:
           name: http
         env:
         - name: NEXT_PUBLIC_API_URL
-          value: "http://multi-agent-backend.internal"
+          value: "http://multi-agent-backend:8000"
         resources:
           requests:
             cpu: "200m"

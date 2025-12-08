@@ -22,10 +22,11 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   async rewrites() {
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://multi-agent-backend:8000';
     return [
       {
         source: '/api/:path*',
-        destination: 'http://backend:8000/:path*',
+        destination: `${backendUrl}/:path*`,
       },
     ];
   },

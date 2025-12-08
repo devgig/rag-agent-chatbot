@@ -9,7 +9,6 @@ resources:
   - service.yaml
   - postgres-external-secret.yaml
   - acr-external-secret.yaml
-  - httproute.yaml
 
 patches:
   - target:
