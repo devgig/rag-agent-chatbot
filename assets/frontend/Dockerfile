@@ -39,24 +39,20 @@ WORKDIR /app
 
 # Set production environment
 ENV NODE_ENV=production
-
-# Copy necessary files from builder
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/package-lock.json* ./
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/next.config.* ./
-
-# Install only production dependencies
-RUN npm ci --only=production
+ENV HOSTNAME="0.0.0.0"
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
+# Copy standalone output from builder
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+
 USER nextjs
 
 EXPOSE 3000
 
-# Run in production mode
-CMD ["npm", "start"]
+# Run the standalone server
+CMD ["node", "server.js"]
