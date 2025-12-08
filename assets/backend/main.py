@@ -112,6 +112,12 @@ app.add_middleware(
 )
 
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Kubernetes probes."""
+    return {"status": "healthy"}
+
+
 @app.websocket("/ws/chat/{chat_id}")
 async def websocket_endpoint(websocket: WebSocket, chat_id: str):
     """WebSocket endpoint for real-time chat communication.
