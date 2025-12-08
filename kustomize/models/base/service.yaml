@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gpt-oss-120b
+  labels:
+    app: gpt-oss-120b
+    component: model-inference
+spec:
+  selector:
+    app: gpt-oss-120b
+  ports:
+  - port: 8000
+    targetPort: 8000
+    name: http
+  type: ClusterIP

@@ -18,13 +18,6 @@ spec:
     spec:
       imagePullSecrets:
       - name: acr-secret
-      nodeSelector:
-        nvidia.com/gpu.present: "true"
-      tolerations:
-      - key: nvidia.com/gpu
-        operator: Equal
-        value: present
-        effect: NoSchedule
       containers:
       - name: backend
         image: multi-agent-chatbot/backend:latest
@@ -58,11 +51,9 @@ spec:
           requests:
             cpu: "500m"
             memory: "512Mi"
-            nvidia.com/gpu: "1"
           limits:
             cpu: "2000m"
             memory: "2Gi"
-            nvidia.com/gpu: "1"
         livenessProbe:
           httpGet:
             path: /health

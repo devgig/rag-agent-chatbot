@@ -1,0 +1,131 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - assets/models/**
+      - kustomize/models/**
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - assets/models/**
+      - kustomize/models/**
+
+resources:
+- repo: self
+
+variables:
+  system.debug: false
+  imageRepository: 'multi-agent-chatbot-models'
+  containerRegistry: 'acr-bytecourier'
+  containerRegistryUrl: 'bytecourier.azurecr.io'
+  kubernetesServiceConnection: 'k3s-cluster'
+  environment: 'K3s'
+  dockerfilePath: './assets/models/Dockerfile'
+  manifestPath: 'kustomize/models/base'
+  tag: '$(Build.SourceVersion)'
+  poolName: '$(buildAgentPool)'
+  base_path: '$(Build.SourceBranchName)'
+  source_branch_name: '$(Build.SourceBranchName)'
+  imagePullSecret: 'acr-secret'
+  namespace: 'multi-agent-dev'
+  sourceNamespace: 'bytecourier-apps'
+
+stages:
+- stage: BuildAndTest
+  displayName: Validate Dockerfile
+  pool:
+    name: $(poolName)
+  jobs:
+  - job: Validate
+    displayName: Validate Dockerfile syntax
+    steps:
+      - task: Bash@3
+        displayName: Validate Dockerfile
+        inputs:
+          targetType: 'inline'
+          script: |
+            # Basic syntax validation
+            docker run --rm -i hadolint/hadolint < $(dockerfilePath) || echo "Dockerfile validation warnings found"
+
+- stage: CreateImageAndPublish
+  displayName: Create image and Publish
+  dependsOn: BuildAndTest
+  condition: and(succeeded(), in(variables['Build.Reason'], 'BatchedCI', 'IndividualCI', 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  pool:
+    name: $(poolName)
+  jobs:
+  - job: BuildAndPush
+    displayName: Build image and Push to ACR
+    steps:
+      - checkout: self
+
+      - task: Docker@2
+        displayName: Build and push an image to ACR
+        inputs:
+          containerRegistry: '$(containerRegistry)'
+          repository: '$(imageRepository)'
+          command: buildAndPush
+          dockerfile: $(dockerfilePath)
+          buildContext: '$(Build.SourcesDirectory)/assets/models'
+          tags: |
+            $(tag)
+            latest
+
+  - job: PublishManifest
+    displayName: Publish manifests
+    dependsOn: BuildAndPush
+    steps:
+      - task: Bash@3
+        displayName: Update image in manifests
+        inputs:
+          targetType: 'inline'
+          script: |
+            cd kustomize/models/base
+            cat <<EOF >image-patch.yaml
+            - op: replace
+              path: /spec/template/spec/containers/0/image
+              value: bytecourier.azurecr.io/$(imageRepository):$(tag)
+            EOF
+
+      - task: Bash@3
+        displayName: Generate manifests for main branch
+        inputs:
+          targetType: 'inline'
+          script: |
+            mkdir manifests
+            kubectl kustomize ./kustomize/models/base > ./manifests/$(imageRepository)-dev-workloads.yaml
+
+      - publish: 'manifests'
+        artifact: manifests
+
+- stage: DeployToDev
+  displayName: Deploy to Development
+  dependsOn: CreateImageAndPublish
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  pool:
+    name: $(poolName)
+  jobs:
+  - deployment: DeployDev
+    displayName: Deploy to K3s Dev
+    environment: $(environment)
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: manifests
+
+          - task: KubernetesManifest@1
+            displayName: Deploy to Kubernetes
+            inputs:
+              action: 'deploy'
+              connectionType: 'kubernetesServiceConnection'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              manifests: '$(Pipeline.Workspace)/manifests/$(imageRepository)-dev-workloads.yaml'
