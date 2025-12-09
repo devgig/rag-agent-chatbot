@@ -8,8 +8,13 @@ namespace: multi-agent-dev
 
 resources:
   - hf-external-secret.yaml
+  # KAITO Workspace: Defines the desired state but blocked by NodeClaim requirement in BYO GPU mode
+  # The workspace creates the service but not the deployment due to KAITO limitation
   - kaito-workspace.yaml
   - kaito-service.yaml
+  # Manual deployment: Required workaround for KAITO BYO GPU mode NodeClaim limitation
+  # This deployment uses the same spec as defined in kaito-workspace.yaml inference.template
+  - gpt-oss-deployment.yaml
 
 labels:
 - includeSelectors: true

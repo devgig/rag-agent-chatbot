@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpt-oss-120b
+  namespace: multi-agent-dev
+  labels:
+    app: gpt-oss-120b
+    workspace: gpt-oss-120b
+    component: model-inference
+    managed-by: kaito
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      workspace: gpt-oss-120b
+  template:
+    metadata:
+      labels:
+        workspace: gpt-oss-120b
+        app: gpt-oss-120b
+    spec:
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: present
+        effect: NoSchedule
+      containers:
+      - name: vllm-inference
+        image: vllm/vllm-openai:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: MODEL_ID
+          value: "meta-llama/Meta-Llama-3.1-8B-Instruct"
+        - name: INFERENCE_ENGINE
+          value: "vllm"
+        - name: TENSOR_PARALLEL_SIZE
+          value: "1"
+        - name: GPU_MEMORY_UTILIZATION
+          value: "0.9"
+        - name: MAX_MODEL_LEN
+          value: "8192"
+        - name: DTYPE
+          value: "auto"
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+            cpu: "2"
+            memory: "16Gi"
+          limits:
+            nvidia.com/gpu: 1
+            cpu: "8"
+            memory: "32Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 300
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 300
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3
+        volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
+        - name: model-cache
+          mountPath: /root/.cache/huggingface
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+      - name: model-cache
+        emptyDir:
+          sizeLimit: 100Gi

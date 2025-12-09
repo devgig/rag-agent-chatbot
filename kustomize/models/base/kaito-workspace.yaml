@@ -4,11 +4,11 @@ metadata:
   name: gpt-oss-120b
   namespace: multi-agent-dev
 # NOTE: KAITO v1beta1 uses top-level fields (resource, inference) not nested under spec
-# For BYO GPU mode with NVIDIA GPU Operator, use empty instanceType to disable node provisioning
-# Use labelSelector and preferredNodes to target existing GPU nodes
+# For BYO GPU mode with NVIDIA GPU Operator: instanceType is required but preferredNodes overrides it
+# labelSelector and preferredNodes force KAITO to use existing GPU nodes instead of provisioning
 resource:
   count: 1
-  instanceType: ""  # Empty instanceType enables BYO GPU mode (no node provisioning)
+  instanceType: "Standard_NC24ads_A100_v4"  # Required by validation, preferredNodes forces BYO GPU mode
   labelSelector:
     matchLabels:
       nvidia.com/gpu.present: "true"
