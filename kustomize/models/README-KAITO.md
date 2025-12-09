@@ -16,16 +16,32 @@ Since you already have KAITO installed in your cluster, **use this approach inst
 
 ### 1. Deploy Llama 3.1 8B (Current Default)
 
-The workspace is already configured for Llama 3.1 8B. You just need to add your HuggingFace token:
+The workspace is already configured for Llama 3.1 8B. You need to add your HuggingFace token to Azure Key Vault:
 
 ```bash
-# Get token from https://huggingface.co/settings/tokens
-kubectl create secret generic hf-credentials \
-  --from-literal=token=hf_YourTokenHere \
-  -n multi-agent-dev
+# Add HuggingFace token to Azure Key Vault
+# Get token from https://huggingface.co/settings/tokens (read-only access is sufficient)
+az keyvault secret set \
+  --vault-name <your-keyvault-name> \
+  --name hugging-face-read-only-token \
+  --value "hf_YourTokenHere"
+
+# Deploy the ExternalSecret to sync from Key Vault
+kubectl apply -f kustomize/models/hf-external-secret.yaml
+
+# Verify secret was created
+kubectl get secret hf-credentials -n multi-agent-dev
 
 # Uncomment the HF_TOKEN section in kaito-workspace.yaml (lines 44-49)
 nano kustomize/models/kaito-workspace.yaml
+```
+
+**Alternative**: If you don't use Azure Key Vault, manually create the secret:
+
+```bash
+kubectl create secret generic hf-credentials \
+  --from-literal=token=hf_YourTokenHere \
+  -n multi-agent-dev
 ```
 
 ### 2. Deploy the Workspace

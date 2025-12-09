@@ -85,6 +85,29 @@ stages:
                 fi
 
           - task: KubernetesManifest@1
+            displayName: Deploy HuggingFace secret
+            inputs:
+              action: 'deploy'
+              connectionType: 'kubernetesServiceConnection'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              manifests: 'kustomize/models/hf-external-secret.yaml'
+
+          - task: Bash@3
+            displayName: Wait for HuggingFace secret sync
+            inputs:
+              targetType: 'inline'
+              script: |
+                echo "Waiting for ExternalSecret to sync HuggingFace token..."
+                kubectl wait --for=condition=Ready externalsecret/hf-external-secret \
+                  -n $(namespace) \
+                  --timeout=60s || {
+                  echo "⚠️ ExternalSecret not ready. Check Azure Key Vault configuration."
+                  exit 1
+                }
+                echo "✅ HuggingFace credentials synced"
+
+          - task: KubernetesManifest@1
             displayName: Deploy KAITO workspace
             inputs:
               action: 'deploy'
