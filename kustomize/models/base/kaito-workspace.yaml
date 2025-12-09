@@ -7,6 +7,7 @@ metadata:
 # For K3s clusters, use labelSelector and preferredNodes (node auto-provisioning is disabled)
 resource:
   count: 1
+  instanceType: ""  # Empty instanceType disables node provisioning for K3s
   labelSelector:
     matchLabels:
       nvidia.com/gpu.present: "true"
