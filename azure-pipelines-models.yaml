@@ -19,8 +19,6 @@ resources:
 
 variables:
   system.debug: false
-  kubernetesServiceConnection: 'k3s-cluster'
-  environment: 'K3s'
   namespace: 'multi-agent-dev'
   poolName: '$(buildAgentPool)'
 
@@ -71,93 +69,89 @@ stages:
   pool:
     name: $(poolName)
   jobs:
-  - deployment: DeployKAITO
+  - job: DeployKAITO
     displayName: Deploy gpt-oss-120b workspace
-    environment: $(environment)
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - checkout: self
+    steps:
+      - checkout: self
 
-          - task: Bash@3
-            displayName: Check for existing workspace
-            inputs:
-              targetType: 'inline'
-              script: |
-                # Check if workspace already exists
-                if kubectl get workspace gpt-oss-120b -n $(namespace) >/dev/null 2>&1; then
-                  echo "⚠️ Workspace gpt-oss-120b already exists"
-                  echo "Updating existing workspace..."
-                else
-                  echo "✅ Creating new workspace gpt-oss-120b"
-                fi
+      - task: Bash@3
+        displayName: Check for existing workspace
+        inputs:
+          targetType: 'inline'
+          script: |
+            # Check if workspace already exists
+            if kubectl get workspace gpt-oss-120b -n $(namespace) >/dev/null 2>&1; then
+              echo "⚠️ Workspace gpt-oss-120b already exists"
+              echo "Updating existing workspace..."
+            else
+              echo "✅ Creating new workspace gpt-oss-120b"
+            fi
 
-          - task: Bash@3
-            displayName: Generate manifests with kustomize
-            inputs:
-              targetType: 'inline'
-              script: |
-                # Generate kustomize manifests for dev overlay
-                mkdir -p manifests
-                kubectl kustomize kustomize/models/overlays/dev > manifests/models-dev-workloads.yaml
+      - task: Bash@3
+        displayName: Generate manifests with kustomize
+        inputs:
+          targetType: 'inline'
+          script: |
+            # Generate kustomize manifests for dev overlay
+            mkdir -p manifests
+            kubectl kustomize kustomize/models/overlays/dev > manifests/models-dev-workloads.yaml
 
-                echo "Generated manifests:"
-                cat manifests/models-dev-workloads.yaml
+            echo "Generated manifests:"
+            cat manifests/models-dev-workloads.yaml
 
-          - task: KubernetesManifest@1
-            displayName: Deploy KAITO workspace with kustomize
-            inputs:
-              action: 'deploy'
-              connectionType: 'kubernetesServiceConnection'
-              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
-              namespace: '$(namespace)'
-              manifests: 'manifests/models-dev-workloads.yaml'
+      - task: Bash@3
+        displayName: Deploy KAITO workspace with kubectl
+        inputs:
+          targetType: 'inline'
+          script: |
+            # Deploy using kubectl apply
+            kubectl apply -f manifests/models-dev-workloads.yaml
+            echo "✅ KAITO workspace deployed"
 
-          - task: Bash@3
-            displayName: Wait for HuggingFace secret sync
-            inputs:
-              targetType: 'inline'
-              script: |
-                echo "Waiting for ExternalSecret to sync HuggingFace token..."
-                kubectl wait --for=condition=Ready externalsecret/hf-external-secret \
-                  -n $(namespace) \
-                  --timeout=60s || {
-                  echo "⚠️ ExternalSecret not ready. Check Azure Key Vault configuration."
-                  exit 1
-                }
-                echo "✅ HuggingFace credentials synced"
+      - task: Bash@3
+        displayName: Wait for HuggingFace secret sync
+        inputs:
+          targetType: 'inline'
+          script: |
+            echo "Waiting for ExternalSecret to sync HuggingFace token..."
+            kubectl wait --for=condition=Ready externalsecret/hf-external-secret \
+              -n $(namespace) \
+              --timeout=60s || {
+              echo "⚠️ ExternalSecret not ready. Check Azure Key Vault configuration."
+              exit 1
+            }
+            echo "✅ HuggingFace credentials synced"
 
-          - task: Bash@3
-            displayName: Monitor workspace deployment
-            inputs:
-              targetType: 'inline'
-              script: |
-                echo "Waiting for workspace to be ready (timeout: 5 minutes)..."
-                kubectl wait --for=condition=WorkspaceReady workspace/gpt-oss-120b \
-                  -n $(namespace) \
-                  --timeout=300s || {
-                  echo "⚠️ Workspace not ready after 5 minutes. This is expected for first deployment."
-                  echo "Model download can take 10-20 minutes. Check progress with:"
-                  echo "  kubectl get workspace gpt-oss-120b -n $(namespace) -w"
-                  echo "  kubectl logs -n $(namespace) -l workspace=gpt-oss-120b -f"
-                }
+      - task: Bash@3
+        displayName: Monitor workspace deployment
+        inputs:
+          targetType: 'inline'
+          script: |
+            echo "Waiting for workspace to be ready (timeout: 5 minutes)..."
+            kubectl wait --for=condition=WorkspaceReady workspace/gpt-oss-120b \
+              -n $(namespace) \
+              --timeout=300s || {
+              echo "⚠️ Workspace not ready after 5 minutes. This is expected for first deployment."
+              echo "Model download can take 10-20 minutes. Check progress with:"
+              echo "  kubectl get workspace gpt-oss-120b -n $(namespace) -w"
+              echo "  kubectl logs -n $(namespace) -l workspace=gpt-oss-120b -f"
+            }
 
-          - task: Bash@3
-            displayName: Display deployment status
-            inputs:
-              targetType: 'inline'
-              script: |
-                echo "📊 Deployment Status:"
-                echo "===================="
-                kubectl get workspace gpt-oss-120b -n $(namespace) || true
-                echo ""
-                echo "📦 Pods:"
-                kubectl get pods -n $(namespace) -l workspace=gpt-oss-120b || true
-                echo ""
-                echo "🔌 Service:"
-                kubectl get svc gpt-oss-120b -n $(namespace) || true
-                echo ""
-                echo "💡 To monitor progress:"
-                echo "   kubectl get workspace gpt-oss-120b -n $(namespace) -w"
-                echo "   kubectl logs -n $(namespace) -l workspace=gpt-oss-120b -f"
+      - task: Bash@3
+        displayName: Display deployment status
+        inputs:
+          targetType: 'inline'
+          script: |
+            echo "📊 Deployment Status:"
+            echo "===================="
+            kubectl get workspace gpt-oss-120b -n $(namespace) || true
+            echo ""
+            echo "📦 Pods:"
+            kubectl get pods -n $(namespace) -l workspace=gpt-oss-120b || true
+            echo ""
+            echo "🔌 Service:"
+            kubectl get svc gpt-oss-120b -n $(namespace) || true
+            echo ""
+            echo "💡 To monitor progress:"
+            echo "   kubectl get workspace gpt-oss-120b -n $(namespace) -w"
+            echo "   kubectl logs -n $(namespace) -l workspace=gpt-oss-120b -f"
