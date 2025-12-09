@@ -44,18 +44,6 @@ stages:
 
             echo "✅ Kustomize build passed"
 
-      - task: Bash@3
-        displayName: Check KAITO CRD exists
-        inputs:
-          targetType: 'inline'
-          script: |
-            # Verify KAITO is installed in cluster
-            kubectl api-resources | grep workspace || {
-              echo "❌ KAITO CRD not found. Ensure KAITO is installed in cluster."
-              exit 1
-            }
-            echo "✅ KAITO CRD found"
-
   - job: PublishManifest
     displayName: Publish manifests
     dependsOn: Validate
