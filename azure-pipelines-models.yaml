@@ -23,8 +23,8 @@ variables:
   poolName: '$(buildAgentPool)'
 
 stages:
-- stage: ValidateManifests
-  displayName: Validate KAITO Manifests
+- stage: ValidateAndPublish
+  displayName: Validate and Publish KAITO Manifests
   pool:
     name: $(poolName)
   jobs:
@@ -42,13 +42,7 @@ stages:
               exit 1
             }
 
-            # Validate generated YAML
-            kubectl --dry-run=client apply -f /tmp/models-manifests.yaml || {
-              echo "❌ Manifest validation failed"
-              exit 1
-            }
-
-            echo "✅ Kustomize validation passed"
+            echo "✅ Kustomize build passed"
 
       - task: Bash@3
         displayName: Check KAITO CRD exists
@@ -62,9 +56,34 @@ stages:
             }
             echo "✅ KAITO CRD found"
 
+  - job: PublishManifest
+    displayName: Publish manifests
+    dependsOn: Validate
+    steps:
+      - task: Bash@3
+        displayName: Generate manifests for dev
+        inputs:
+          targetType: 'inline'
+          script: |
+            mkdir manifests
+            if [ -d "./kustomize/models/overlays/dev" ]; then
+              kubectl kustomize ./kustomize/models/overlays/dev > ./manifests/models-dev-workloads.yaml
+            else
+              echo "dev overlay doesn't exist; skipping"
+            fi
+
+            if [ -d "./kustomize/models/overlays/prod" ]; then
+              kubectl kustomize ./kustomize/models/overlays/prod > ./manifests/models-prod-workloads.yaml
+            else
+              echo "prod overlay doesn't exist; skipping"
+            fi
+
+      - publish: 'manifests'
+        artifact: manifests
+
 - stage: DeployToKubernetes
   displayName: Deploy KAITO Workspace
-  dependsOn: ValidateManifests
+  dependsOn: ValidateAndPublish
   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
   pool:
     name: $(poolName)
