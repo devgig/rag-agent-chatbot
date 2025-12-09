@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gpt-oss-120b
+  namespace: multi-agent-dev
+  labels:
+    app: gpt-oss-120b
+    managed-by: kaito
+spec:
+  selector:
+    workspace: gpt-oss-120b
+  ports:
+  - port: 8000
+    targetPort: 8000
+    name: http
+  type: ClusterIP

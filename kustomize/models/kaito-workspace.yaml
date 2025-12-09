@@ -1,0 +1,86 @@
+apiVersion: kaito.sh/v1beta1
+kind: Workspace
+metadata:
+  name: gpt-oss-120b
+  namespace: multi-agent-dev
+spec:
+  # For K3s clusters, use labelSelector instead of instanceType
+  resource:
+    count: 1
+    labelSelector:
+      matchLabels:
+        nvidia.com/gpu.present: "true"
+
+  # Using vLLM runtime with custom HuggingFace model
+  # Replace MODEL_ID with your actual HuggingFace model (e.g., "meta-llama/Meta-Llama-3.1-70B-Instruct")
+  inference:
+    template:
+      spec:
+        tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: present
+          effect: NoSchedule
+        containers:
+        - name: vllm-inference
+          # KAITO's reference image with vLLM runtime
+          image: ghcr.io/kaito-project/kaito/llm-reference-preset:latest
+          ports:
+          - containerPort: 8000
+            name: http
+          env:
+          - name: MODEL_ID
+            value: "meta-llama/Meta-Llama-3.1-70B-Instruct"  # CHANGE THIS to your model
+          - name: INFERENCE_ENGINE
+            value: "vllm"
+          - name: TENSOR_PARALLEL_SIZE
+            value: "1"
+          - name: GPU_MEMORY_UTILIZATION
+            value: "0.9"
+          - name: MAX_MODEL_LEN
+            value: "8192"
+          - name: DTYPE
+            value: "auto"
+          # Uncomment for gated/private models:
+          # - name: HF_TOKEN
+          #   valueFrom:
+          #     secretKeyRef:
+          #       name: hf-credentials
+          #       key: token
+          resources:
+            requests:
+              nvidia.com/gpu: 1
+              cpu: "4"
+              memory: "64Gi"
+            limits:
+              nvidia.com/gpu: 1
+              cpu: "16"
+              memory: "120Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 300
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 300
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+          - name: dshm
+            mountPath: /dev/shm
+          - name: model-cache
+            mountPath: /root/.cache/huggingface
+        volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: model-cache
+          emptyDir:
+            sizeLimit: 100Gi
