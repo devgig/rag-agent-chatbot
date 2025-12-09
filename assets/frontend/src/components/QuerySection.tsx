@@ -231,10 +231,13 @@ export default function QuerySection({
           wsRef.current.close();
         }
 
-        const wsProtocol = 'ws:';
-        const wsHost = 'localhost';
-        const wsPort = '8000';
-        const ws = new WebSocket(`${wsProtocol}//${wsHost}:${wsPort}/ws/chat/${currentChatId}`);
+        // Use environment variable or construct from window location
+        const backendWsUrl = process.env.NEXT_PUBLIC_WS_URL ||
+          (typeof window !== 'undefined'
+            ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api`
+            : 'ws://localhost:8000');
+
+        const ws = new WebSocket(`${backendWsUrl}/ws/chat/${currentChatId}`);
         wsRef.current = ws;
 
         ws.onmessage = (event) => {
