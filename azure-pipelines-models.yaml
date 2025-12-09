@@ -34,14 +34,23 @@ stages:
     displayName: Validate YAML syntax
     steps:
       - task: Bash@3
-        displayName: Validate KAITO workspace YAML
+        displayName: Validate KAITO manifests with kustomize
         inputs:
           targetType: 'inline'
           script: |
-            # Validate YAML syntax
-            kubectl --dry-run=client apply -f kustomize/models/kaito-workspace.yaml || exit 1
-            kubectl --dry-run=client apply -f kustomize/models/kaito-service.yaml || exit 1
-            echo "✅ YAML validation passed"
+            # Build kustomize manifests
+            kubectl kustomize kustomize/models/base > /tmp/models-manifests.yaml || {
+              echo "❌ Kustomize build failed"
+              exit 1
+            }
+
+            # Validate generated YAML
+            kubectl --dry-run=client apply -f /tmp/models-manifests.yaml || {
+              echo "❌ Manifest validation failed"
+              exit 1
+            }
+
+            echo "✅ Kustomize validation passed"
 
       - task: Bash@3
         displayName: Check KAITO CRD exists
@@ -84,14 +93,26 @@ stages:
                   echo "✅ Creating new workspace gpt-oss-120b"
                 fi
 
+          - task: Bash@3
+            displayName: Generate manifests with kustomize
+            inputs:
+              targetType: 'inline'
+              script: |
+                # Generate kustomize manifests
+                mkdir -p manifests
+                kubectl kustomize kustomize/models/base > manifests/models-workloads.yaml
+
+                echo "Generated manifests:"
+                cat manifests/models-workloads.yaml
+
           - task: KubernetesManifest@1
-            displayName: Deploy HuggingFace secret
+            displayName: Deploy KAITO workspace with kustomize
             inputs:
               action: 'deploy'
               connectionType: 'kubernetesServiceConnection'
               kubernetesServiceConnection: '$(kubernetesServiceConnection)'
               namespace: '$(namespace)'
-              manifests: 'kustomize/models/hf-external-secret.yaml'
+              manifests: 'manifests/models-workloads.yaml'
 
           - task: Bash@3
             displayName: Wait for HuggingFace secret sync
@@ -106,17 +127,6 @@ stages:
                   exit 1
                 }
                 echo "✅ HuggingFace credentials synced"
-
-          - task: KubernetesManifest@1
-            displayName: Deploy KAITO workspace
-            inputs:
-              action: 'deploy'
-              connectionType: 'kubernetesServiceConnection'
-              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
-              namespace: '$(namespace)'
-              manifests: |
-                kustomize/models/kaito-workspace.yaml
-                kustomize/models/kaito-service.yaml
 
           - task: Bash@3
             displayName: Monitor workspace deployment

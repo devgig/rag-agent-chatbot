@@ -26,14 +26,14 @@ az keyvault secret set \
   --name hugging-face-read-only-token \
   --value "hf_YourTokenHere"
 
-# Deploy the ExternalSecret to sync from Key Vault
-kubectl apply -f kustomize/models/hf-external-secret.yaml
+# Deploy all resources using kustomize
+kubectl apply -k kustomize/models/base
 
 # Verify secret was created
 kubectl get secret hf-credentials -n multi-agent-dev
 
 # Uncomment the HF_TOKEN section in kaito-workspace.yaml (lines 44-49)
-nano kustomize/models/kaito-workspace.yaml
+nano kustomize/models/base/kaito-workspace.yaml
 ```
 
 **Alternative**: If you don't use Azure Key Vault, manually create the secret:
@@ -47,11 +47,8 @@ kubectl create secret generic hf-credentials \
 ### 2. Deploy the Workspace
 
 ```bash
-# Deploy KAITO workspace
-kubectl apply -f kustomize/models/kaito-workspace.yaml
-
-# Deploy service
-kubectl apply -f kustomize/models/kaito-service.yaml
+# Deploy all KAITO resources using kustomize
+kubectl apply -k kustomize/models/base
 
 # Watch deployment progress (can take 10-20 minutes for first model download)
 kubectl get workspace gpt-oss-120b -n multi-agent-dev -w
@@ -137,8 +134,8 @@ resources:
 3. **Redeploy**:
 
 ```bash
-# Apply the updated workspace
-kubectl apply -f kustomize/models/kaito-workspace.yaml
+# Apply the updated workspace using kustomize
+kubectl apply -k kustomize/models/base
 
 # Wait for rollout (old pod terminates, new pod starts)
 kubectl get pods -n multi-agent-dev -l workspace=gpt-oss-120b -w
@@ -335,14 +332,13 @@ kubectl run -it --rm debug --image=curlimages/curl --restart=Never -n multi-agen
 ## Cleanup
 
 ```bash
-# Delete workspace (this will delete pods)
+# Delete all KAITO resources using kustomize
+kubectl delete -k kustomize/models/base
+
+# Or delete individual resources:
 kubectl delete workspace gpt-oss-120b -n multi-agent-dev
-
-# Delete service
 kubectl delete svc gpt-oss-120b -n multi-agent-dev
-
-# Delete secrets (if needed)
-kubectl delete secret hf-credentials -n multi-agent-dev
+kubectl delete externalsecret hf-external-secret -n multi-agent-dev
 ```
 
 ## Integration with Backend
