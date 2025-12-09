@@ -4,12 +4,14 @@ metadata:
   name: gpt-oss-120b
   namespace: multi-agent-dev
 # NOTE: KAITO v1beta1 uses top-level fields (resource, inference) not nested under spec
-# For K3s clusters, use labelSelector instead of instanceType
+# For K3s clusters, use labelSelector and preferredNodes (node auto-provisioning is disabled)
 resource:
   count: 1
   labelSelector:
     matchLabels:
       nvidia.com/gpu.present: "true"
+  preferredNodes:
+  - spark-7eb5
 
 # Using vLLM runtime with custom HuggingFace model
 # Replace MODEL_ID with your actual HuggingFace model (e.g., "meta-llama/Meta-Llama-3.1-70B-Instruct")
