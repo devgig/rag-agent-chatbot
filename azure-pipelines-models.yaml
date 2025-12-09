@@ -38,8 +38,8 @@ stages:
         inputs:
           targetType: 'inline'
           script: |
-            # Build kustomize manifests
-            kubectl kustomize kustomize/models/base > /tmp/models-manifests.yaml || {
+            # Build kustomize manifests for dev overlay
+            kubectl kustomize kustomize/models/overlays/dev > /tmp/models-manifests.yaml || {
               echo "❌ Kustomize build failed"
               exit 1
             }
@@ -98,12 +98,12 @@ stages:
             inputs:
               targetType: 'inline'
               script: |
-                # Generate kustomize manifests
+                # Generate kustomize manifests for dev overlay
                 mkdir -p manifests
-                kubectl kustomize kustomize/models/base > manifests/models-workloads.yaml
+                kubectl kustomize kustomize/models/overlays/dev > manifests/models-dev-workloads.yaml
 
                 echo "Generated manifests:"
-                cat manifests/models-workloads.yaml
+                cat manifests/models-dev-workloads.yaml
 
           - task: KubernetesManifest@1
             displayName: Deploy KAITO workspace with kustomize
@@ -112,7 +112,7 @@ stages:
               connectionType: 'kubernetesServiceConnection'
               kubernetesServiceConnection: '$(kubernetesServiceConnection)'
               namespace: '$(namespace)'
-              manifests: 'manifests/models-workloads.yaml'
+              manifests: 'manifests/models-dev-workloads.yaml'
 
           - task: Bash@3
             displayName: Wait for HuggingFace secret sync

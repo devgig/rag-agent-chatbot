@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: gpt-oss-120b-dev
+
+namespace: multi-agent-dev
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+labels:
+- includeSelectors: false
+  pairs:
+    environment: dev
+
+# Dev-specific configuration for Llama 3.1 8B
+# Resource limits are already optimized for 8B model in base
+# For production/70B model, create overlays/prod with higher limits
