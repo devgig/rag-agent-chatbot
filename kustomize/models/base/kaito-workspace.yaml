@@ -4,10 +4,11 @@ metadata:
   name: gpt-oss-120b
   namespace: multi-agent-dev
 # NOTE: KAITO v1beta1 uses top-level fields (resource, inference) not nested under spec
-# For K3s clusters, use labelSelector and preferredNodes (node auto-provisioning is disabled)
+# For BYO GPU mode with NVIDIA GPU Operator, use empty instanceType to disable node provisioning
+# Use labelSelector and preferredNodes to target existing GPU nodes
 resource:
   count: 1
-  instanceType: ""  # Empty instanceType disables node provisioning for K3s
+  instanceType: ""  # Empty instanceType enables BYO GPU mode (no node provisioning)
   labelSelector:
     matchLabels:
       nvidia.com/gpu.present: "true"
@@ -26,8 +27,8 @@ inference:
           effect: NoSchedule
         containers:
         - name: vllm-inference
-          # KAITO's reference image with vLLM runtime
-          image: ghcr.io/kaito-project/kaito/llm-reference-preset:latest
+          # Use official vLLM image for GB10 GPU support
+          image: vllm/vllm-openai:latest
           ports:
           - containerPort: 8000
             name: http
