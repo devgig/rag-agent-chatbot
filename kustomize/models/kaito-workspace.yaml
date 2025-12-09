@@ -30,7 +30,7 @@ spec:
             name: http
           env:
           - name: MODEL_ID
-            value: "meta-llama/Meta-Llama-3.1-70B-Instruct"  # CHANGE THIS to your model
+            value: "meta-llama/Meta-Llama-3.1-8B-Instruct"  # Start with 8B for fast testing
           - name: INFERENCE_ENGINE
             value: "vllm"
           - name: TENSOR_PARALLEL_SIZE
@@ -50,12 +50,12 @@ spec:
           resources:
             requests:
               nvidia.com/gpu: 1
-              cpu: "4"
-              memory: "64Gi"
+              cpu: "2"
+              memory: "16Gi"
             limits:
               nvidia.com/gpu: 1
-              cpu: "16"
-              memory: "120Gi"
+              cpu: "8"
+              memory: "32Gi"
           livenessProbe:
             httpGet:
               path: /health

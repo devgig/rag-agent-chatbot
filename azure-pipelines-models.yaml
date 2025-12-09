@@ -4,7 +4,6 @@ trigger:
       - main
   paths:
     include:
-      - assets/models/**
       - kustomize/models/**
 
 pr:
@@ -13,7 +12,6 @@ pr:
       - main
   paths:
     include:
-      - assets/models/**
       - kustomize/models/**
 
 resources:
@@ -21,111 +19,112 @@ resources:
 
 variables:
   system.debug: false
-  imageRepository: 'multi-agent-chatbot-models'
-  containerRegistry: 'acr-bytecourier'
-  containerRegistryUrl: 'bytecourier.azurecr.io'
   kubernetesServiceConnection: 'k3s-cluster'
   environment: 'K3s'
-  dockerfilePath: './assets/models/Dockerfile'
-  manifestPath: 'kustomize/models/base'
-  tag: '$(Build.SourceVersion)'
-  poolName: '$(buildAgentPool)'
-  base_path: '$(Build.SourceBranchName)'
-  source_branch_name: '$(Build.SourceBranchName)'
-  imagePullSecret: 'acr-secret'
   namespace: 'multi-agent-dev'
-  sourceNamespace: 'bytecourier-apps'
+  poolName: '$(buildAgentPool)'
 
 stages:
-- stage: BuildAndTest
-  displayName: Validate Dockerfile
+- stage: ValidateManifests
+  displayName: Validate KAITO Manifests
   pool:
     name: $(poolName)
   jobs:
   - job: Validate
-    displayName: Validate Dockerfile syntax
+    displayName: Validate YAML syntax
     steps:
       - task: Bash@3
-        displayName: Validate Dockerfile
+        displayName: Validate KAITO workspace YAML
         inputs:
           targetType: 'inline'
           script: |
-            # Basic syntax validation
-            docker run --rm -i hadolint/hadolint < $(dockerfilePath) || echo "Dockerfile validation warnings found"
+            # Validate YAML syntax
+            kubectl --dry-run=client apply -f kustomize/models/kaito-workspace.yaml || exit 1
+            kubectl --dry-run=client apply -f kustomize/models/kaito-service.yaml || exit 1
+            echo "✅ YAML validation passed"
 
-- stage: CreateImageAndPublish
-  displayName: Create image and Publish
-  dependsOn: BuildAndTest
-  condition: and(succeeded(), in(variables['Build.Reason'], 'BatchedCI', 'IndividualCI', 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
-  pool:
-    name: $(poolName)
-  jobs:
-  - job: BuildAndPush
-    displayName: Build image and Push to ACR
-    steps:
-      - checkout: self
-
-      - task: Docker@2
-        displayName: Build and push an image to ACR
-        inputs:
-          containerRegistry: '$(containerRegistry)'
-          repository: '$(imageRepository)'
-          command: buildAndPush
-          dockerfile: $(dockerfilePath)
-          buildContext: '$(Build.SourcesDirectory)/assets/models'
-          tags: |
-            $(tag)
-            latest
-
-  - job: PublishManifest
-    displayName: Publish manifests
-    dependsOn: BuildAndPush
-    steps:
       - task: Bash@3
-        displayName: Update image in manifests
+        displayName: Check KAITO CRD exists
         inputs:
           targetType: 'inline'
           script: |
-            cd kustomize/models/base
-            cat <<EOF >image-patch.yaml
-            - op: replace
-              path: /spec/template/spec/containers/0/image
-              value: bytecourier.azurecr.io/$(imageRepository):$(tag)
-            EOF
+            # Verify KAITO is installed in cluster
+            kubectl api-resources | grep workspace || {
+              echo "❌ KAITO CRD not found. Ensure KAITO is installed in cluster."
+              exit 1
+            }
+            echo "✅ KAITO CRD found"
 
-      - task: Bash@3
-        displayName: Generate manifests for main branch
-        inputs:
-          targetType: 'inline'
-          script: |
-            mkdir manifests
-            kubectl kustomize ./kustomize/models/base > ./manifests/$(imageRepository)-dev-workloads.yaml
-
-      - publish: 'manifests'
-        artifact: manifests
-
-- stage: DeployToDev
-  displayName: Deploy to Development
-  dependsOn: CreateImageAndPublish
+- stage: DeployToKubernetes
+  displayName: Deploy KAITO Workspace
+  dependsOn: ValidateManifests
   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
   pool:
     name: $(poolName)
   jobs:
-  - deployment: DeployDev
-    displayName: Deploy to K3s Dev
+  - deployment: DeployKAITO
+    displayName: Deploy gpt-oss-120b workspace
     environment: $(environment)
     strategy:
       runOnce:
         deploy:
           steps:
-          - download: current
-            artifact: manifests
+          - checkout: self
+
+          - task: Bash@3
+            displayName: Check for existing workspace
+            inputs:
+              targetType: 'inline'
+              script: |
+                # Check if workspace already exists
+                if kubectl get workspace gpt-oss-120b -n $(namespace) >/dev/null 2>&1; then
+                  echo "⚠️ Workspace gpt-oss-120b already exists"
+                  echo "Updating existing workspace..."
+                else
+                  echo "✅ Creating new workspace gpt-oss-120b"
+                fi
 
           - task: KubernetesManifest@1
-            displayName: Deploy to Kubernetes
+            displayName: Deploy KAITO workspace
             inputs:
               action: 'deploy'
               connectionType: 'kubernetesServiceConnection'
               kubernetesServiceConnection: '$(kubernetesServiceConnection)'
               namespace: '$(namespace)'
-              manifests: '$(Pipeline.Workspace)/manifests/$(imageRepository)-dev-workloads.yaml'
+              manifests: |
+                kustomize/models/kaito-workspace.yaml
+                kustomize/models/kaito-service.yaml
+
+          - task: Bash@3
+            displayName: Monitor workspace deployment
+            inputs:
+              targetType: 'inline'
+              script: |
+                echo "Waiting for workspace to be ready (timeout: 5 minutes)..."
+                kubectl wait --for=condition=WorkspaceReady workspace/gpt-oss-120b \
+                  -n $(namespace) \
+                  --timeout=300s || {
+                  echo "⚠️ Workspace not ready after 5 minutes. This is expected for first deployment."
+                  echo "Model download can take 10-20 minutes. Check progress with:"
+                  echo "  kubectl get workspace gpt-oss-120b -n $(namespace) -w"
+                  echo "  kubectl logs -n $(namespace) -l workspace=gpt-oss-120b -f"
+                }
+
+          - task: Bash@3
+            displayName: Display deployment status
+            inputs:
+              targetType: 'inline'
+              script: |
+                echo "📊 Deployment Status:"
+                echo "===================="
+                kubectl get workspace gpt-oss-120b -n $(namespace) || true
+                echo ""
+                echo "📦 Pods:"
+                kubectl get pods -n $(namespace) -l workspace=gpt-oss-120b || true
+                echo ""
+                echo "🔌 Service:"
+                kubectl get svc gpt-oss-120b -n $(namespace) || true
+                echo ""
+                echo "💡 To monitor progress:"
+                echo "   kubectl get workspace gpt-oss-120b -n $(namespace) -w"
+                echo "   kubectl logs -n $(namespace) -l workspace=gpt-oss-120b -f"
