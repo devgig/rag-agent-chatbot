@@ -25,7 +25,6 @@ resource:
 
 # Inference Configuration (matches gpt-oss-deployment.yaml)
 inference:
-    progressDeadlineSeconds: 900  # 15 minutes for model loading + health check delay
     template:
       spec:
         tolerations:
