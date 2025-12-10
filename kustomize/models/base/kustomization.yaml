@@ -43,7 +43,7 @@ resources:
   - gpt-oss-deployment.yaml   # Actual deployment (workaround for KAITO limitation)
 
 labels:
-- includeSelectors: true
+- includeSelectors: false  # Don't modify selectors (immutable in existing deployments)
   pairs:
     app: gpt-oss-120b
     component: model-inference
