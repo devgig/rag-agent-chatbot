@@ -37,10 +37,12 @@ metadata:
 namespace: multi-agent-dev
 
 resources:
-  - hf-external-secret.yaml  # HuggingFace token from Azure Key Vault
-  - kaito-workspace.yaml      # KAITO resource (reference only, blocked by NodeClaim)
-  - kaito-service.yaml        # ClusterIP service (port 8000)
-  - gpt-oss-deployment.yaml   # Actual deployment (workaround for KAITO limitation)
+  - hf-external-secret.yaml          # HuggingFace token from Azure Key Vault
+  - kaito-workspace.yaml              # KAITO resource (reference only, blocked by NodeClaim)
+  - kaito-service.yaml                # ClusterIP service (port 8000)
+  - gpt-oss-deployment.yaml           # Actual deployment (workaround for KAITO limitation)
+  - qwen3-embedding-deployment.yaml   # Embedding service for RAG
+  - qwen3-embedding-service.yaml      # ClusterIP service for embeddings (port 8000)
 
 labels:
 - includeSelectors: false  # Don't modify selectors (immutable in existing deployments)

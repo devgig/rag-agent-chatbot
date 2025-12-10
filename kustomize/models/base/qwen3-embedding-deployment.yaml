@@ -1,0 +1,111 @@
+# Qwen3-Embedding Deployment for RAG
+# ==========================================
+# Provides embedding generation for document indexing and retrieval.
+# Uses llama.cpp server with Qwen3-Embedding-4B model.
+#
+# Backend Integration:
+# - Backend expects service at: http://qwen3-embedding:8000
+# - Endpoint: /v1/embeddings (OpenAI-compatible)
+# - Used by: assets/backend/vector_store.py (CustomEmbeddings class)
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen3-embedding
+  labels:
+    app: qwen3-embedding
+    component: embedding-service
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 900  # Allow 15 minutes for model download/loading
+  selector:
+    matchLabels:
+      app: qwen3-embedding
+  template:
+    metadata:
+      labels:
+        app: qwen3-embedding
+        component: embedding-service
+    spec:
+      nodeSelector:
+        node-type: storage  # Target storage nodes with more resources
+      containers:
+      - name: llama-cpp-server
+        image: ghcr.io/ggerganov/llama.cpp:server-cuda
+        command: ["/llama-server"]
+        args:
+        - "-m"
+        - "/models/Qwen3-Embedding-4B-Q8_0.gguf"
+        - "--port"
+        - "8000"
+        - "--host"
+        - "0.0.0.0"
+        - "-ngl"
+        - "0"  # Run on CPU (no GPU offloading)
+        - "--embeddings"  # Enable embeddings mode
+        - "-t"
+        - "4"  # Use 4 CPU threads
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-credentials
+              key: token
+              optional: true
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "4Gi"
+          limits:
+            cpu: "4"
+            memory: "8Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 300  # Model download can take 5+ minutes
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 300
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3
+        volumeMounts:
+        - name: model-cache
+          mountPath: /models
+      volumes:
+      - name: model-cache
+        emptyDir:
+          sizeLimit: 10Gi  # Qwen3-Embedding-4B is ~4GB
+      initContainers:
+      - name: download-model
+        image: busybox:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          if [ ! -f /models/Qwen3-Embedding-4B-Q8_0.gguf ]; then
+            echo "Downloading Qwen3-Embedding-4B model..."
+            wget -O /models/Qwen3-Embedding-4B-Q8_0.gguf \
+              https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF/resolve/main/Qwen3-Embedding-4B-Q8_0.gguf
+            echo "Model download complete"
+          else
+            echo "Model already exists, skipping download"
+          fi
+        volumeMounts:
+        - name: model-cache
+          mountPath: /models
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
