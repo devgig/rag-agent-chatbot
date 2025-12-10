@@ -1,3 +1,13 @@
+# Manual Deployment for KAITO BYO GPU Mode
+# ==========================================
+# This deployment is a workaround for KAITO's BYO GPU mode limitation.
+# KAITO workspace (kaito-workspace.yaml) is blocked by NodeClaim requirement,
+# so we manually create the deployment with the same spec.
+#
+# Model: microsoft/Phi-3.5-mini-instruct (open-source, no gating)
+# To use Meta-Llama models, request access on HuggingFace first.
+# Backend connects via: gpt-oss-120b.multi-agent-dev.svc.cluster.local:8000
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:

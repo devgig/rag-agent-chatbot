@@ -1,3 +1,33 @@
+# KAITO BYO GPU Mode Configuration
+# ==================================================================================================
+# This kustomization deploys vLLM model inference with KAITO for K3s/BYO GPU environments.
+#
+# ARCHITECTURE:
+# - KAITO Workspace: Defines desired state but cannot create deployment (NodeClaim requirement)
+# - Manual Deployment: Workaround that creates the actual pod using workspace spec
+# - Service: ClusterIP exposing OpenAI-compatible API on port 8000
+# - ExternalSecret: HuggingFace token from Azure Key Vault
+#
+# MODEL: microsoft/Phi-3.5-mini-instruct
+# To use Meta-Llama models, request access on HuggingFace and update the model in both:
+#   - kaito-workspace.yaml (line 40)
+#   - gpt-oss-deployment.yaml (line 34)
+#
+# GPU CONFIGURATION:
+# - Node selector: nvidia.com/gpu.present=true
+# - Tolerations: nvidia.com/gpu=present:NoSchedule
+# - Resources: 1 GPU, 2-8 CPU, 16-32Gi memory
+# - Target node: spark-7eb5 (update in kaito-workspace.yaml line 24)
+#
+# BACKEND INTEGRATION:
+# Backend connects via: gpt-oss-120b.multi-agent-dev.svc.cluster.local:8000
+# No code changes needed - backend uses model name as hostname: http://gpt-oss-120b:8000/v1
+#
+# AZURE DEVOPS:
+# Deploy via: kubectl apply -k kustomize/models/overlays/dev/
+# Pipeline: azure-pipelines-models.yaml (triggers on kustomize/models/** changes)
+# ==================================================================================================
+
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -7,14 +37,10 @@ metadata:
 namespace: multi-agent-dev
 
 resources:
-  - hf-external-secret.yaml
-  # KAITO Workspace: Defines the desired state but blocked by NodeClaim requirement in BYO GPU mode
-  # The workspace creates the service but not the deployment due to KAITO limitation
-  - kaito-workspace.yaml
-  - kaito-service.yaml
-  # Manual deployment: Required workaround for KAITO BYO GPU mode NodeClaim limitation
-  # This deployment uses the same spec as defined in kaito-workspace.yaml inference.template
-  - gpt-oss-deployment.yaml
+  - hf-external-secret.yaml  # HuggingFace token from Azure Key Vault
+  - kaito-workspace.yaml      # KAITO resource (reference only, blocked by NodeClaim)
+  - kaito-service.yaml        # ClusterIP service (port 8000)
+  - gpt-oss-deployment.yaml   # Actual deployment (workaround for KAITO limitation)
 
 labels:
 - includeSelectors: true

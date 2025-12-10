@@ -1,11 +1,19 @@
+# KAITO Workspace for GPU Model Inference
+# ==========================================
+# NOTE: This workspace is kept for reference but does NOT create the actual deployment
+# due to KAITO limitation with BYO GPU mode (NodeClaim requirement).
+# The actual deployment is created by gpt-oss-deployment.yaml
+# See kustomization.yaml for details.
+#
+# KAITO v1beta1 uses top-level fields (resource, inference) not nested under spec
+
 apiVersion: kaito.sh/v1beta1
 kind: Workspace
 metadata:
   name: gpt-oss-120b
   namespace: multi-agent-dev
-# NOTE: KAITO v1beta1 uses top-level fields (resource, inference) not nested under spec
-# For BYO GPU mode with NVIDIA GPU Operator: instanceType is required but preferredNodes overrides it
-# labelSelector and preferredNodes force KAITO to use existing GPU nodes instead of provisioning
+
+# Resource Configuration for BYO GPU Mode
 resource:
   count: 1
   instanceType: "Standard_NC24ads_A100_v4"  # Required by validation, preferredNodes forces BYO GPU mode
@@ -13,10 +21,9 @@ resource:
     matchLabels:
       nvidia.com/gpu.present: "true"
   preferredNodes:
-  - spark-7eb5
+  - spark-7eb5  # GPU node name (update for your environment)
 
-# Using vLLM runtime with custom HuggingFace model
-# Replace MODEL_ID with your actual HuggingFace model (e.g., "meta-llama/Meta-Llama-3.1-70B-Instruct")
+# Inference Configuration (matches gpt-oss-deployment.yaml)
 inference:
     template:
       spec:
@@ -27,30 +34,26 @@ inference:
           effect: NoSchedule
         containers:
         - name: vllm-inference
-          # Use official vLLM image for GB10 GPU support
           image: vllm/vllm-openai:latest
+          command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+          args:
+          - "--model=microsoft/Phi-3.5-mini-instruct"
+          - "--tensor-parallel-size=1"
+          - "--gpu-memory-utilization=0.9"
+          - "--max-model-len=4096"
+          - "--dtype=auto"
+          - "--host=0.0.0.0"
+          - "--port=8000"
+          - "--trust-remote-code"
           ports:
           - containerPort: 8000
             name: http
           env:
-          - name: MODEL_ID
-            value: "meta-llama/Meta-Llama-3.1-8B-Instruct"  # Start with 8B for fast testing
-          - name: INFERENCE_ENGINE
-            value: "vllm"
-          - name: TENSOR_PARALLEL_SIZE
-            value: "1"
-          - name: GPU_MEMORY_UTILIZATION
-            value: "0.9"
-          - name: MAX_MODEL_LEN
-            value: "8192"
-          - name: DTYPE
-            value: "auto"
-          # Uncomment for gated/private models:
-          # - name: HF_TOKEN
-          #   valueFrom:
-          #     secretKeyRef:
-          #       name: hf-credentials
-          #       key: token
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-credentials
+                key: token
           resources:
             requests:
               nvidia.com/gpu: 1
