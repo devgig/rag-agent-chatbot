@@ -29,22 +29,25 @@ spec:
       containers:
       - name: vllm-inference
         image: vllm/vllm-openai:latest
+        command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+        args:
+        - "--model=microsoft/Phi-3.5-mini-instruct"
+        - "--tensor-parallel-size=1"
+        - "--gpu-memory-utilization=0.9"
+        - "--max-model-len=4096"
+        - "--dtype=auto"
+        - "--host=0.0.0.0"
+        - "--port=8000"
+        - "--trust-remote-code"
         ports:
         - containerPort: 8000
           name: http
         env:
-        - name: MODEL_ID
-          value: "meta-llama/Meta-Llama-3.1-8B-Instruct"
-        - name: INFERENCE_ENGINE
-          value: "vllm"
-        - name: TENSOR_PARALLEL_SIZE
-          value: "1"
-        - name: GPU_MEMORY_UTILIZATION
-          value: "0.9"
-        - name: MAX_MODEL_LEN
-          value: "8192"
-        - name: DTYPE
-          value: "auto"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-credentials
+              key: token
         resources:
           requests:
             nvidia.com/gpu: 1
