@@ -22,7 +22,7 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   async rewrites() {
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://multi-agent-backend:8000';
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000';
     return [
       {
         source: '/api/:path*',
