@@ -20,6 +20,7 @@ metadata:
     managed-by: kaito
 spec:
   replicas: 1
+  progressDeadlineSeconds: 900  # 15 minutes for model loading + health check delay
   selector:
     matchLabels:
       workspace: gpt-oss-120b
