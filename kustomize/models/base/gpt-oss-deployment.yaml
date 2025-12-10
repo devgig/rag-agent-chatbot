@@ -54,6 +54,8 @@ spec:
         - containerPort: 8000
           name: http
         env:
+        - name: VLLM_USE_V1
+          value: "0"
         - name: HF_TOKEN
           valueFrom:
             secretKeyRef:
