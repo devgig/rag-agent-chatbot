@@ -28,16 +28,10 @@ spec:
         component: embedding-service
     spec:
       nodeSelector:
-        nvidia.com/gpu.present: "true"  # Deploy on GPU node (spark-7eb5)
-      tolerations:
-      - key: nvidia.com/gpu
-        operator: Equal
-        value: present
-        effect: NoSchedule
+        node-type: storage  # Deploy on storage nodes (CPU-only)
       containers:
       - name: llama-cpp-server
-        image: dustynv/llama_cpp:r36.4.0
-        command: ["llama-server"]
+        image: ghcr.io/ggerganov/llama.cpp:server
         args:
         - "-m"
         - "/models/Qwen3-Embedding-4B-Q8_0.gguf"
@@ -46,7 +40,7 @@ spec:
         - "--host"
         - "0.0.0.0"
         - "-ngl"
-        - "33"  # Offload all layers to GPU
+        - "0"  # CPU-only inference (no GPU offloading)
         - "--embeddings"  # Enable embeddings mode
         ports:
         - containerPort: 8000
@@ -62,11 +56,9 @@ spec:
           requests:
             cpu: "500m"
             memory: "2Gi"
-            nvidia.com/gpu: "1"  # Request GPU for NVIDIA container runtime
           limits:
             cpu: "4"
-            memory: "6Gi"
-            nvidia.com/gpu: "1"
+            memory: "4Gi"  # Reduced since CPU-only doesn't need as much memory
         livenessProbe:
           httpGet:
             path: /health
