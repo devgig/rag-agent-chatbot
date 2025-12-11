@@ -28,23 +28,26 @@ spec:
         component: embedding-service
     spec:
       nodeSelector:
-        node-type: storage  # Target storage nodes with more resources
+        nvidia.com/gpu.present: "true"  # Deploy on GPU node (spark-7eb5)
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: present
+        effect: NoSchedule
       containers:
       - name: llama-cpp-server
-        image: ghcr.io/abetlen/llama-cpp-python:latest
-        command: ["python3", "-m", "llama_cpp.server"]
+        image: dustynv/llama_cpp:r36.4.0
+        command: ["llama-server"]
         args:
-        - "--model"
+        - "-m"
         - "/models/Qwen3-Embedding-4B-Q8_0.gguf"
-        - "--host"
-        - "0.0.0.0"
         - "--port"
         - "8000"
-        - "--n_gpu_layers"
-        - "0"  # Run on CPU (no GPU offloading)
-        - "--embedding"  # Enable embeddings mode
-        - "--n_threads"
-        - "4"  # Use 4 CPU threads
+        - "--host"
+        - "0.0.0.0"
+        - "-ngl"
+        - "33"  # Offload all layers to GPU
+        - "--embeddings"  # Enable embeddings mode
         ports:
         - containerPort: 8000
           name: http
