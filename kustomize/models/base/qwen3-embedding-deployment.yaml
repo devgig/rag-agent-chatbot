@@ -31,7 +31,7 @@ spec:
         node-type: storage  # Target storage nodes with more resources
       containers:
       - name: llama-cpp-server
-        image: ghcr.io/ggerganov/llama.cpp:server-cuda
+        image: ghcr.io/ggerganov/llama.cpp:server
         command: ["/llama-server"]
         args:
         - "-m"
