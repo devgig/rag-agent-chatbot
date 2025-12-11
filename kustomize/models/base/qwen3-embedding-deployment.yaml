@@ -31,7 +31,8 @@ spec:
         node-type: storage  # Target storage nodes with more resources
       containers:
       - name: llama-cpp-server
-        image: ghcr.io/ggml-org/llama.cpp:server
+        image: dustynv/llama_cpp:r36.4.0
+        command: ["llama-server"]
         args:
         - "-m"
         - "/models/Qwen3-Embedding-4B-Q8_0.gguf"
