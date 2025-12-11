@@ -32,7 +32,6 @@ spec:
       containers:
       - name: llama-cpp-server
         image: ghcr.io/ggml-org/llama.cpp:server
-        command: ["/llama-server"]
         args:
         - "-m"
         - "/models/Qwen3-Embedding-4B-Q8_0.gguf"
