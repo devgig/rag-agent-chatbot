@@ -62,9 +62,11 @@ spec:
           requests:
             cpu: "500m"
             memory: "2Gi"
+            nvidia.com/gpu: "1"  # Request GPU for NVIDIA container runtime
           limits:
             cpu: "4"
             memory: "6Gi"
+            nvidia.com/gpu: "1"
         livenessProbe:
           httpGet:
             path: /health
