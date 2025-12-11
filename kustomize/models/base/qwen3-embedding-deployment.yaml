@@ -31,19 +31,19 @@ spec:
         node-type: storage  # Target storage nodes with more resources
       containers:
       - name: llama-cpp-server
-        image: dustynv/llama_cpp:r36.4.0
-        command: ["llama-server"]
+        image: ghcr.io/abetlen/llama-cpp-python:latest
+        command: ["python3", "-m", "llama_cpp.server"]
         args:
-        - "-m"
+        - "--model"
         - "/models/Qwen3-Embedding-4B-Q8_0.gguf"
-        - "--port"
-        - "8000"
         - "--host"
         - "0.0.0.0"
-        - "-ngl"
+        - "--port"
+        - "8000"
+        - "--n_gpu_layers"
         - "0"  # Run on CPU (no GPU offloading)
-        - "--embeddings"  # Enable embeddings mode
-        - "-t"
+        - "--embedding"  # Enable embeddings mode
+        - "--n_threads"
         - "4"  # Use 4 CPU threads
         ports:
         - containerPort: 8000
