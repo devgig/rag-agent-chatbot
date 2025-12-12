@@ -44,7 +44,7 @@ spec:
               name: postgres-credentials
               key: password
         - name: MILVUS_ADDRESS
-          value: "http://milvus.milvus-system.svc.cluster.local:19530"
+          value: "tcp://milvus.milvus-system.svc.cluster.local:19530"
         - name: MODELS
           value: "microsoft/Phi-3.5-mini-instruct"
         resources:

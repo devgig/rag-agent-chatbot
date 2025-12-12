@@ -47,7 +47,7 @@ POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", 5432))
 POSTGRES_DB = os.getenv("POSTGRES_DB", "chatbot")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "chatbot_user")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "chatbot_password")
-MILVUS_ADDRESS = os.getenv("MILVUS_ADDRESS", "http://milvus.milvus-system.svc.cluster.local:19530")
+MILVUS_ADDRESS = os.getenv("MILVUS_ADDRESS", "tcp://milvus.milvus-system.svc.cluster.local:19530")
 
 config_manager = ConfigManager("./config.json")
 
