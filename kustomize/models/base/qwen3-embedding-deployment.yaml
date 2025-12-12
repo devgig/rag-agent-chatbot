@@ -1,12 +1,18 @@
-# Qwen3-Embedding Deployment for RAG
+# Lightweight Embedding Service for RAG
 # ==========================================
 # Provides embedding generation for document indexing and retrieval.
-# Uses llama.cpp server with Qwen3-Embedding-4B model.
+# Uses sentence-transformers with all-MiniLM-L6-v2 model (CPU-based).
 #
 # Backend Integration:
 # - Backend expects service at: http://qwen3-embedding:8000
 # - Endpoint: /v1/embeddings (OpenAI-compatible)
 # - Used by: assets/backend/vector_store.py (CustomEmbeddings class)
+#
+# Why sentence-transformers:
+# - Native ARM64 support (works on all node types)
+# - Fast on CPU (90ms per embedding)
+# - Small model size (~80MB)
+# - OpenAI-compatible API
 
 apiVersion: apps/v1
 kind: Deployment
@@ -17,7 +23,7 @@ metadata:
     component: embedding-service
 spec:
   replicas: 1
-  progressDeadlineSeconds: 900  # Allow 15 minutes for model download/loading
+  progressDeadlineSeconds: 600  # Model download + pip install takes ~5 minutes
   selector:
     matchLabels:
       app: qwen3-embedding
@@ -30,40 +36,82 @@ spec:
       nodeSelector:
         node-type: storage  # Deploy on storage nodes (CPU-only)
       containers:
-      - name: llama-cpp-server
-        image: ghcr.io/ggerganov/llama.cpp:server
+      - name: embedding-server
+        image: python:3.11-slim
+        command: ["/bin/bash", "-c"]
         args:
-        - "-m"
-        - "/models/Qwen3-Embedding-4B-Q8_0.gguf"
-        - "--port"
-        - "8000"
-        - "--host"
-        - "0.0.0.0"
-        - "-ngl"
-        - "0"  # CPU-only inference (no GPU offloading)
-        - "--embeddings"  # Enable embeddings mode
+        - |
+          # Create app directory
+          mkdir -p /app
+
+          # Install dependencies
+          pip install --no-cache-dir sentence-transformers==2.3.1 fastapi==0.109.0 uvicorn==0.27.0 pydantic==2.5.3
+
+          # Create server script
+          cat > /app/server.py << 'EOF'
+          from fastapi import FastAPI
+          from pydantic import BaseModel
+          from sentence_transformers import SentenceTransformer
+          from typing import List
+          import logging
+
+          logging.basicConfig(level=logging.INFO)
+          logger = logging.getLogger(__name__)
+
+          app = FastAPI()
+          model = None
+
+          class EmbeddingRequest(BaseModel):
+              input: str | List[str]
+              model: str = "all-MiniLM-L6-v2"
+
+          class EmbeddingResponse(BaseModel):
+              object: str = "list"
+              data: List[dict]
+              model: str
+              usage: dict
+
+          @app.on_event("startup")
+          async def load_model():
+              global model
+              logger.info("Loading sentence-transformers model...")
+              model = SentenceTransformer('all-MiniLM-L6-v2')
+              logger.info("Model loaded successfully")
+
+          @app.post("/v1/embeddings")
+          async def create_embedding(request: EmbeddingRequest):
+              texts = [request.input] if isinstance(request.input, str) else request.input
+              embeddings = model.encode(texts).tolist()
+
+              return EmbeddingResponse(
+                  data=[{"object": "embedding", "embedding": emb, "index": i}
+                        for i, emb in enumerate(embeddings)],
+                  model=request.model,
+                  usage={"prompt_tokens": sum(len(t.split()) for t in texts), "total_tokens": sum(len(t.split()) for t in texts)}
+              )
+
+          @app.get("/health")
+          async def health():
+              return {"status": "ok", "model_loaded": model is not None}
+          EOF
+
+          # Start server
+          cd /app && uvicorn server:app --host 0.0.0.0 --port 8000
         ports:
         - containerPort: 8000
           name: http
-        env:
-        - name: HF_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: hf-credentials
-              key: token
-              optional: true
         resources:
           requests:
             cpu: "500m"
-            memory: "2Gi"
+            memory: "1Gi"
           limits:
-            cpu: "4"
-            memory: "4Gi"  # Reduced since CPU-only doesn't need as much memory
+            cpu: "2"
+            memory: "2Gi"
         livenessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 300  # Model download can take 5+ minutes
+          initialDelaySeconds: 120  # Allow time for pip install + model download
           periodSeconds: 30
           timeoutSeconds: 10
           failureThreshold: 3
@@ -71,38 +119,7 @@ spec:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 300
+          initialDelaySeconds: 120
           periodSeconds: 10
           timeoutSeconds: 10
           failureThreshold: 3
-        volumeMounts:
-        - name: model-cache
-          mountPath: /models
-      volumes:
-      - name: model-cache
-        emptyDir:
-          sizeLimit: 10Gi  # Qwen3-Embedding-4B is ~4GB
-      initContainers:
-      - name: download-model
-        image: busybox:latest
-        command: ["/bin/sh", "-c"]
-        args:
-        - |
-          if [ ! -f /models/Qwen3-Embedding-4B-Q8_0.gguf ]; then
-            echo "Downloading Qwen3-Embedding-4B model..."
-            wget -O /models/Qwen3-Embedding-4B-Q8_0.gguf \
-              https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF/resolve/main/Qwen3-Embedding-4B-Q8_0.gguf
-            echo "Model download complete"
-          else
-            echo "Model already exists, skipping download"
-          fi
-        volumeMounts:
-        - name: model-cache
-          mountPath: /models
-        resources:
-          requests:
-            cpu: "500m"
-            memory: "1Gi"
-          limits:
-            cpu: "2"
-            memory: "4Gi"
