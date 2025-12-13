@@ -195,19 +195,15 @@ class VectorStore:
                     for doc in docs:
                         if not doc.metadata:
                             doc.metadata = {}
-                        
+
+                        # Only include metadata fields that are in the Milvus schema
+                        # The 'context' collection has dynamic fields disabled and only accepts:
+                        # source, file_path, filename
                         cleaned_metadata = {}
                         cleaned_metadata["source"] = source_name
                         cleaned_metadata["file_path"] = file_path
                         cleaned_metadata["filename"] = os.path.basename(file_path)
-                        
-                        for key, value in doc.metadata.items():
-                            if key not in ["source", "file_path"]:
-                                if isinstance(value, (list, dict, set)):
-                                    cleaned_metadata[key] = str(value)
-                                elif value is not None:
-                                    cleaned_metadata[key] = str(value)
-                        
+
                         doc.metadata = cleaned_metadata
                     documents.extend(docs)
                     logger.debug({
