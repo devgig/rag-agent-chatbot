@@ -232,7 +232,10 @@ export default function QuerySection({
         }
 
         // Connect directly to backend WebSocket (not through Next.js proxy)
-        const backendHttpUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        const backendHttpUrl = process.env.NEXT_PUBLIC_API_URL ||
+          (typeof window !== 'undefined'
+            ? `${window.location.protocol}//${window.location.hostname}:8000`
+            : 'http://localhost:8000');
         const backendWsUrl = process.env.NEXT_PUBLIC_WS_URL ||
           backendHttpUrl.replace(/^http/, 'ws');
 
