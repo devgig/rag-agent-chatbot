@@ -231,13 +231,9 @@ export default function QuerySection({
           wsRef.current.close();
         }
 
-        // Connect directly to backend WebSocket (not through Next.js proxy)
-        const backendHttpUrl = process.env.NEXT_PUBLIC_API_URL ||
-          (typeof window !== 'undefined'
-            ? `${window.location.protocol}//${window.location.hostname}:8000`
-            : 'http://localhost:8000');
-        const backendWsUrl = process.env.NEXT_PUBLIC_WS_URL ||
-          backendHttpUrl.replace(/^http/, 'ws');
+        // Connect directly to backend WebSocket (WebSocket proxying not supported in Next.js App Router)
+        // Backend LoadBalancer: 192.168.71.206:8000
+        const backendWsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://192.168.71.206:8000';
 
         const ws = new WebSocket(`${backendWsUrl}/ws/chat/${currentChatId}`);
         wsRef.current = ws;

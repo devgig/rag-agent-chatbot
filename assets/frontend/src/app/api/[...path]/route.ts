@@ -16,7 +16,8 @@
 */
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000';
+// Backend LoadBalancer IP (from kubectl get svc)
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://192.168.71.206:8000';
 
 export async function GET(
   request: NextRequest,
@@ -55,14 +56,29 @@ export async function POST(
   const url = `${BACKEND_URL}/${path}${request.nextUrl.search}`;
 
   try {
-    const body = await request.json().catch(() => null);
+    const contentType = request.headers.get('content-type') || '';
+    let body: BodyInit | null = null;
+    let headers: HeadersInit = {};
+
+    // Handle multipart/form-data (file uploads)
+    if (contentType.includes('multipart/form-data')) {
+      // Get the FormData from the request
+      const formData = await request.formData();
+      body = formData as any; // FormData is a valid BodyInit
+      // Don't set Content-Type header - fetch will set it with the boundary
+    } else {
+      // Handle JSON requests
+      const jsonBody = await request.json().catch(() => null);
+      if (jsonBody) {
+        body = JSON.stringify(jsonBody);
+        headers = { 'Content-Type': 'application/json' };
+      }
+    }
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: body ? JSON.stringify(body) : undefined,
+      headers,
+      body: body || undefined,
       cache: 'no-store',
     });
 
