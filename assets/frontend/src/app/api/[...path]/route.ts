@@ -36,12 +36,24 @@ export async function GET(
       cache: 'no-store',
     });
 
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    // Check if response is JSON before parsing
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      const data = await response.json();
+      return NextResponse.json(data, { status: response.status });
+    } else {
+      // Return text response for non-JSON
+      const text = await response.text();
+      console.error(`Non-JSON response from backend GET /${path}: ${text}`);
+      return NextResponse.json(
+        { error: 'Backend returned non-JSON response', details: text },
+        { status: response.status }
+      );
+    }
   } catch (error) {
     console.error(`Error proxying GET /${path}:`, error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: String(error) },
       { status: 500 }
     );
   }
@@ -82,12 +94,24 @@ export async function POST(
       cache: 'no-store',
     });
 
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    // Check if response is JSON before parsing
+    const responseContentType = response.headers.get('content-type');
+    if (responseContentType && responseContentType.includes('application/json')) {
+      const data = await response.json();
+      return NextResponse.json(data, { status: response.status });
+    } else {
+      // Return text response for non-JSON
+      const text = await response.text();
+      console.error(`Non-JSON response from backend POST /${path}: ${text}`);
+      return NextResponse.json(
+        { error: 'Backend returned non-JSON response', details: text },
+        { status: response.status }
+      );
+    }
   } catch (error) {
     console.error(`Error proxying POST /${path}:`, error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: String(error) },
       { status: 500 }
     );
   }
@@ -110,12 +134,24 @@ export async function DELETE(
       cache: 'no-store',
     });
 
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
+    // Check if response is JSON before parsing
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      const data = await response.json();
+      return NextResponse.json(data, { status: response.status });
+    } else {
+      // Return text response for non-JSON
+      const text = await response.text();
+      console.error(`Non-JSON response from backend DELETE /${path}: ${text}`);
+      return NextResponse.json(
+        { error: 'Backend returned non-JSON response', details: text },
+        { status: response.status }
+      );
+    }
   } catch (error) {
     console.error(`Error proxying DELETE /${path}:`, error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: String(error) },
       { status: 500 }
     );
   }
