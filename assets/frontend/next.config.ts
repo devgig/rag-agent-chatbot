@@ -21,6 +21,9 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  httpAgentOptions: {
+    keepAlive: false,
+  },
   async rewrites() {
     const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000';
     return [
