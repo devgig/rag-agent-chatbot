@@ -231,11 +231,10 @@ export default function QuerySection({
           wsRef.current.close();
         }
 
-        // Use environment variable or construct from window location
+        // Connect directly to backend WebSocket (not through Next.js proxy)
+        const backendHttpUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
         const backendWsUrl = process.env.NEXT_PUBLIC_WS_URL ||
-          (typeof window !== 'undefined'
-            ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api`
-            : 'ws://localhost:8000');
+          backendHttpUrl.replace(/^http/, 'ws');
 
         const ws = new WebSocket(`${backendWsUrl}/ws/chat/${currentChatId}`);
         wsRef.current = ws;
@@ -432,7 +431,7 @@ export default function QuerySection({
   const handleQuerySubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const currentQuery = query.trim();
-    if (!currentQuery || isStreaming || !wsRef.current) return;
+    if (!currentQuery || isStreaming || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
     setQuery("");
     setIsStreaming(true);

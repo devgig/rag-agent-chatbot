@@ -51,15 +51,17 @@ export default function DocumentIngestion({
     e.preventDefault();
     setIsIngesting(true);
     setIngestMessage("");
-    
+
     try {
       if (files && files.length > 0) {
         const formData = new FormData();
         for (let i = 0; i < files.length; i++) {
           formData.append("files", files[i]);
         }
-        
-        const res = await fetch("/api/ingest", {
+
+        // Send directly to backend (bypass Next.js proxy for file uploads)
+        const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        const res = await fetch(`${backendUrl}/ingest`, {
           method: "POST",
           body: formData,
         });
