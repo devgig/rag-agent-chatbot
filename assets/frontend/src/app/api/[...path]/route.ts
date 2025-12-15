@@ -16,8 +16,11 @@
 */
 import { NextRequest, NextResponse } from 'next/server';
 
-// Backend LoadBalancer IP (from kubectl get svc)
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://192.168.71.206:8000';
+// Backend service URL - use internal Kubernetes service name for server-side requests
+// The frontend pod can reach the backend via the internal service name
+const BACKEND_URL = process.env.BACKEND_URL ||
+                    process.env.NEXT_PUBLIC_API_URL ||
+                    'http://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000';
 
 export async function GET(
   request: NextRequest,
