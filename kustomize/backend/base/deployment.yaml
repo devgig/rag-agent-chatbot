@@ -46,7 +46,7 @@ spec:
         - name: MILVUS_ADDRESS
           value: "tcp://milvus.milvus-system.svc.cluster.local:19530"
         - name: MODELS
-          value: "microsoft/Phi-3.5-mini-instruct"
+          value: "gpt-oss-120b"
         resources:
           requests:
             cpu: "500m"
