@@ -28,14 +28,14 @@ from vector_store import VectorStore
 
 
 async def process_and_ingest_files_background(
-    file_info: List[dict], 
-    vector_store: VectorStore, 
-    config_manager, 
-    task_id: str, 
+    file_info: List[dict],
+    vector_store: VectorStore,
+    config_manager,
+    task_id: str,
     indexing_tasks: Dict[str, str]
 ) -> None:
     """Process and ingest files in the background.
-    
+
     Args:
         file_info: List of file dictionaries with 'filename' and 'content' keys
         vector_store: VectorStore instance for document indexing
@@ -49,10 +49,11 @@ async def process_and_ingest_files_background(
             "task_id": task_id,
             "file_count": len(file_info)
         })
-        
+
         indexing_tasks[task_id] = "saving_files"
-        
-        permanent_dir = os.path.join("uploads", task_id)
+
+        uploads_base = os.getenv("UPLOADS_DIR", "uploads")
+        permanent_dir = os.path.join(uploads_base, task_id)
         os.makedirs(permanent_dir, exist_ok=True)
         
         file_paths = []
