@@ -168,7 +168,7 @@ export default function Sidebar({
   // Add function to fetch chat metadata
   const fetchChatMetadata = useCallback(async (chatId: string) => {
     try {
-      const response = await fetch(`/api/chat/${chatId}/metadata`);
+      const response = await fetch(getApiUrl(`/chat/${chatId}/metadata`));
       if (response.ok) {
         const metadata = await response.json();
         setChatMetadata(prev => ({
@@ -349,7 +349,7 @@ export default function Sidebar({
   const handleDeleteChat = async (chatId: string) => {
     try {
       // Delete the chat
-      const response = await fetch(`/api/chat/${chatId}`, {
+      const response = await fetch(getApiUrl(`/chat/${chatId}`), {
         method: "DELETE"
       });
 

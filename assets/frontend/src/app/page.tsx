@@ -53,7 +53,7 @@ export default function Home() {
   // Handle chat changes
   const handleChatChange = async (newChatId: string) => {
     try {
-      const response = await fetch("/api/chat_id", {
+      const response = await fetch(getApiUrl("/chat_id"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: newChatId })
