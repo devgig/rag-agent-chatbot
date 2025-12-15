@@ -104,6 +104,7 @@ stages:
           command: buildAndPush
           dockerfile: $(dockerfilePath)
           buildContext: '$(Build.SourcesDirectory)/assets/frontend'
+          arguments: '--build-arg NEXT_PUBLIC_API_URL=http://backend.bytecourier.local:8000 --build-arg NEXT_PUBLIC_WS_URL=ws://backend.bytecourier.local:8000'
           tags: |
             $(tag)
             latest
