@@ -20,6 +20,7 @@ import QuerySection from '@/components/QuerySection';
 import DocumentIngestion from '@/components/DocumentIngestion';
 import Sidebar from '@/components/Sidebar';
 import styles from '@/styles/Home.module.css';
+import { getApiUrl } from '@/lib/api';
 
 export default function Home() {
   const [query, setQuery] = useState("");
@@ -37,7 +38,7 @@ export default function Home() {
   useEffect(() => {
     const fetchCurrentChatId = async () => {
       try {
-        const response = await fetch("/api/chat_id");
+        const response = await fetch(getApiUrl("/chat_id"));
         if (response.ok) {
           const { chat_id } = await response.json();
           setCurrentChatId(chat_id);

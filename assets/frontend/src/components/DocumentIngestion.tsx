@@ -16,6 +16,7 @@
 */
 import { HTMLAttributes } from 'react';
 import styles from '@/styles/DocumentIngestion.module.css';
+import { getApiUrl } from '@/lib/api';
 
 declare module 'react' {
   interface InputHTMLAttributes<T> extends HTMLAttributes<T> {
@@ -59,8 +60,8 @@ export default function DocumentIngestion({
           formData.append("files", files[i]);
         }
 
-        // Send through Next.js proxy
-        const res = await fetch("/api/ingest", {
+        // Send directly to backend via external DNS
+        const res = await fetch(getApiUrl("/ingest"), {
           method: "POST",
           body: formData,
         });

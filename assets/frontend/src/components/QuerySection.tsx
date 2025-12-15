@@ -22,6 +22,7 @@ import remarkGfm from 'remark-gfm'; // NEW
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"; // NEW
 import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism"; // NEW
 import WelcomeSection from "./WelcomeSection";
+import { getApiUrl } from "@/lib/api";
 
 export function makeChatTheme(isDark: boolean) {
   const base = isDark ? oneDark : oneLight;
@@ -210,7 +211,7 @@ export default function QuerySection({
   useEffect(() => {
     const fetchSelectedSources = async () => {
       try {
-        const response = await fetch("/api/selected_sources");
+        const response = await fetch(getApiUrl("/selected_sources"));
         if (response.ok) {
           const { sources } = await response.json();
           setSelectedSources(sources);
@@ -231,9 +232,10 @@ export default function QuerySection({
           wsRef.current.close();
         }
 
-        // Connect directly to backend WebSocket (WebSocket proxying not supported in Next.js App Router)
-        // Backend LoadBalancer: 192.168.71.206:8000
-        const backendWsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://192.168.71.206:8000';
+        // Connect directly to backend WebSocket via external DNS
+        const backendWsUrl = process.env.NEXT_PUBLIC_WS_URL ||
+          (typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:') +
+          '//backend.bytecourier.local:8000';
 
         const ws = new WebSocket(`${backendWsUrl}/ws/chat/${currentChatId}`);
         wsRef.current = ws;

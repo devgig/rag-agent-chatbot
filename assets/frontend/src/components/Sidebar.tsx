@@ -16,6 +16,7 @@
 */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import styles from '@/styles/Sidebar.module.css';
+import { getApiUrl } from '@/lib/api';
 
 interface Model {
   id: string;
@@ -66,14 +67,14 @@ export default function Sidebar({
         setIsLoading(true);
         
         // Get selected model
-        const modelResponse = await fetch("/api/selected_model");
+        const modelResponse = await fetch(getApiUrl("/selected_model"));
         if (modelResponse.ok) {
           const { model } = await modelResponse.json();
           setSelectedModel(model);
         }
 
         // Get selected sources
-        const sourcesResponse = await fetch("/api/selected_sources");
+        const sourcesResponse = await fetch(getApiUrl("/selected_sources"));
         if (sourcesResponse.ok) {
           const { sources } = await sourcesResponse.json();
           setSelectedSources(sources);
@@ -104,7 +105,7 @@ export default function Sidebar({
   const fetchAvailableModels = async () => {
     try {
       setIsLoadingModels(true);
-      const response = await fetch("/api/available_models");
+      const response = await fetch(getApiUrl("/available_models"));
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -130,7 +131,7 @@ export default function Sidebar({
     try {
       setIsLoadingSources(true);
       console.log("Fetching sources...");
-      const response = await fetch("/api/sources");
+      const response = await fetch(getApiUrl("/sources"));
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -185,7 +186,7 @@ export default function Sidebar({
     try {
       console.log("fetchChats: Starting to fetch chats...");
       setIsLoadingChats(true);
-      const response = await fetch("/api/chats");
+      const response = await fetch(getApiUrl("/chats"));
       if (response.ok) {
         const data = await response.json();
         console.log("fetchChats: Received chats:", data.chats);
@@ -290,7 +291,7 @@ export default function Sidebar({
     setSelectedSources(newSelectedSources);
     
     try {
-      const response = await fetch("/api/selected_sources", {
+      const response = await fetch(getApiUrl("/selected_sources"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newSelectedSources)
@@ -326,7 +327,7 @@ export default function Sidebar({
     const newName = prompt("Enter new chat name:", currentName);
     if (newName && newName.trim() && newName !== currentName) {
       try {
-        const response = await fetch("/api/chat/rename", {
+        const response = await fetch(getApiUrl("/chat/rename"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat_id: chatId, new_name: newName.trim() })
@@ -363,7 +364,7 @@ export default function Sidebar({
       // If we deleted the current chat
       if (currentChatId === chatId) {
         // Get updated list of chats
-        const chatsResponse = await fetch("/api/chats");
+        const chatsResponse = await fetch(getApiUrl("/chats"));
         const { chats: remainingChats } = await chatsResponse.json();
 
         if (remainingChats.length > 0) {
@@ -384,7 +385,7 @@ export default function Sidebar({
       console.log("handleNewChat: Starting new chat creation...");
       
       // Create new chat using backend endpoint
-      const response = await fetch("/api/chat/new", {
+      const response = await fetch(getApiUrl("/chat/new"), {
         method: "POST"
       });
       
@@ -436,7 +437,7 @@ export default function Sidebar({
     }
 
     try {
-      const response = await fetch("/api/chats/clear", {
+      const response = await fetch(getApiUrl("/chats/clear"), {
         method: "DELETE"
       });
 
@@ -474,7 +475,7 @@ export default function Sidebar({
     try {
       console.log("Updating selected model to:", newModel);
       
-      const response = await fetch("/api/selected_model", {
+      const response = await fetch(getApiUrl("/selected_model"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: newModel })
