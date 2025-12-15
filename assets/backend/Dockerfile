@@ -40,18 +40,17 @@ FROM python:3.12-slim AS runner
 
 WORKDIR /app
 
+# Create non-root user first (before copying files)
+# Using UID 1001 (regular user) without --system flag
+RUN useradd --uid 1001 --create-home appuser
+
 # Copy uv from builder
 COPY --from=builder /root/.local /root/.local
 ENV PATH="/root/.local/bin:$PATH"
 
-# Copy installed dependencies and application
-COPY --from=builder /app/.venv /app/.venv
-COPY . .
-
-# Create non-root user with home directory
-# Using UID 1001 (regular user) without --system flag to avoid warning
-RUN useradd --uid 1001 --create-home appuser && \
-    chown -R appuser:appuser /app
+# Copy installed dependencies and application with correct ownership
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
+COPY --chown=appuser:appuser . .
 
 USER appuser
 
