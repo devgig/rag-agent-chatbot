@@ -9,6 +9,7 @@ namespace: multi-agent-dev
 resources:
   - namespace.yaml
   - ../../base
+  - build-config.yaml
 
 labels:
 - includeSelectors: false
@@ -18,3 +19,16 @@ labels:
 replicas:
   - name: multi-agent-frontend
     count: 1
+
+# Patch deployment to use external DNS environment variables
+patches:
+  - target:
+      kind: Deployment
+      name: multi-agent-frontend
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "http://backend.bytecourier.local:8000"
+      - op: replace
+        path: /spec/template/spec/containers/0/env/1/value
+        value: "ws://backend.bytecourier.local:8000"
