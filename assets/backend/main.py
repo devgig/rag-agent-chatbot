@@ -48,8 +48,9 @@ POSTGRES_DB = os.getenv("POSTGRES_DB", "chatbot")
 POSTGRES_USER = os.getenv("POSTGRES_USER", "chatbot_user")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "chatbot_password")
 MILVUS_ADDRESS = os.getenv("MILVUS_ADDRESS", "tcp://milvus.milvus-system.svc.cluster.local:19530")
+CONFIG_PATH = os.getenv("CONFIG_PATH", "./config.json")
 
-config_manager = ConfigManager("./config.json")
+config_manager = ConfigManager(CONFIG_PATH)
 
 postgres_storage = PostgreSQLConversationStorage(
     host=POSTGRES_HOST,

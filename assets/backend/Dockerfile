@@ -52,7 +52,13 @@ ENV PATH="/root/.local/bin:$PATH"
 COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 COPY --chown=appuser:appuser . .
 
+# Create writable directory for runtime config and set ownership
+RUN mkdir -p /app/data && chown appuser:appuser /app/data
+
 USER appuser
+
+# Use /app/data for writable config file
+ENV CONFIG_PATH=/app/data/config.json
 
 EXPOSE 8000
 
