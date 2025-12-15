@@ -16,6 +16,7 @@
 #
 import json
 import logging
+import os
 import sys
 import traceback
 from datetime import datetime
@@ -101,7 +102,9 @@ def setup_logger(name: str = 'backend',
     
     return logger
 
-logger = setup_logger()
+# Use environment variable to control file logging (default to None for containerized environments)
+log_file_path = os.getenv('LOG_FILE_PATH', None)
+logger = setup_logger(log_file=log_file_path)
 
 
 def log_request(request_data: Dict[str, Any], endpoint: str) -> None:
