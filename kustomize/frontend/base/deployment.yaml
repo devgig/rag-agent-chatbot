@@ -24,10 +24,10 @@ spec:
         - containerPort: 3000
           name: http
         env:
-        - name: NEXT_PUBLIC_API_URL
-          value: "http://backend.bytecourier.local:8000"
-        - name: NEXT_PUBLIC_WS_URL
-          value: "ws://backend.bytecourier.local:8000"
+        - name: BACKEND_URL
+          value: "http://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000"
+        - name: BACKEND_WS_URL
+          value: "ws://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000"
         resources:
           requests:
             cpu: "200m"

@@ -20,14 +20,6 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Accept build arguments for Next.js public environment variables
-ARG NEXT_PUBLIC_API_URL
-ARG NEXT_PUBLIC_WS_URL
-
-# Set as environment variables for the build process
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
-
 # Copy package files
 COPY package.json package-lock.json* ./
 
@@ -58,9 +50,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
+# Copy custom server with WebSocket proxy support
+COPY --from=builder --chown=nextjs:nodejs /app/server.js ./server.js
+
 USER nextjs
 
 EXPOSE 3000
 
-# Run the standalone server
+# Run the custom server with WebSocket proxy
 CMD ["node", "server.js"]

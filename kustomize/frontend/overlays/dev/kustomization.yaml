@@ -9,7 +9,6 @@ namespace: multi-agent-dev
 resources:
   - namespace.yaml
   - ../../base
-  - build-config.yaml
 
 labels:
 - includeSelectors: false
@@ -20,7 +19,7 @@ replicas:
   - name: multi-agent-frontend
     count: 1
 
-# Patch deployment to use external DNS environment variables
+# Patch deployment to use internal Kubernetes service names for backend
 patches:
   - target:
       kind: Deployment
@@ -28,7 +27,7 @@ patches:
     patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/env/0/value
-        value: "http://backend.bytecourier.local:8000"
+        value: "http://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000"
       - op: replace
         path: /spec/template/spec/containers/0/env/1/value
-        value: "ws://backend.bytecourier.local:8000"
+        value: "ws://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000"

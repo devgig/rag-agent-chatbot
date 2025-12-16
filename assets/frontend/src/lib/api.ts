@@ -17,21 +17,44 @@
 
 /**
  * Get the backend API base URL
- * Uses external DNS name for direct backend access
+ * Uses Next.js API proxy routes for backend access
  */
 export function getBackendUrl(): string {
-  // Use environment variable if set, otherwise use external DNS
-  return process.env.NEXT_PUBLIC_API_URL || 'http://backend.bytecourier.local:8000';
+  // Use /api prefix to proxy through Next.js server
+  return '/api';
 }
 
 /**
  * Construct full API URL from a path
  * @param path - API path (e.g., '/sources', '/chats')
- * @returns Full URL to backend API
+ * @returns Full URL to proxied backend API
  */
 export function getApiUrl(path: string): string {
   const backendUrl = getBackendUrl();
   // Ensure path starts with /
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   return `${backendUrl}${normalizedPath}`;
+}
+
+/**
+ * Get WebSocket URL for real-time communication
+ * @param path - WebSocket path (e.g., '/ws/chat/123')
+ * @returns WebSocket URL
+ */
+export function getWebSocketUrl(path: string): string {
+  // Determine WebSocket protocol based on current page protocol
+  const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:'
+    ? 'wss:'
+    : 'ws:';
+
+  // Get the current host
+  const host = typeof window !== 'undefined'
+    ? window.location.host
+    : 'localhost:3000';
+
+  // Ensure path starts with /
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+  // Return WebSocket URL through /api/ws proxy
+  return `${protocol}//${host}/api${normalizedPath}`;
 }

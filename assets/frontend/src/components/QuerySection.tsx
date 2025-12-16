@@ -22,7 +22,7 @@ import remarkGfm from 'remark-gfm'; // NEW
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"; // NEW
 import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism"; // NEW
 import WelcomeSection from "./WelcomeSection";
-import { getApiUrl } from "@/lib/api";
+import { getApiUrl, getWebSocketUrl } from "@/lib/api";
 
 export function makeChatTheme(isDark: boolean) {
   const base = isDark ? oneDark : oneLight;
@@ -232,12 +232,9 @@ export default function QuerySection({
           wsRef.current.close();
         }
 
-        // Connect directly to backend WebSocket via external DNS
-        const backendWsUrl = process.env.NEXT_PUBLIC_WS_URL ||
-          (typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:') +
-          '//backend.bytecourier.local:8000';
-
-        const ws = new WebSocket(`${backendWsUrl}/ws/chat/${currentChatId}`);
+        // Connect to backend WebSocket via Next.js proxy
+        const wsUrl = getWebSocketUrl(`/ws/chat/${currentChatId}`);
+        const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onmessage = (event) => {
