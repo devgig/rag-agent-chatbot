@@ -57,59 +57,65 @@ app.prepare().then(() => {
 
       console.log(`[WebSocket] Proxying ${pathname} to ${backendUrl}`);
 
-      // Create connection to backend
-      const backendWs = new WebSocket(backendUrl);
+      // Accept the client connection IMMEDIATELY to prevent timeout
+      wss.handleUpgrade(request, socket, head, (clientWs) => {
+        console.log('[WebSocket] Client connection accepted');
 
-      // Handle backend connection
-      backendWs.on('open', () => {
-        console.log(`[WebSocket] Connected to backend: ${backendUrl}`);
+        // Now create connection to backend
+        const backendWs = new WebSocket(backendUrl);
+        let backendConnected = false;
 
-        // Accept the client connection
-        wss.handleUpgrade(request, socket, head, (clientWs) => {
-          // Proxy messages from client to backend
-          clientWs.on('message', (message) => {
-            if (backendWs.readyState === WebSocket.OPEN) {
-              backendWs.send(message);
-            }
-          });
-
-          // Proxy messages from backend to client
-          backendWs.on('message', (message) => {
-            if (clientWs.readyState === WebSocket.OPEN) {
-              clientWs.send(message);
-            }
-          });
-
-          // Handle client close
-          clientWs.on('close', (code, reason) => {
-            console.log(`[WebSocket] Client closed: ${code} ${reason}`);
-            backendWs.close();
-          });
-
-          // Handle client error
-          clientWs.on('error', (error) => {
-            console.error('[WebSocket] Client error:', error);
-            backendWs.close();
-          });
-
-          // Handle backend close
-          backendWs.on('close', (code, reason) => {
-            console.log(`[WebSocket] Backend closed: ${code} ${reason}`);
-            clientWs.close();
-          });
-
-          // Handle backend error
-          backendWs.on('error', (error) => {
-            console.error('[WebSocket] Backend error:', error);
-            clientWs.close();
-          });
+        // Handle backend connection open
+        backendWs.on('open', () => {
+          backendConnected = true;
+          console.log(`[WebSocket] Connected to backend: ${backendUrl}`);
         });
-      });
 
-      // Handle backend connection errors
-      backendWs.on('error', (error) => {
-        console.error('[WebSocket] Failed to connect to backend:', error);
-        socket.destroy();
+        // Proxy messages from client to backend
+        clientWs.on('message', (message) => {
+          if (backendWs.readyState === WebSocket.OPEN) {
+            backendWs.send(message);
+          }
+        });
+
+        // Proxy messages from backend to client
+        backendWs.on('message', (message) => {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(message);
+          }
+        });
+
+        // Handle client close
+        clientWs.on('close', (code, reason) => {
+          console.log(`[WebSocket] Client closed: ${code} ${reason}`);
+          if (backendWs.readyState === WebSocket.OPEN || backendWs.readyState === WebSocket.CONNECTING) {
+            backendWs.close();
+          }
+        });
+
+        // Handle client error
+        clientWs.on('error', (error) => {
+          console.error('[WebSocket] Client error:', error);
+          if (backendWs.readyState === WebSocket.OPEN || backendWs.readyState === WebSocket.CONNECTING) {
+            backendWs.close();
+          }
+        });
+
+        // Handle backend close
+        backendWs.on('close', (code, reason) => {
+          console.log(`[WebSocket] Backend closed: ${code} ${reason}`);
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.close();
+          }
+        });
+
+        // Handle backend error
+        backendWs.on('error', (error) => {
+          console.error('[WebSocket] Backend error:', error);
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.close(1011, 'Backend connection error');
+          }
+        });
       });
     } else {
       // Not a WebSocket upgrade request we handle
