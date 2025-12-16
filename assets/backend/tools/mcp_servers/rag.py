@@ -99,9 +99,9 @@ class RAGAgent:
 
     def _get_config_path(self):
         """Get the configuration file path and validate its existence."""
-        config_path = os.path.join(os.path.dirname(__file__), "../../config.json")
+        config_path = os.getenv("CONFIG_PATH", "./config.json")
         if not os.path.exists(config_path):
-            logger.error("ERROR: config.json not found")
+            logger.error(f"ERROR: config.json not found at {config_path}")
         return config_path
 
     def _get_generation_prompt(self) -> str:
