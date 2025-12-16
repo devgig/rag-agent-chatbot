@@ -60,10 +60,14 @@ spec:
             path: /health
             port: 8000
           initialDelaySeconds: 300
-          periodSeconds: 10
+          periodSeconds: 60
+          timeoutSeconds: 30
+          failureThreshold: 5
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
           initialDelaySeconds: 30
-          periodSeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3
