@@ -4,6 +4,7 @@ metadata:
   name: multi-agent-backend
   labels:
     app: multi-agent-backend
+    component: backend
 spec:
   replicas: 1
   strategy:
