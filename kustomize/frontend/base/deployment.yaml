@@ -20,6 +20,11 @@ spec:
       - name: frontend
         image: multi-agent-chatbot/frontend:latest
         imagePullPolicy: IfNotPresent
+        securityContext:
+          capabilities:
+            add:
+              - NET_RAW
+              - NET_ADMIN
         ports:
         - containerPort: 3000
           name: http
