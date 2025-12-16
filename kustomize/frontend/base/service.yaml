@@ -4,6 +4,8 @@ metadata:
   name: multi-agent-frontend
   labels:
     app: multi-agent-frontend
+  annotations:
+    service.cilium.io/global: "true"
 spec:
   selector:
     app: multi-agent-frontend
@@ -12,3 +14,7 @@ spec:
     targetPort: 3000
     name: http
   type: LoadBalancer
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600
