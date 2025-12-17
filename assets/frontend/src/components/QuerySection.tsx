@@ -224,6 +224,7 @@ export default function QuerySection({
   }, []);
 
   useEffect(() => {
+    console.log('[WebSocket] Effect running, currentChatId:', currentChatId);
     if (!currentChatId) return;
 
     let isEffectActive = true;
@@ -233,12 +234,14 @@ export default function QuerySection({
       try {
         // Close existing connection if any
         if (wsRef.current) {
+          console.log('[WebSocket] Closing existing wsRef connection');
           wsRef.current.close();
           wsRef.current = null;
         }
 
         // Connect to backend WebSocket via Next.js proxy
         const wsUrl = getWebSocketUrl(`/ws/chat/${currentChatId}`);
+        console.log('[WebSocket] Creating new connection to:', wsUrl);
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
@@ -340,17 +343,18 @@ export default function QuerySection({
     initWebSocket();
 
     return () => {
-      console.log('[WebSocket] Cleanup - marking effect as inactive');
+      console.log('[WebSocket] Cleanup running for chatId:', currentChatId);
       isEffectActive = false;
       // Close the WebSocket if it was assigned to ref (meaning it successfully opened)
       if (wsRef.current) {
+        console.log('[WebSocket] Closing ref connection');
         wsRef.current.close();
         wsRef.current = null;
       }
-      // Also close the local ws if it exists but wasn't assigned to ref yet
-      // (connection still pending when cleanup runs)
-      if (ws && ws.readyState === WebSocket.CONNECTING) {
-        console.log('[WebSocket] Closing pending connection');
+      // Also close the local ws if it exists and wasn't assigned to ref yet
+      // This handles the case where cleanup runs before onopen fires
+      if (ws && ws !== wsRef.current) {
+        console.log('[WebSocket] Closing local ws, readyState:', ws.readyState);
         ws.close();
       }
     };
