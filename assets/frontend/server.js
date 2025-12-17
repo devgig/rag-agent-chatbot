@@ -88,16 +88,29 @@ app.prepare().then(() => {
         // Handle client close
         clientWs.on('close', (code, reason) => {
           console.log(`[WebSocket] Client closed: ${code} ${reason}`);
-          if (backendWs.readyState === WebSocket.OPEN || backendWs.readyState === WebSocket.CONNECTING) {
-            backendWs.close();
+          try {
+            if (backendWs.readyState === WebSocket.OPEN) {
+              backendWs.close();
+            } else if (backendWs.readyState === WebSocket.CONNECTING) {
+              // Can't close a CONNECTING WebSocket cleanly, terminate it
+              backendWs.terminate();
+            }
+          } catch (err) {
+            console.log('[WebSocket] Error closing backend connection:', err.message);
           }
         });
 
         // Handle client error
         clientWs.on('error', (error) => {
           console.error('[WebSocket] Client error:', error);
-          if (backendWs.readyState === WebSocket.OPEN || backendWs.readyState === WebSocket.CONNECTING) {
-            backendWs.close();
+          try {
+            if (backendWs.readyState === WebSocket.OPEN) {
+              backendWs.close();
+            } else if (backendWs.readyState === WebSocket.CONNECTING) {
+              backendWs.terminate();
+            }
+          } catch (err) {
+            console.log('[WebSocket] Error closing backend connection:', err.message);
           }
         });
 

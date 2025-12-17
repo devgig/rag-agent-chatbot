@@ -224,18 +224,33 @@ export default function QuerySection({
   }, []);
 
   useEffect(() => {
-    const initWebSocket = async () => {
-      if (!currentChatId) return;
+    if (!currentChatId) return;
 
+    let isEffectActive = true;
+    let ws: WebSocket | null = null;
+
+    const initWebSocket = () => {
       try {
+        // Close existing connection if any
         if (wsRef.current) {
           wsRef.current.close();
+          wsRef.current = null;
         }
 
         // Connect to backend WebSocket via Next.js proxy
         const wsUrl = getWebSocketUrl(`/ws/chat/${currentChatId}`);
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          if (isEffectActive && ws) {
+            console.log('[WebSocket] Connection opened');
+            wsRef.current = ws;
+          } else if (ws) {
+            // Effect was cleaned up before connection opened, close this WebSocket
+            console.log('[WebSocket] Closing stale connection');
+            ws.close();
+          }
+        };
 
         ws.onmessage = (event) => {
           const msg = JSON.parse(event.data);
@@ -305,12 +320,16 @@ export default function QuerySection({
 
         ws.onclose = () => {
           console.log("WebSocket connection closed");
-          setIsStreaming(false);
+          if (isEffectActive) {
+            setIsStreaming(false);
+          }
         };
 
         ws.onerror = (error) => {
           console.error("WebSocket error:", error);
-          setIsStreaming(false);
+          if (isEffectActive) {
+            setIsStreaming(false);
+          }
         };
       } catch (error) {
         console.error("Error initializing WebSocket:", error);
@@ -321,8 +340,18 @@ export default function QuerySection({
     initWebSocket();
 
     return () => {
+      console.log('[WebSocket] Cleanup - marking effect as inactive');
+      isEffectActive = false;
+      // Close the WebSocket if it was assigned to ref (meaning it successfully opened)
       if (wsRef.current) {
         wsRef.current.close();
+        wsRef.current = null;
+      }
+      // Also close the local ws if it exists but wasn't assigned to ref yet
+      // (connection still pending when cleanup runs)
+      if (ws && ws.readyState === WebSocket.CONNECTING) {
+        console.log('[WebSocket] Closing pending connection');
+        ws.close();
       }
     };
   }, [currentChatId]);
