@@ -42,8 +42,11 @@ app.prepare().then(() => {
     }
   });
 
-  // Create WebSocket server
-  const wss = new WebSocketServer({ noServer: true });
+  // Create WebSocket server with compression disabled
+  const wss = new WebSocketServer({
+    noServer: true,
+    perMessageDeflate: false  // Disable compression to avoid potential issues
+  });
 
   // Handle WebSocket upgrade requests
   server.on('upgrade', (request, socket, head) => {
