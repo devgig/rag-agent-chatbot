@@ -59,16 +59,19 @@ app.prepare().then(() => {
 
       // Accept the client connection IMMEDIATELY to prevent timeout
       wss.handleUpgrade(request, socket, head, (clientWs) => {
-        console.log('[WebSocket] Client connection accepted');
+        const startTime = Date.now();
+        console.log(`[WebSocket] Client connection accepted at ${startTime}`);
+        console.log(`[WebSocket] Client readyState: ${clientWs.readyState}`);
 
         // Now create connection to backend
+        console.log(`[WebSocket] Starting backend connection to ${backendUrl}`);
         const backendWs = new WebSocket(backendUrl);
         let backendConnected = false;
 
         // Handle backend connection open
         backendWs.on('open', () => {
           backendConnected = true;
-          console.log(`[WebSocket] Connected to backend: ${backendUrl}`);
+          console.log(`[WebSocket] Connected to backend after ${Date.now() - startTime}ms`);
         });
 
         // Proxy messages from client to backend
@@ -87,7 +90,8 @@ app.prepare().then(() => {
 
         // Handle client close
         clientWs.on('close', (code, reason) => {
-          console.log(`[WebSocket] Client closed: ${code} ${reason}`);
+          console.log(`[WebSocket] Client closed after ${Date.now() - startTime}ms: ${code} ${reason}`);
+          console.log(`[WebSocket] Backend was connected: ${backendConnected}, backendWs.readyState: ${backendWs.readyState}`);
           try {
             if (backendWs.readyState === WebSocket.OPEN) {
               backendWs.close();
