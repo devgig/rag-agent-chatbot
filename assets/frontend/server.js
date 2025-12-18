@@ -63,6 +63,16 @@ app.prepare().then(() => {
         console.log(`[WebSocket] Client connection accepted at ${startTime}`);
         console.log(`[WebSocket] Client readyState: ${clientWs.readyState}`);
 
+        // Send immediate ping to keep connection alive
+        clientWs.ping();
+
+        // Keep connection alive with regular pings
+        const pingInterval = setInterval(() => {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.ping();
+          }
+        }, 1000);
+
         // Now create connection to backend
         console.log(`[WebSocket] Starting backend connection to ${backendUrl}`);
         const backendWs = new WebSocket(backendUrl);
@@ -90,6 +100,7 @@ app.prepare().then(() => {
 
         // Handle client close
         clientWs.on('close', (code, reason) => {
+          clearInterval(pingInterval);
           console.log(`[WebSocket] Client closed after ${Date.now() - startTime}ms: ${code} ${reason}`);
           console.log(`[WebSocket] Backend was connected: ${backendConnected}, backendWs.readyState: ${backendWs.readyState}`);
           try {
@@ -120,6 +131,7 @@ app.prepare().then(() => {
 
         // Handle backend close
         backendWs.on('close', (code, reason) => {
+          clearInterval(pingInterval);
           console.log(`[WebSocket] Backend closed: ${code} ${reason}`);
           if (clientWs.readyState === WebSocket.OPEN) {
             clientWs.close();
