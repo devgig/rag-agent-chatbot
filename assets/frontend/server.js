@@ -66,8 +66,8 @@ app.prepare().then(() => {
         console.log(`[WebSocket] Client connection accepted at ${startTime}`);
         console.log(`[WebSocket] Client readyState: ${clientWs.readyState}`);
 
-        // Send immediate ping to keep connection alive
-        clientWs.ping();
+        // Send immediate data to keep connection alive
+        clientWs.send(JSON.stringify({ type: 'connecting', message: 'Establishing backend connection...' }));
 
         // Keep connection alive with regular pings
         const pingInterval = setInterval(() => {
