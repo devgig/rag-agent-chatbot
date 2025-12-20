@@ -61,86 +61,117 @@ app.prepare().then(() => {
 
       console.log(`[WebSocket] Proxying ${pathname} to ${backendUrl}`);
 
-      // Connect to backend FIRST, then accept client
-      console.log(`[WebSocket] Starting backend connection...`);
-      const backendWs = new WebSocket(backendUrl);
+      // Accept client IMMEDIATELY to avoid LoadBalancer timeout
+      // Then connect to backend in parallel
+      wss.handleUpgrade(request, socket, head, (clientWs) => {
+        console.log(`[WebSocket] Client accepted after ${Date.now() - startTime}ms`);
 
-      // Set a timeout for backend connection
-      const backendTimeout = setTimeout(() => {
-        console.log(`[WebSocket] Backend connection timeout after 5000ms`);
-        backendWs.terminate();
-        socket.destroy();
-      }, 5000);
+        let backendWs = null;
+        let backendReady = false;
+        let messageQueue = [];
+        let clientClosed = false;
 
-      // Handle backend connection error during initial connect
-      backendWs.once('error', (error) => {
-        clearTimeout(backendTimeout);
-        console.error('[WebSocket] Backend connection failed:', error.message);
-        socket.destroy();
-      });
+        // Start backend connection immediately after accepting client
+        console.log(`[WebSocket] Starting backend connection...`);
+        backendWs = new WebSocket(backendUrl);
 
-      // When backend connects, accept the client
-      backendWs.once('open', () => {
-        clearTimeout(backendTimeout);
-        console.log(`[WebSocket] Backend connected after ${Date.now() - startTime}ms, accepting client...`);
+        // Set a timeout for backend connection
+        const backendTimeout = setTimeout(() => {
+          console.log(`[WebSocket] Backend connection timeout after 5000ms`);
+          if (backendWs) backendWs.terminate();
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.close(1011, 'Backend connection timeout');
+          }
+        }, 5000);
 
-        // Now accept the client connection
-        wss.handleUpgrade(request, socket, head, (clientWs) => {
-          console.log(`[WebSocket] Client accepted after ${Date.now() - startTime}ms`);
+        let pingInterval = setInterval(() => {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.ping();
+          }
+        }, 30000);
 
-          let pingInterval = setInterval(() => {
+        // Handle backend connection error
+        backendWs.on('error', (error) => {
+          console.error('[WebSocket] Backend error:', error.message);
+          if (!backendReady) {
+            clearTimeout(backendTimeout);
             if (clientWs.readyState === WebSocket.OPEN) {
-              clientWs.ping();
+              clientWs.close(1011, 'Backend connection failed');
             }
-          }, 30000);
-
-          // Proxy messages from client to backend
-          clientWs.on('message', (message) => {
-            if (backendWs.readyState === WebSocket.OPEN) {
-              backendWs.send(message);
-            }
-          });
-
-          // Proxy messages from backend to client
-          backendWs.on('message', (message) => {
-            if (clientWs.readyState === WebSocket.OPEN) {
-              clientWs.send(message);
-            }
-          });
-
-          // Handle client close
-          clientWs.on('close', (code, reason) => {
-            clearInterval(pingInterval);
-            console.log(`[WebSocket] Client closed: ${code} ${reason}`);
-            if (backendWs.readyState === WebSocket.OPEN) {
-              backendWs.close();
-            }
-          });
-
-          // Handle client error
-          clientWs.on('error', (error) => {
-            console.error('[WebSocket] Client error:', error.message);
-            if (backendWs.readyState === WebSocket.OPEN) {
-              backendWs.close();
-            }
-          });
-
-          // Handle backend close (after connection established)
-          backendWs.on('close', (code, reason) => {
-            clearInterval(pingInterval);
-            console.log(`[WebSocket] Backend closed: ${code} ${reason}`);
-            if (clientWs.readyState === WebSocket.OPEN) {
-              clientWs.close();
-            }
-          });
-
-          // Handle backend error (after connection established)
-          backendWs.on('error', (error) => {
-            console.error('[WebSocket] Backend error:', error.message);
+          } else {
             if (clientWs.readyState === WebSocket.OPEN) {
               clientWs.close(1011, 'Backend error');
             }
-          });
+          }
+        });
+
+        // When backend connects, flush queued messages
+        backendWs.on('open', () => {
+          clearTimeout(backendTimeout);
+          backendReady = true;
+          console.log(`[WebSocket] Backend connected after ${Date.now() - startTime}ms`);
+
+          // If client already closed, close backend too
+          if (clientClosed) {
+            console.log(`[WebSocket] Client already closed, closing backend`);
+            backendWs.close();
+            return;
+          }
+
+          // Flush any queued messages
+          if (messageQueue.length > 0) {
+            console.log(`[WebSocket] Flushing ${messageQueue.length} queued messages`);
+            messageQueue.forEach(msg => backendWs.send(msg));
+            messageQueue = [];
+          }
+        });
+
+        // Proxy messages from backend to client
+        backendWs.on('message', (message) => {
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(message);
+          }
+        });
+
+        // Handle backend close
+        backendWs.on('close', (code, reason) => {
+          console.log(`[WebSocket] Backend closed: ${code} ${reason}`);
+          clearInterval(pingInterval);
+          if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.close();
+          }
+        });
+
+        // Proxy messages from client to backend (queue if backend not ready)
+        clientWs.on('message', (message) => {
+          if (backendReady && backendWs.readyState === WebSocket.OPEN) {
+            backendWs.send(message);
+          } else if (!backendReady) {
+            // Queue message until backend is ready
+            console.log(`[WebSocket] Queueing message (backend not ready)`);
+            messageQueue.push(message);
+          }
+        });
+
+        // Handle client close
+        clientWs.on('close', (code, reason) => {
+          clientClosed = true;
+          clearInterval(pingInterval);
+          clearTimeout(backendTimeout);
+          console.log(`[WebSocket] Client closed: ${code} ${reason}`);
+          if (backendWs && backendWs.readyState === WebSocket.OPEN) {
+            backendWs.close();
+          } else if (backendWs && backendWs.readyState === WebSocket.CONNECTING) {
+            backendWs.terminate();
+          }
+        });
+
+        // Handle client error
+        clientWs.on('error', (error) => {
+          console.error('[WebSocket] Client error:', error.message);
+          if (backendWs && backendWs.readyState === WebSocket.OPEN) {
+            backendWs.close();
+          }
         });
       });
     } else {
