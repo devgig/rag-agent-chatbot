@@ -6,21 +6,16 @@ namespace: multi-agent-dev
 resources:
   - ../../base
 
-configMapGenerator:
-  - name: frontend-env
-    behavior: replace
-    literals:
-      - NEXT_PUBLIC_API_URL=http://backend.bytecourier.local:8000
-      - NEXT_PUBLIC_WS_URL=ws://backend.bytecourier.local:8000
+# Image tags are set by Azure DevOps pipeline using:
+# kustomize edit set image bytecourier.azurecr.io/multi-agent-chatbot-frontend:TAG
+# kustomize edit set image bytecourier.azurecr.io/multi-agent-chatbot-backend:TAG
+images:
+  - name: bytecourier.azurecr.io/multi-agent-chatbot-frontend
+    newTag: latest
+  - name: bytecourier.azurecr.io/multi-agent-chatbot-backend
+    newTag: latest
 
-# Patch the frontend deployment to use the ConfigMap
-patches:
-  - target:
-      kind: Deployment
-      name: multi-agent-frontend
-    patch: |-
-      - op: add
-        path: /spec/template/spec/containers/0/envFrom
-        value:
-          - configMapRef:
-              name: frontend-env
+labels:
+  - pairs:
+      environment: dev
+    includeSelectors: false
