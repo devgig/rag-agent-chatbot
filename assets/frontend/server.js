@@ -61,10 +61,18 @@ app.prepare().then(() => {
 
       console.log(`[WebSocket] Proxying ${pathname} to ${backendUrl}`);
 
+      // Listen for socket errors before upgrade
+      socket.on('error', (err) => {
+        console.error(`[WebSocket] Raw socket error:`, err.message);
+      });
+      socket.on('close', () => {
+        console.log(`[WebSocket] Raw socket closed`);
+      });
+
       // Accept client IMMEDIATELY to avoid LoadBalancer timeout
       // Then connect to backend in parallel
       wss.handleUpgrade(request, socket, head, (clientWs) => {
-        console.log(`[WebSocket] Client accepted after ${Date.now() - startTime}ms`);
+        console.log(`[WebSocket] Client accepted after ${Date.now() - startTime}ms, readyState: ${clientWs.readyState}`);
 
         let backendWs = null;
         let backendReady = false;
@@ -72,8 +80,15 @@ app.prepare().then(() => {
         let clientClosed = false;
 
         // Start backend connection immediately after accepting client
-        console.log(`[WebSocket] Starting backend connection...`);
-        backendWs = new WebSocket(backendUrl);
+        console.log(`[WebSocket] Starting backend connection to ${backendUrl}...`);
+        try {
+          backendWs = new WebSocket(backendUrl);
+          console.log(`[WebSocket] Backend WebSocket created`);
+        } catch (err) {
+          console.error(`[WebSocket] Error creating backend WebSocket:`, err.message);
+          clientWs.close(1011, 'Backend connection error');
+          return;
+        }
 
         // Set a timeout for backend connection
         const backendTimeout = setTimeout(() => {
