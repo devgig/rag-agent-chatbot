@@ -8,7 +8,11 @@ This directory contains Kustomize overlays for environment-specific configuratio
 k8s/
 ├── base/                          # Base configuration
 │   ├── kustomization.yaml
-│   └── frontend-env-configmap.yaml
+│   ├── frontend-env-configmap.yaml
+│   └── istio-httproute.yaml       # HTTPRoute for frontend ingress
+├── istio-ingress/                 # Istio Gateway (deployed to istio-ingress-dev)
+│   ├── kustomization.yaml
+│   └── gateway.yaml
 └── overlays/
     └── dev/                       # Development environment
         └── kustomization.yaml
@@ -83,9 +87,49 @@ To create a new environment (e.g., production):
 - **Required**: No (auto-derived from NEXT_PUBLIC_API_URL if not set)
 - **Used by**: Browser WebSocket connections
 
+## Istio Ambient Mesh Setup
+
+The multi-agent chatbot uses Istio Ambient Mesh for ingress with WebSocket support.
+
+### Prerequisites
+
+1. Istio Ambient Mesh installed in the cluster
+2. Gateway API CRDs installed
+3. `istio-ingress-dev` namespace exists
+
+### Deployment Order
+
+1. **Deploy the Istio Gateway** (to `istio-ingress-dev` namespace):
+   ```bash
+   kubectl apply -k k8s/istio-ingress
+   ```
+
+2. **Enable Ambient Mesh on the namespace**:
+   ```bash
+   kubectl label namespace multi-agent-dev istio.io/dataplane-mode=ambient
+   ```
+
+3. **Deploy the application overlay** (includes HTTPRoute):
+   ```bash
+   kubectl apply -k k8s/overlays/dev
+   ```
+
+4. **Get the Gateway IP**:
+   ```bash
+   kubectl get gateway multi-agent-gateway -n istio-ingress-dev
+   ```
+
+5. **Update DNS** to point `frontend.bytecourier.local` to the Gateway IP
+
+### Why Istio?
+
+Cilium LoadBalancer has aggressive idle timeouts (~100ms) that terminate WebSocket
+connections before the backend handshake completes. Istio's Envoy proxy has better
+WebSocket support with configurable timeouts.
+
 ## Notes
 
-- The frontend connects **directly** to the backend via external DNS names
-- No Next.js API proxy is used
-- Both HTTP and WebSocket traffic go directly from the browser to the backend
+- Traffic flows: Browser -> Istio Gateway -> Frontend Service -> Backend Service
+- WebSocket connections are proxied through the Next.js server to the backend
+- The namespace must be labeled for Istio Ambient Mesh
 - Ensure your backend has CORS configured to allow requests from the frontend domain

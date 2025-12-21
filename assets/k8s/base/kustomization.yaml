@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - frontend-env-configmap.yaml
+  - istio-httproute.yaml
 
 # Add ConfigMap to deployment as environment variables
 # Assumes your deployment is named 'multi-agent-frontend'

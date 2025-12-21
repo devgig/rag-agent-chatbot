@@ -1,0 +1,18 @@
+# Istio Gateway for multi-agent chatbot frontend
+# This is deployed to istio-ingress-dev namespace
+# The Gateway gets an external IP from the LoadBalancer
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: multi-agent-gateway
+  namespace: istio-ingress-dev
+spec:
+  gatewayClassName: istio
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    hostname: "frontend.bytecourier.local"
+    allowedRoutes:
+      namespaces:
+        from: All
