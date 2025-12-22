@@ -46,20 +46,28 @@ export function getWebSocketUrl(path: string): string {
   // Ensure path starts with /
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
-  // Use direct backend WebSocket URL if configured
+  // Use direct backend WebSocket URL if configured at build time
   const backendWsUrl = process.env.NEXT_PUBLIC_BACKEND_WS_URL;
   if (backendWsUrl) {
     return `${backendWsUrl}${normalizedPath}`;
   }
 
-  // Fallback: derive from current location (for local development)
-  const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? 'wss:'
-    : 'ws:';
-  const hostname = typeof window !== 'undefined'
-    ? window.location.hostname
-    : 'localhost';
+  // Fallback: derive backend URL from frontend hostname
+  // Assumes backend is at backend.* when frontend is at frontend.*
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const hostname = window.location.hostname;
 
-  // Default to backend on port 8000
-  return `${protocol}//${hostname}:8000${normalizedPath}`;
+    // Replace 'frontend' with 'backend' in hostname
+    if (hostname.startsWith('frontend.')) {
+      const backendHostname = hostname.replace('frontend.', 'backend.');
+      return `${protocol}//${backendHostname}${normalizedPath}`;
+    }
+
+    // For local development, use same host with port 8000
+    return `${protocol}//${hostname}:8000${normalizedPath}`;
+  }
+
+  // Server-side fallback
+  return `ws://localhost:8000${normalizedPath}`;
 }
