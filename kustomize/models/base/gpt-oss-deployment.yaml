@@ -51,6 +51,7 @@ spec:
         - "--host=0.0.0.0"
         - "--port=8000"
         - "--trust-remote-code"
+        - "--enforce-eager"
         - "--enable-auto-tool-choice"
         - "--tool-call-parser=hermes"
         - "--enable-prefix-caching"
