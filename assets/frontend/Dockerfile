@@ -50,12 +50,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Copy custom server
-COPY --from=builder --chown=nextjs:nodejs /app/server.js ./server.js
-
 USER nextjs
 
 EXPOSE 3000
 
-# Run the custom server
+# Run the Next.js standalone server
 CMD ["node", "server.js"]
