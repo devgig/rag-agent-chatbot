@@ -27,8 +27,9 @@ spec:
         env:
         - name: BACKEND_URL
           value: http://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000
-        - name: BACKEND_WS_URL
-          value: ws://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000
+        # Public WebSocket URL for browser to connect directly to backend
+        - name: NEXT_PUBLIC_BACKEND_WS_URL
+          value: ws://backend.bytecourier.local
         resources:
           requests:
             cpu: 200m

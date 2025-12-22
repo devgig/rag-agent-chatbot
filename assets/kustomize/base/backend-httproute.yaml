@@ -1,0 +1,32 @@
+# HTTPRoute for multi-agent backend
+# Routes WebSocket traffic from Istio Gateway to the backend service
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: multi-agent-backend-route
+spec:
+  parentRefs:
+  - name: multi-agent-gateway
+    namespace: istio-ingress-dev
+  hostnames:
+  - "backend.bytecourier.local"
+  rules:
+  # WebSocket route with disabled timeout for long-lived connections
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /ws/
+    backendRefs:
+    - name: multi-agent-backend
+      port: 8000
+    timeouts:
+      request: 0s
+      backendRequest: 0s
+  # HTTP API routes
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: multi-agent-backend
+      port: 8000

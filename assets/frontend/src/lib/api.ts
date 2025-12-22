@@ -38,23 +38,28 @@ export function getApiUrl(path: string): string {
 
 /**
  * Get WebSocket URL for real-time communication
+ * Connects directly to backend WebSocket server
  * @param path - WebSocket path (e.g., '/ws/chat/123')
  * @returns WebSocket URL
  */
 export function getWebSocketUrl(path: string): string {
-  // Determine WebSocket protocol based on current page protocol
-  const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:'
-    ? 'wss:'
-    : 'ws:';
-
-  // Get the current host
-  const host = typeof window !== 'undefined'
-    ? window.location.host
-    : 'localhost:3000';
-
   // Ensure path starts with /
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
-  // Return WebSocket URL through /api/ws proxy
-  return `${protocol}//${host}/api${normalizedPath}`;
+  // Use direct backend WebSocket URL if configured
+  const backendWsUrl = process.env.NEXT_PUBLIC_BACKEND_WS_URL;
+  if (backendWsUrl) {
+    return `${backendWsUrl}${normalizedPath}`;
+  }
+
+  // Fallback: derive from current location (for local development)
+  const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:'
+    ? 'wss:'
+    : 'ws:';
+  const hostname = typeof window !== 'undefined'
+    ? window.location.hostname
+    : 'localhost';
+
+  // Default to backend on port 8000
+  return `${protocol}//${hostname}:8000${normalizedPath}`;
 }

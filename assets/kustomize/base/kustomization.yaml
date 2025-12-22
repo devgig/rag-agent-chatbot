@@ -9,5 +9,6 @@ resources:
   # Backend
   - backend-deployment.yaml
   - backend-service.yaml
-  # Istio
+  # Istio routing
   - istio-httproute.yaml
+  - backend-httproute.yaml

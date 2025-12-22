@@ -45,27 +45,17 @@ ENV HOSTNAME="0.0.0.0"
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# Copy package files for production dependencies
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/package-lock.json ./package-lock.json
-
-# Install only production dependencies needed for custom server (ws)
-RUN npm ci --omit=dev --ignore-scripts
-
 # Copy standalone output from builder
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Copy custom server with WebSocket proxy support
+# Copy custom server
 COPY --from=builder --chown=nextjs:nodejs /app/server.js ./server.js
-
-# Fix ownership of node_modules
-RUN chown -R nextjs:nodejs /app/node_modules
 
 USER nextjs
 
 EXPOSE 3000
 
-# Run the custom server with WebSocket proxy
+# Run the custom server
 CMD ["node", "server.js"]
