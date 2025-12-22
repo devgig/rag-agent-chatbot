@@ -35,16 +35,15 @@ spec:
         - --model=microsoft/Phi-3.5-mini-instruct
         - --served-model-name=gpt-oss-120b
         - --tensor-parallel-size=1
-        - --gpu-memory-utilization=0.9
+        - --gpu-memory-utilization=0.95
         - --max-model-len=4096
-        - --dtype=auto
+        - --dtype=bfloat16
         - --host=0.0.0.0
         - --port=8000
         - --trust-remote-code
-        - --enforce-eager
-        - --disable-custom-all-reduce
         - --enable-auto-tool-choice
         - --tool-call-parser=hermes
+        - --enable-prefix-caching
         env:
         - name: HF_TOKEN
           valueFrom:
