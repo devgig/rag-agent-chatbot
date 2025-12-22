@@ -17,6 +17,13 @@ spec:
         app: multi-agent-backend
         component: backend
     spec:
+      initContainers:
+      - name: create-config
+        image: busybox
+        command: ['sh', '-c', 'echo ''{"sources":[],"models":["gpt-oss-120b"],"selected_model":"gpt-oss-120b","selected_sources":[],"current_chat_id":null}'' > /config/config.json && chmod 666 /config/config.json']
+        volumeMounts:
+        - name: config-volume
+          mountPath: /config
       containers:
       - name: backend
         image: bytecourier.azurecr.io/multi-agent-chatbot-backend:latest
@@ -46,6 +53,8 @@ spec:
           value: tcp://milvus.milvus-system.svc.cluster.local:19530
         - name: MODELS
           value: gpt-oss-120b
+        - name: CONFIG_PATH
+          value: /config/config.json
         resources:
           requests:
             cpu: 500m
@@ -68,5 +77,15 @@ spec:
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 10
+        volumeMounts:
+        - name: tmp-volume
+          mountPath: /tmp
+        - name: config-volume
+          mountPath: /config
+      volumes:
+      - name: tmp-volume
+        emptyDir: {}
+      - name: config-volume
+        emptyDir: {}
       imagePullSecrets:
       - name: acr-secret

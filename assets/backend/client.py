@@ -21,10 +21,22 @@ multiple Model Context Protocol (MCP) servers. It handles server configuration,
 initialization, and tool retrieval across different server types.
 """
 
+import os
 from typing import List, Optional
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from mcp.types import Tool
+
+
+def get_mcp_env() -> dict:
+    """Get environment variables to pass to MCP server subprocesses."""
+    env = os.environ.copy()
+    # Ensure critical env vars are passed to MCP servers
+    for key in ["CONFIG_PATH", "MILVUS_ADDRESS", "MODELS", "POSTGRES_HOST",
+                "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"]:
+        if key in os.environ:
+            env[key] = os.environ[key]
+    return env
 
 
 class MCPClient:
@@ -36,26 +48,31 @@ class MCPClient:
     
     def __init__(self):
         """Initialize the MCP client with predefined server configurations."""
+        mcp_env = get_mcp_env()
         self.server_configs = {
             "image-understanding-server": {
                 "command": "python",
                 "args": ["tools/mcp_servers/image_understanding.py"],
                 "transport": "stdio",
+                "env": mcp_env,
             },
             "code-generation-server": {
                 "command": "python",
                 "args": ["tools/mcp_servers/code_generation.py"],
                 "transport": "stdio",
+                "env": mcp_env,
             },
             "rag-server": {
                 "command": "python",
                 "args": ["tools/mcp_servers/rag.py"],
                 "transport": "stdio",
+                "env": mcp_env,
             },
             "weather-server": {
                 "command": "python",
                 "args": ["tools/mcp_servers/weather_test.py"],
                 "transport": "stdio",
+                "env": mcp_env,
             }
         }
         self.mcp_client: MultiServerMCPClient | None = None
