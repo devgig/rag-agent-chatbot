@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpt-oss-120b
+  labels:
+    app: gpt-oss-120b
+    component: model-inference
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 900
+  selector:
+    matchLabels:
+      app: gpt-oss-120b
+  template:
+    metadata:
+      labels:
+        app: gpt-oss-120b
+    spec:
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: present
+        effect: NoSchedule
+      containers:
+      - name: vllm-inference
+        image: vllm/vllm-openai:latest
+        imagePullPolicy: Always
+        command:
+        - python3
+        - -m
+        - vllm.entrypoints.openai.api_server
+        args:
+        - --model=microsoft/Phi-3.5-mini-instruct
+        - --served-model-name=gpt-oss-120b
+        - --tensor-parallel-size=1
+        - --gpu-memory-utilization=0.9
+        - --max-model-len=4096
+        - --dtype=auto
+        - --host=0.0.0.0
+        - --port=8000
+        - --trust-remote-code
+        - --enforce-eager
+        - --disable-custom-all-reduce
+        env:
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-credentials
+              key: token
+        ports:
+        - containerPort: 8000
+          name: http
+        resources:
+          requests:
+            cpu: "2"
+            memory: 16Gi
+            nvidia.com/gpu: 1
+          limits:
+            cpu: "8"
+            memory: 32Gi
+            nvidia.com/gpu: 1
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 300
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 300
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3
+        volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
+        - name: model-cache
+          mountPath: /root/.cache/huggingface
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+      - name: model-cache
+        emptyDir:
+          sizeLimit: 100Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gpt-oss-120b
+  labels:
+    app: gpt-oss-120b
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+    name: http
+  selector:
+    app: gpt-oss-120b

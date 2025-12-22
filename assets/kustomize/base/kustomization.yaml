@@ -9,6 +9,8 @@ resources:
   # Backend
   - backend-deployment.yaml
   - backend-service.yaml
+  # Model inference
+  - gpt-oss-120b-deployment.yaml
   # Istio routing
   - istio-httproute.yaml
   - backend-httproute.yaml
