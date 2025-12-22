@@ -68,11 +68,17 @@ app.prepare().then(() => {
       socket.on('close', () => {
         console.log(`[WebSocket] Raw socket closed`);
       });
+      socket.on('end', () => {
+        console.log(`[WebSocket] Raw socket ended`);
+      });
+
+      console.log(`[WebSocket] Socket before upgrade: destroyed=${socket.destroyed}, writableEnded=${socket.writableEnded}`);
 
       // Accept client IMMEDIATELY to avoid LoadBalancer timeout
       // Then connect to backend in parallel
       wss.handleUpgrade(request, socket, head, (clientWs) => {
         console.log(`[WebSocket] Client accepted after ${Date.now() - startTime}ms, readyState: ${clientWs.readyState}`);
+        console.log(`[WebSocket] Socket after upgrade: destroyed=${socket.destroyed}, writableEnded=${socket.writableEnded}`);
 
         let backendWs = null;
         let backendReady = false;
