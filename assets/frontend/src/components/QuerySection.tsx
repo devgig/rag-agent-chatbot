@@ -351,10 +351,10 @@ export default function QuerySection({
         wsRef.current.close();
         wsRef.current = null;
       }
-      // Also close the local ws if it exists and wasn't assigned to ref yet
-      // This handles the case where cleanup runs before onopen fires
-      if (ws && ws !== wsRef.current) {
-        console.log('[WebSocket] Closing local ws, readyState:', ws.readyState);
+      // For websockets still CONNECTING, don't close them here - it causes 1006 errors
+      // The onopen handler checks isEffectActive and will close stale connections
+      if (ws && ws !== wsRef.current && ws.readyState === WebSocket.OPEN) {
+        console.log('[WebSocket] Closing local ws that opened but was not assigned to ref');
         ws.close();
       }
     };
