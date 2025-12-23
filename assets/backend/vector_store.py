@@ -321,26 +321,26 @@ class VectorStore:
     def delete_collection(self, collection_name: str) -> bool:
         """
         Delete a collection from Milvus.
-        
+
         Args:
             collection_name: Name of the collection to delete
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
         try:
             from pymilvus import connections, Collection, utility
-            
+
             connections.connect(uri=self.uri)
-            
+
             if utility.has_collection(collection_name):
                 collection = Collection(name=collection_name)
-                
+
                 collection.drop()
-                
+
                 if self.on_source_deleted:
                     self.on_source_deleted(collection_name)
-                
+
                 logger.debug({
                     "message": "Collection deleted successfully",
                     "collection_name": collection_name
@@ -359,6 +359,104 @@ class VectorStore:
                 "error": str(e)
             }, exc_info=True)
             return False
+
+    def delete_documents_by_source(self, source_name: str) -> int:
+        """
+        Delete all documents with a specific source from Milvus.
+
+        Args:
+            source_name: The source name to delete documents for
+
+        Returns:
+            int: Number of documents deleted, -1 on error
+        """
+        try:
+            from pymilvus import connections, Collection, utility
+
+            connections.connect(uri=self.uri)
+
+            collection_name = "context"
+            if not utility.has_collection(collection_name):
+                logger.warning({
+                    "message": "Collection not found",
+                    "collection_name": collection_name
+                })
+                return 0
+
+            collection = Collection(name=collection_name)
+            collection.load()
+
+            # Delete documents where source matches
+            delete_expr = f'source == "{source_name}"'
+
+            # First count how many will be deleted
+            results = collection.query(
+                expr=delete_expr,
+                output_fields=["pk"]
+            )
+            count = len(results)
+
+            if count > 0:
+                collection.delete(delete_expr)
+                collection.flush()
+
+                logger.debug({
+                    "message": "Deleted documents by source",
+                    "source_name": source_name,
+                    "deleted_count": count
+                })
+
+            return count
+
+        except Exception as e:
+            logger.error({
+                "message": "Error deleting documents by source",
+                "source_name": source_name,
+                "error": str(e)
+            }, exc_info=True)
+            return -1
+
+    def get_sources_from_milvus(self) -> List[str]:
+        """
+        Get list of unique sources from Milvus collection.
+
+        Returns:
+            List of unique source names
+        """
+        try:
+            from pymilvus import connections, Collection, utility
+
+            connections.connect(uri=self.uri)
+
+            collection_name = "context"
+            if not utility.has_collection(collection_name):
+                return []
+
+            collection = Collection(name=collection_name)
+            collection.load()
+
+            # Query all unique sources
+            results = collection.query(
+                expr="pk >= 0",  # Match all
+                output_fields=["source"],
+                limit=10000
+            )
+
+            sources = list(set(r.get("source", "") for r in results if r.get("source")))
+
+            logger.debug({
+                "message": "Retrieved sources from Milvus",
+                "source_count": len(sources)
+            })
+
+            return sources
+
+        except Exception as e:
+            logger.error({
+                "message": "Error getting sources from Milvus",
+                "error": str(e)
+            }, exc_info=True)
+            return []
 
 
 def create_vector_store_with_config(config_manager, uri: str = "http://milvus.milvus-system.svc.cluster.local:19530") -> VectorStore:

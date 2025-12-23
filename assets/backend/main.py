@@ -219,7 +219,8 @@ async def ingest_files(files: Optional[List[UploadFile]] = File(None), backgroun
             vector_store,
             config_manager,
             task_id,
-            indexing_tasks
+            indexing_tasks,
+            postgres_storage
         )
         
         response = {
@@ -258,12 +259,54 @@ async def get_indexing_status(task_id: str):
 
 @app.get("/sources")
 async def get_sources():
-    """Get all available document sources."""
+    """Get all available document sources from PostgreSQL."""
     try:
-        config = config_manager.read_config()
-        return {"sources": config.sources}
+        sources = await postgres_storage.get_source_names()
+        return {"sources": sources}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting sources: {str(e)}")
+
+
+@app.delete("/sources/{source_name}")
+async def delete_source(source_name: str):
+    """Delete a document source and its embeddings from Milvus.
+
+    Args:
+        source_name: Name of the source to delete
+
+    Returns:
+        Deletion result with count of removed embeddings
+    """
+    try:
+        # Delete embeddings from Milvus
+        deleted_count = vector_store.delete_documents_by_source(source_name)
+
+        if deleted_count < 0:
+            raise HTTPException(status_code=500, detail=f"Error deleting embeddings for source: {source_name}")
+
+        # Delete source record from PostgreSQL
+        source_deleted = await postgres_storage.delete_document_source(source_name)
+
+        # Also remove from config if present (for backwards compatibility)
+        config = config_manager.read_config()
+        if source_name in config.sources:
+            config.sources.remove(source_name)
+            config_manager.write_config(config)
+        if source_name in config.selected_sources:
+            config.selected_sources.remove(source_name)
+            config_manager.write_config(config)
+
+        return {
+            "status": "success",
+            "message": f"Deleted source '{source_name}' with {deleted_count} embeddings",
+            "source_name": source_name,
+            "embeddings_deleted": deleted_count,
+            "source_record_deleted": source_deleted
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting source: {str(e)}")
 
 
 @app.get("/selected_sources")

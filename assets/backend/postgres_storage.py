@@ -188,6 +188,19 @@ class PostgreSQLConversationStorage:
             
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_conversations_updated_at ON conversations(updated_at)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_images_expires_at ON images(expires_at)")
+
+            # Document sources table for persistent RAG document tracking
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS document_sources (
+                    source_name VARCHAR(500) PRIMARY KEY,
+                    file_path VARCHAR(1000),
+                    task_id VARCHAR(255),
+                    chunk_count INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_document_sources_created_at ON document_sources(created_at)")
             
             await conn.execute("""
                 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -569,3 +582,70 @@ class PostgreSQLConversationStorage:
         import asyncio
         message_objects = [self._dict_to_message(msg) for msg in messages]
         return asyncio.create_task(self.save_messages(chat_id, message_objects))
+
+    # Document source management methods
+    async def add_document_source(self, source_name: str, file_path: str = None, task_id: str = None, chunk_count: int = 0) -> None:
+        """Add or update a document source."""
+        async with self.pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO document_sources (source_name, file_path, task_id, chunk_count)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (source_name)
+                DO UPDATE SET
+                    file_path = COALESCE(EXCLUDED.file_path, document_sources.file_path),
+                    task_id = COALESCE(EXCLUDED.task_id, document_sources.task_id),
+                    chunk_count = EXCLUDED.chunk_count,
+                    updated_at = CURRENT_TIMESTAMP
+            """, source_name, file_path, task_id, chunk_count)
+            self._db_operations += 1
+        logger.debug(f"Added/updated document source: {source_name}")
+
+    async def get_document_sources(self) -> List[Dict]:
+        """Get all document sources."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT source_name, file_path, task_id, chunk_count, created_at FROM document_sources ORDER BY created_at DESC"
+            )
+            self._db_operations += 1
+            return [
+                {
+                    "source_name": row['source_name'],
+                    "file_path": row['file_path'],
+                    "task_id": row['task_id'],
+                    "chunk_count": row['chunk_count'],
+                    "created_at": row['created_at'].isoformat() if row['created_at'] else None
+                }
+                for row in rows
+            ]
+
+    async def get_source_names(self) -> List[str]:
+        """Get just the source names for compatibility with config.sources."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT source_name FROM document_sources ORDER BY created_at DESC"
+            )
+            self._db_operations += 1
+            return [row['source_name'] for row in rows]
+
+    async def delete_document_source(self, source_name: str) -> bool:
+        """Delete a document source record."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM document_sources WHERE source_name = $1",
+                source_name
+            )
+            self._db_operations += 1
+            deleted = "DELETE 1" in result
+            if deleted:
+                logger.debug(f"Deleted document source: {source_name}")
+            return deleted
+
+    async def source_exists(self, source_name: str) -> bool:
+        """Check if a document source exists."""
+        async with self.pool.acquire() as conn:
+            result = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM document_sources WHERE source_name = $1)",
+                source_name
+            )
+            self._db_operations += 1
+            return result

@@ -32,7 +32,8 @@ async def process_and_ingest_files_background(
     vector_store: VectorStore,
     config_manager,
     task_id: str,
-    indexing_tasks: Dict[str, str]
+    indexing_tasks: Dict[str, str],
+    postgres_storage=None
 ) -> None:
     """Process and ingest files in the background.
 
@@ -42,6 +43,7 @@ async def process_and_ingest_files_background(
         config_manager: ConfigManager instance for updating sources
         task_id: Unique identifier for this processing task
         indexing_tasks: Dictionary to track task status
+        postgres_storage: PostgreSQL storage for persisting source metadata
     """
     try:
         logger.debug({
@@ -99,16 +101,34 @@ async def process_and_ingest_files_background(
             
             indexing_tasks[task_id] = "indexing_documents"
             vector_store.index_documents(documents)
-            
+
+            # Save sources to PostgreSQL for persistence
+            if file_names and postgres_storage:
+                for idx, file_name in enumerate(file_names):
+                    file_path = file_paths[idx] if idx < len(file_paths) else None
+                    chunk_count = len([d for d in documents if d.metadata.get("filename") == file_name])
+                    await postgres_storage.add_document_source(
+                        source_name=file_name,
+                        file_path=file_path,
+                        task_id=task_id,
+                        chunk_count=chunk_count
+                    )
+                logger.debug({
+                    "message": "Saved sources to PostgreSQL",
+                    "task_id": task_id,
+                    "sources": file_names
+                })
+
+            # Also update config for backwards compatibility
             if file_names:
                 config = config_manager.read_config()
-                
+
                 config_updated = False
                 for file_name in file_names:
                     if file_name not in config.sources:
                         config.sources.append(file_name)
                         config_updated = True
-                
+
                 if config_updated:
                     config_manager.write_config(config)
                     logger.debug({
