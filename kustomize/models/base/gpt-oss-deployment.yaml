@@ -4,8 +4,8 @@
 # KAITO workspace (kaito-workspace.yaml) is blocked by NodeClaim requirement,
 # so we manually create the deployment with the same spec.
 #
-# Model: microsoft/Phi-3.5-mini-instruct (open-source, no gating)
-# To use Meta-Llama models, request access on HuggingFace first.
+# Model: Qwen/Qwen2.5-7B-Instruct (open-source, excellent tool calling)
+# Supports hermes tool-call-parser for MCP tool integration.
 # Backend connects via: gpt-oss-120b.multi-agent-dev.svc.cluster.local:8000
 
 apiVersion: apps/v1
@@ -20,6 +20,8 @@ metadata:
     managed-by: kaito
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   progressDeadlineSeconds: 900  # 15 minutes for model loading + health check delay
   selector:
     matchLabels:
@@ -39,19 +41,18 @@ spec:
         effect: NoSchedule
       containers:
       - name: vllm-inference
-        image: vllm/vllm-openai:latest
-        command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+        image: nvcr.io/nvidia/vllm:25.11-py3
+        command: ["vllm", "serve"]
         args:
-        - "--model=microsoft/Phi-3.5-mini-instruct"
+        - "Qwen/Qwen2.5-7B-Instruct"
         - "--served-model-name=gpt-oss-120b"
         - "--tensor-parallel-size=1"
         - "--gpu-memory-utilization=0.90"
-        - "--max-model-len=4096"
+        - "--max-model-len=8192"
         - "--dtype=bfloat16"
         - "--host=0.0.0.0"
         - "--port=8000"
         - "--trust-remote-code"
-        - "--enforce-eager"
         - "--enable-auto-tool-choice"
         - "--tool-call-parser=hermes"
         - "--enable-prefix-caching"
