@@ -98,5 +98,5 @@ spec:
         emptyDir:
           medium: Memory
       - name: model-cache
-        emptyDir:
-          sizeLimit: 100Gi
+        persistentVolumeClaim:
+          claimName: model-cache-pvc
