@@ -279,7 +279,7 @@ export default function Sidebar({
 
   const handleSourceToggle = async (source: string) => {
     let newSelectedSources: string[];
-    
+
     if (selectedSources.includes(source)) {
       // Remove source if already selected
       newSelectedSources = selectedSources.filter(s => s !== source);
@@ -287,16 +287,16 @@ export default function Sidebar({
       // Add source if not selected
       newSelectedSources = [...selectedSources, source];
     }
-    
+
     setSelectedSources(newSelectedSources);
-    
+
     try {
       const response = await fetch(getApiUrl("/selected_sources"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newSelectedSources)
       });
-      
+
       if (!response.ok) {
         console.error("Failed to update selected sources");
         // Revert the local state if the update failed
@@ -306,6 +306,46 @@ export default function Sidebar({
       console.error("Error updating selected sources:", error);
       // Revert the local state if the update failed
       setSelectedSources(selectedSources);
+    }
+  };
+
+  const handleDeleteSource = async (source: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete "${source}"? This will also remove all associated embeddings from the vector store.`
+    );
+
+    if (!confirmDelete) {
+      return;
+    }
+
+    try {
+      const response = await fetch(getApiUrl(`/sources/${encodeURIComponent(source)}`), {
+        method: "DELETE"
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Failed to delete source:", errorData);
+        alert(`Failed to delete source: ${errorData.detail || 'Unknown error'}`);
+        return;
+      }
+
+      const result = await response.json();
+      console.log("Source deleted:", result);
+
+      // Remove from selected sources if it was selected
+      if (selectedSources.includes(source)) {
+        const newSelectedSources = selectedSources.filter(s => s !== source);
+        setSelectedSources(newSelectedSources);
+      }
+
+      // Refresh the sources list
+      await fetchSources();
+    } catch (error) {
+      console.error("Error deleting source:", error);
+      alert("An error occurred while deleting the source. Please try again.");
     }
   };
 
@@ -576,7 +616,28 @@ export default function Sidebar({
                             checked={selectedSources.includes(source)}
                             onChange={() => handleSourceToggle(source)}
                           />
-                          <label htmlFor={`source-${source}`}>{source}</label>
+                          <label htmlFor={`source-${source}`} className={styles.sourceLabel}>{source}</label>
+                          <button
+                            className={styles.deleteSourceButton}
+                            onClick={(e) => handleDeleteSource(source, e)}
+                            title={`Delete ${source}`}
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              width="14"
+                              height="14"
+                            >
+                              <path d="M3 6h18" />
+                              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                            </svg>
+                          </button>
                         </div>
                       ))
                     )}

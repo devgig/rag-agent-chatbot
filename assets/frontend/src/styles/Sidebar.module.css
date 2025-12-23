@@ -587,19 +587,69 @@ input:checked + .toggleSlider:before {
   display: flex;
   align-items: center;
   margin-bottom: 6px;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+
+.sourceItem:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+:global(.dark) .sourceItem:hover {
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 .sourceItem input[type="checkbox"] {
   margin-right: 8px;
+  flex-shrink: 0;
 }
 
-.sourceItem label {
+.sourceLabel {
   font-size: 14px;
   cursor: pointer;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-:global(.dark) .sourceItem label {
+:global(.dark) .sourceLabel {
   color: #e5e7eb;
+}
+
+.deleteSourceButton {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.sourceItem:hover .deleteSourceButton {
+  opacity: 1;
+}
+
+.deleteSourceButton:hover {
+  background-color: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+:global(.dark) .deleteSourceButton {
+  color: #6b7280;
+}
+
+:global(.dark) .deleteSourceButton:hover {
+  background-color: rgba(220, 38, 38, 0.2);
+  color: #ef4444;
 }
 
 .noSources {
