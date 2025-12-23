@@ -294,22 +294,34 @@ class ChatAgent:
 
         supports_tools = self.current_model in {"gpt-oss-20b", "gpt-oss-120b"}
         has_tools = supports_tools and self.openai_tools and len(self.openai_tools) > 0
-        
+
+        # Check if there are selected sources - if so, use "required" to force tool calls
+        # This is needed because Qwen2.5-VL ignores tools with "auto" but works with "required"
+        config_obj = self.config_manager.read_config()
+        has_selected_sources = bool(config_obj.selected_sources)
+
+        # Use "required" on first iteration when sources are selected to force RAG usage
+        # After first iteration (tool results received), use "auto" to let model respond
+        iterations = state.get("iterations", 0)
+        force_tool_call = has_selected_sources and iterations == 0
+
         logger.debug({
             "message": "Tool calling debug info",
             "chat_id": state.get("chat_id"),
             "current_model": self.current_model,
             "supports_tools": supports_tools,
             "openai_tools_count": len(self.openai_tools) if self.openai_tools else 0,
-            "openai_tools": self.openai_tools,
-            "has_tools": has_tools
+            "has_tools": has_tools,
+            "has_selected_sources": has_selected_sources,
+            "force_tool_call": force_tool_call,
+            "iterations": iterations
         })
-        
+
         tool_params = {}
         if has_tools:
             tool_params = {
                 "tools": self.openai_tools,
-                "tool_choice": "auto"
+                "tool_choice": "required" if force_tool_call else "auto"
             }
         
         stream = await self.model_client.chat.completions.create(
