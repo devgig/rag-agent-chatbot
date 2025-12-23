@@ -22,6 +22,7 @@ initialization, and tool retrieval across different server types.
 """
 
 import os
+import sys
 from typing import List, Optional
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -39,37 +40,47 @@ def get_mcp_env() -> dict:
     return env
 
 
+def get_python_executable() -> str:
+    """Get the Python executable path for MCP subprocesses.
+
+    Uses sys.executable to ensure subprocesses use the same Python
+    interpreter (with all dependencies) as the main process.
+    """
+    return sys.executable
+
+
 class MCPClient:
     """Client for managing connections to multiple MCP servers.
-    
+
     Provides a unified interface for connecting to and interacting with
     various MCP servers including RAG, image understanding, and weather services.
     """
-    
+
     def __init__(self):
         """Initialize the MCP client with predefined server configurations."""
         mcp_env = get_mcp_env()
+        python_exe = get_python_executable()
         self.server_configs = {
             "image-understanding-server": {
-                "command": "python",
+                "command": python_exe,
                 "args": ["tools/mcp_servers/image_understanding.py"],
                 "transport": "stdio",
                 "env": mcp_env,
             },
             "code-generation-server": {
-                "command": "python",
+                "command": python_exe,
                 "args": ["tools/mcp_servers/code_generation.py"],
                 "transport": "stdio",
                 "env": mcp_env,
             },
             "rag-server": {
-                "command": "python",
+                "command": python_exe,
                 "args": ["tools/mcp_servers/rag.py"],
                 "transport": "stdio",
                 "env": mcp_env,
             },
             "weather-server": {
-                "command": "python",
+                "command": python_exe,
                 "args": ["tools/mcp_servers/weather_test.py"],
                 "transport": "stdio",
                 "env": mcp_env,
