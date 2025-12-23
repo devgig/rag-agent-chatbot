@@ -1,21 +1,19 @@
-# Multi-Model Deployment for DGX Spark
-# =====================================
-# Main text model for supervisor agent, RAG, and coding tasks.
-# Uses Qwen2.5-3B-Instruct which has proper hermes tool-call support.
-# Image understanding is handled by a separate qwen2.5-vl deployment.
+# Vision Language Model for Image Understanding
+# ==============================================
+# Qwen2.5-VL-3B-Instruct for processing images and visual content.
+# Used by the explain_image MCP tool.
 #
-# Backend connects via: gpt-oss-120b.multi-agent-dev.svc.cluster.local:8000
+# Backend connects via: qwen2.5-vl.multi-agent-dev.svc.cluster.local:8000
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: gpt-oss-120b
+  name: qwen2.5-vl
   namespace: multi-agent-dev
   labels:
-    app: gpt-oss-120b
-    workspace: gpt-oss-120b
+    app: qwen2.5-vl
+    workspace: qwen2.5-vl
     component: model-inference
-    managed-by: kaito
 spec:
   replicas: 1
   strategy:
@@ -23,12 +21,12 @@ spec:
   progressDeadlineSeconds: 900
   selector:
     matchLabels:
-      workspace: gpt-oss-120b
+      workspace: qwen2.5-vl
   template:
     metadata:
       labels:
-        workspace: gpt-oss-120b
-        app: gpt-oss-120b
+        workspace: qwen2.5-vl
+        app: qwen2.5-vl
     spec:
       nodeSelector:
         nvidia.com/gpu.present: "true"
@@ -42,8 +40,8 @@ spec:
         image: nvcr.io/nvidia/vllm:25.11-py3
         command: ["vllm", "serve"]
         args:
-        - "Qwen/Qwen2.5-3B-Instruct"
-        - "--served-model-name=gpt-oss-120b"
+        - "Qwen/Qwen2.5-VL-3B-Instruct"
+        - "--served-model-name=qwen2.5-vl"
         - "--tensor-parallel-size=1"
         - "--gpu-memory-utilization=0.40"
         - "--max-model-len=4096"
@@ -52,8 +50,6 @@ spec:
         - "--port=8000"
         - "--trust-remote-code"
         - "--enforce-eager"
-        - "--enable-auto-tool-choice"
-        - "--tool-call-parser=hermes"
         - "--enable-prefix-caching"
         ports:
         - containerPort: 8000
@@ -101,3 +97,19 @@ spec:
       - name: model-cache
         emptyDir:
           sizeLimit: 100Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qwen2.5-vl
+  namespace: multi-agent-dev
+  labels:
+    app: qwen2.5-vl
+spec:
+  selector:
+    app: qwen2.5-vl
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+  type: ClusterIP

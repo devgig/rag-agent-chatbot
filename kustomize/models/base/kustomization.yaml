@@ -40,7 +40,8 @@ resources:
   - hf-external-secret.yaml          # HuggingFace token from Azure Key Vault
   - kaito-workspace.yaml              # KAITO resource (reference only, blocked by NodeClaim)
   - kaito-service.yaml                # ClusterIP service (port 8000)
-  - gpt-oss-deployment.yaml           # Actual deployment (workaround for KAITO limitation)
+  - gpt-oss-deployment.yaml           # Main text model (Qwen2.5-3B-Instruct) for RAG/coding
+  - qwen-vl-deployment.yaml           # Vision model (Qwen2.5-VL-3B-Instruct) for image understanding
   - qwen3-embedding-deployment.yaml   # Embedding service for RAG
   - qwen3-embedding-service.yaml      # ClusterIP service for embeddings (port 8000)
 
