@@ -4,7 +4,7 @@
 # KAITO workspace (kaito-workspace.yaml) is blocked by NodeClaim requirement,
 # so we manually create the deployment with the same spec.
 #
-# Model: Qwen/Qwen2.5-3B-Instruct (open-source, excellent tool calling, optimized for 16GB GPU)
+# Model: Qwen/Qwen2.5-VL-3B-Instruct (vision-language model for text AND image processing)
 # Supports hermes tool-call-parser for MCP tool integration.
 # Backend connects via: gpt-oss-120b.multi-agent-dev.svc.cluster.local:8000
 
@@ -44,7 +44,7 @@ spec:
         image: nvcr.io/nvidia/vllm:25.11-py3
         command: ["vllm", "serve"]
         args:
-        - "Qwen/Qwen2.5-3B-Instruct"
+        - "Qwen/Qwen2.5-VL-3B-Instruct"
         - "--served-model-name=gpt-oss-120b"
         - "--tensor-parallel-size=1"
         - "--gpu-memory-utilization=0.85"

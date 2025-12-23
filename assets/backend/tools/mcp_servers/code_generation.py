@@ -25,23 +25,23 @@ from mcp.server.fastmcp import FastMCP
 from openai import AsyncOpenAI
 
 mcp = FastMCP("Code Generation")
-model_name = "deepseek-coder:6.7b"
+model_name = "gpt-oss-120b"
 
 
 @mcp.tool()
 async def write_code(query: str, programming_language: str):
     """This tool is used to write complete code.
-    
+
     Args:
         query: The natural language description of the code to be generated.
         programming_language: The programming language for the code generation (e.g., 'Python', 'JavaScript', 'HTML', 'CSS', 'Go').
-        
+
     Returns:
         The generated code.
     """
     model_client = AsyncOpenAI(
-        base_url="http://deepseek-coder:8000/v1",
-        api_key="ollama"
+        base_url="http://gpt-oss-120b:8000/v1",
+        api_key="api_key"
     )
     
     system_prompt = f"""You are an expert coder specializing in {programming_language}.
