@@ -42,10 +42,10 @@ from postgres_storage import PostgreSQLConversationStorage
 mcp = FastMCP("image-understanding-server")
 
 
-# Use dedicated vision-language model for image understanding
-model_name = "qwen2.5-vl"
+# Use main model (Qwen2.5-VL) for image understanding
+model_name = "gpt-oss-120b"
 model_client = OpenAI(
-    base_url="http://qwen2.5-vl:8000/v1",
+    base_url="http://gpt-oss-120b:8000/v1",
     api_key="api_key"
 )
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
