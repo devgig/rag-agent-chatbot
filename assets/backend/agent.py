@@ -307,10 +307,7 @@ class ChatAgent:
         supports_tools = self.current_model in {"gpt-oss-20b", "gpt-oss-120b"}
         has_tools = supports_tools and self.openai_tools and len(self.openai_tools) > 0
 
-        # Check if there are selected sources or an image - force tool calls for Qwen2.5-VL
-        # This is needed because Qwen2.5-VL ignores tools with "auto" but works with "required"
-        config_obj = self.config_manager.read_config()
-        has_selected_sources = bool(config_obj.selected_sources)
+        # Check if there's an image - force tool calls for vision tasks
         has_image = bool(state.get("image_data"))
 
         # Check if the latest user message contains an image URL
@@ -322,10 +319,10 @@ class ChatAgent:
                     has_image_url = contains_image_url(str(msg.content))
                     break
 
-        # Use "required" on first iteration when sources are selected, image is uploaded, or image URL detected
-        # After first iteration (tool results received), use "auto" to let model respond
+        # Only force tool calling for images (uploaded or URL)
+        # Let the model decide when to use search_documents based on the query
         iterations = state.get("iterations", 0)
-        force_tool_call = (has_selected_sources or has_image or has_image_url) and iterations == 0
+        force_tool_call = (has_image or has_image_url) and iterations == 0
 
         logger.debug({
             "message": "Tool calling debug info",
@@ -334,7 +331,6 @@ class ChatAgent:
             "supports_tools": supports_tools,
             "openai_tools_count": len(self.openai_tools) if self.openai_tools else 0,
             "has_tools": has_tools,
-            "has_selected_sources": has_selected_sources,
             "has_image": has_image,
             "has_image_url": has_image_url,
             "force_tool_call": force_tool_call,
