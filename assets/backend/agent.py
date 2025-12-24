@@ -19,6 +19,7 @@
 import asyncio
 import contextlib
 import json
+import re
 from typing import AsyncIterator, List, Dict, Any, TypedDict, Optional, Callable, Awaitable
 
 from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage, ToolMessage, ToolCall
@@ -37,6 +38,17 @@ from utils import convert_langgraph_messages_to_openai
 memory = MemorySaver()
 SENTINEL = object()
 StreamCallback = Callable[[Dict[str, Any]], Awaitable[None]]
+
+# Pattern to detect image URLs in text
+IMAGE_URL_PATTERN = re.compile(
+    r'https?://[^\s<>"{}|\\^`\[\]]+\.(?:png|jpg|jpeg|gif|webp|bmp|svg|tiff?)(?:\?[^\s]*)?',
+    re.IGNORECASE
+)
+
+
+def contains_image_url(text: str) -> bool:
+    """Check if text contains an image URL."""
+    return bool(IMAGE_URL_PATTERN.search(text))
 
 
 class State(TypedDict, total=False):
@@ -301,10 +313,19 @@ class ChatAgent:
         has_selected_sources = bool(config_obj.selected_sources)
         has_image = bool(state.get("image_data"))
 
-        # Use "required" on first iteration when sources are selected OR image is uploaded
+        # Check if the latest user message contains an image URL
+        has_image_url = False
+        messages = state.get("messages", [])
+        if messages:
+            for msg in reversed(messages):
+                if isinstance(msg, HumanMessage):
+                    has_image_url = contains_image_url(str(msg.content))
+                    break
+
+        # Use "required" on first iteration when sources are selected, image is uploaded, or image URL detected
         # After first iteration (tool results received), use "auto" to let model respond
         iterations = state.get("iterations", 0)
-        force_tool_call = (has_selected_sources or has_image) and iterations == 0
+        force_tool_call = (has_selected_sources or has_image or has_image_url) and iterations == 0
 
         logger.debug({
             "message": "Tool calling debug info",
@@ -315,6 +336,7 @@ class ChatAgent:
             "has_tools": has_tools,
             "has_selected_sources": has_selected_sources,
             "has_image": has_image,
+            "has_image_url": has_image_url,
             "force_tool_call": force_tool_call,
             "iterations": iterations
         })

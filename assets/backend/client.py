@@ -53,7 +53,7 @@ class MCPClient:
     """Client for managing connections to multiple MCP servers.
 
     Provides a unified interface for connecting to and interacting with
-    various MCP servers including RAG, image understanding, and weather services.
+    various MCP servers including RAG, image understanding, and code generation.
     """
 
     def __init__(self):
@@ -76,12 +76,6 @@ class MCPClient:
             "rag-server": {
                 "command": python_exe,
                 "args": ["tools/mcp_servers/rag.py"],
-                "transport": "stdio",
-                "env": mcp_env,
-            },
-            "weather-server": {
-                "command": python_exe,
-                "args": ["tools/mcp_servers/weather_test.py"],
                 "transport": "stdio",
                 "env": mcp_env,
             }

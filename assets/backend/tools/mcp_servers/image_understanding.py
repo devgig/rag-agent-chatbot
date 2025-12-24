@@ -64,9 +64,14 @@ postgres_storage = PostgreSQLConversationStorage(
 
 @mcp.tool()
 def explain_image(query: str, image: str):
-    """
-    This tool is used to understand an image. It will respond to the user's query based on the image.
-    ...
+    """Analyze and understand images. Use this tool whenever a user asks about an image, photo, screenshot, chart, graph, or diagram.
+
+    Args:
+        query: The question or request about the image (e.g., "What does this chart show?", "Describe this image")
+        image: The image to analyze. Accepts URLs (http:// or https://), file paths, or base64-encoded data.
+
+    Returns:
+        A detailed response answering the query based on the image content.
     """ 
     if not image:
         raise ValueError('Error: explain_image tool received an empty image string.')

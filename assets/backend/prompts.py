@@ -39,7 +39,7 @@ CODING KEYWORDS that REQUIRE write_code tool:
 
 
 Batching policy:
-- **Batch** when: (a) calls are independent (e.g., weather in two cities), (b) calls target different tools without dependency, or (c) multiple calls to the same tool with different arguments.
+- **Batch** when: (a) calls are independent (e.g., analyzing multiple images), (b) calls target different tools without dependency, or (c) multiple calls to the same tool with different arguments.
 - **Do not batch** when: a call’s arguments depend on a previous tool’s output (e.g., writing code which depends on the output of a search_documents tool).
 
 Output protocol:
@@ -57,10 +57,10 @@ Assistant (tool calls immediately):
 - write_code({"query": "Create a responsive personal website for my AI development business", "programming_language": "HTML"})
 
 # Batching independent calls
-User: now, can you get the weather in egypt and the rain forecast in malibu?
+User: Can you analyze this chart https://example.com/chart.png and also search my documents for sales data?
 Assistant (tool calls in one message):
-- get_weather({"location": "Egypt"})
-- get_rain_forecast({"location": "Malibu"})
+- explain_image({"query": "analyze this chart", "image": "https://example.com/chart.png"})
+- search_documents({"query": "sales data"})
 
 # Staged dependent calls 
 User: Search my documents for design requirements then build a website based on those requirements
