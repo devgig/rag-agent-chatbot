@@ -315,9 +315,9 @@ class ChatAgent:
 
         # Check if the latest user message contains an image URL
         has_image_url = False
-        messages = state.get("messages", [])
-        if messages:
-            for msg in reversed(messages):
+        state_messages = state.get("messages", [])
+        if state_messages:
+            for msg in reversed(state_messages):
                 if isinstance(msg, HumanMessage):
                     has_image_url = contains_image_url(str(msg.content))
                     break
