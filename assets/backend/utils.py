@@ -21,7 +21,7 @@ import os
 import time
 from typing import List, Dict, Any
 
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, ToolCall
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, ToolCall, SystemMessage
 
 from logger import logger
 from vector_store import VectorStore
@@ -169,11 +169,16 @@ def convert_langgraph_messages_to_openai(messages: List) -> List[Dict[str, Any]]
         List of dictionaries in OpenAI API format
     """
     openai_messages = []
-    
+
     for msg in messages:
-        if isinstance(msg, HumanMessage):
+        if isinstance(msg, SystemMessage):
             openai_messages.append({
-                "role": "user", 
+                "role": "system",
+                "content": msg.content
+            })
+        elif isinstance(msg, HumanMessage):
+            openai_messages.append({
+                "role": "user",
                 "content": msg.content
             })
         elif isinstance(msg, AIMessage):
