@@ -213,42 +213,52 @@ vector_store = create_vector_store_with_config(rag_agent.config_manager, uri=mil
 
 @mcp.tool()
 async def search_documents(query: str) -> str:
-    """Search documents uploaded by the user to generate fast, grounded answers.
-    
-    Performs a simple RAG pipeline that retrieves relevant documents and generates answers.
-    
+    """Search documents uploaded by the user and return relevant context.
+
+    Retrieves relevant document chunks from the vector store based on the query.
+    The main agent should use this context to formulate the final answer.
+
     Args:
         query: The question or query to search for.
-        
+
     Returns:
-        A concise answer based on the retrieved documents.
+        Retrieved document context relevant to the query.
     """
     config_obj = rag_agent.config_manager.read_config()
     sources = config_obj.selected_sources or []
-    
-    initial_state = {
-        "question": query,
-        "sources": sources,
-        "messages": []
-    }
-    
-    thread_id = f"rag_session_{time.time()}"
-    
-    result = await rag_agent.graph.ainvoke(initial_state)
-    
-    if not result.get("messages"):
-        logger.error({"message": "No messages in RAG result", "query": query})
-        return "I apologize, but I encountered an error processing your query and no response was generated."
-    
-    final_message = result["messages"][-1]
-    final_content = getattr(final_message, 'content', '') or ''
-    
-    if not final_content.strip():
-        logger.warning({"message": "Empty content in final RAG message", "query": query, "message_type": type(final_message).__name__})
-        return f"I found relevant documents for your query '{query}' but was unable to generate a response. Please try rephrasing your question."
-    
-    logger.info({"message": "RAG result", "content_length": len(final_content), "query": query})
-    return final_content
+
+    logger.info({"message": "Starting document search", "query": query, "sources": sources})
+
+    # Retrieve documents directly without LLM generation
+    if sources:
+        retrieved_docs = vector_store.get_documents(query, sources=sources)
+    else:
+        retrieved_docs = vector_store.get_documents(query)
+
+    # Fallback to all documents if source filtering returns nothing
+    if not retrieved_docs and sources:
+        logger.info({"message": "No documents found with source filtering, trying without filters"})
+        retrieved_docs = vector_store.get_documents(query)
+
+    if not retrieved_docs:
+        logger.warning({"message": "No documents retrieved", "query": query})
+        return f"No relevant documents found for query: '{query}'. Please ensure documents have been uploaded."
+
+    # Format retrieved context for the main agent
+    sources_found = set(doc.metadata.get("source", "unknown") for doc in retrieved_docs)
+    logger.info({"message": "Documents retrieved", "sources": list(sources_found), "doc_count": len(retrieved_docs)})
+
+    # Build context string with source attribution
+    context_parts = []
+    for i, doc in enumerate(retrieved_docs, 1):
+        source = doc.metadata.get("source", "unknown")
+        content = doc.page_content.strip()
+        context_parts.append(f"[Document {i} - {source}]\n{content}")
+
+    context = "\n\n".join(context_parts)
+
+    logger.info({"message": "Search completed", "context_length": len(context), "doc_count": len(retrieved_docs)})
+    return context
 
 
 if __name__ == "__main__":
