@@ -54,6 +54,7 @@ spec:
         - "--enable-auto-tool-choice"
         - "--tool-call-parser=hermes"
         - "--enable-prefix-caching"
+        - "--chat-template=/chat-template/chat_template.jinja"
         ports:
         - containerPort: 8000
           name: http
@@ -93,6 +94,8 @@ spec:
           mountPath: /dev/shm
         - name: model-cache
           mountPath: /root/.cache/huggingface
+        - name: chat-template
+          mountPath: /chat-template
       volumes:
       - name: dshm
         emptyDir:
@@ -100,3 +103,6 @@ spec:
       - name: model-cache
         persistentVolumeClaim:
           claimName: model-cache-pvc
+      - name: chat-template
+        configMap:
+          name: qwen-chat-template
