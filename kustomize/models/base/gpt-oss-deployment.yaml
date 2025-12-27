@@ -1,7 +1,7 @@
 # Single Model Deployment for DGX Spark (1 GPU)
 # ==============================================
 # Qwen2.5-VL-3B-Instruct handles text, images, RAG, and code generation.
-# 3B model provides fast inference for interactive use.
+# 3B model optimized for DGX Spark GB10 GPU (7B failed to load).
 #
 # Backend connects via: gpt-oss-120b.multi-agent-dev.svc.cluster.local:8000
 
@@ -45,7 +45,7 @@ spec:
         - "--served-model-name=gpt-oss-120b"
         - "--tensor-parallel-size=1"
         - "--gpu-memory-utilization=0.90"
-        - "--max-model-len=8192"
+        - "--max-model-len=4096"
         - "--dtype=bfloat16"
         - "--host=0.0.0.0"
         - "--port=8000"
