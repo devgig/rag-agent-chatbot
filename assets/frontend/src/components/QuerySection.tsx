@@ -306,7 +306,8 @@ export default function QuerySection({
             } 
             case "tool_start": {
               console.log(type, msg.data);
-              setGraphStatus(`calling tool: ${msg?.data}`);
+              // Keep showing "Thinking..." instead of revealing tool names
+              setGraphStatus("Thinking...");
               break;
             }
             case "tool_end":
