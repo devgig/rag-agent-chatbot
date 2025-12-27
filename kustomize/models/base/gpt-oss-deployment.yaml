@@ -1,7 +1,7 @@
 # Single Model Deployment for DGX Spark (1 GPU)
 # ==============================================
-# Qwen2.5-VL-7B-Instruct handles text, images, RAG, and code generation.
-# 7B model balances quality and speed for interactive use.
+# Qwen2.5-VL-3B-Instruct handles text, images, RAG, and code generation.
+# 3B model provides fast inference for interactive use.
 #
 # Backend connects via: gpt-oss-120b.multi-agent-dev.svc.cluster.local:8000
 
@@ -41,7 +41,7 @@ spec:
         image: nvcr.io/nvidia/vllm:25.11-py3
         command: ["vllm", "serve"]
         args:
-        - "Qwen/Qwen2.5-VL-7B-Instruct"
+        - "Qwen/Qwen2.5-VL-3B-Instruct"
         - "--served-model-name=gpt-oss-120b"
         - "--tensor-parallel-size=1"
         - "--gpu-memory-utilization=0.90"
