@@ -15,7 +15,7 @@
 # limitations under the License.
 */
 import type React from "react";
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import styles from "@/styles/QuerySection.module.css";
 import ReactMarkdown from 'react-markdown'; // NEW
 import remarkGfm from 'remark-gfm'; // NEW
@@ -267,6 +267,7 @@ export default function QuerySection({
                 // const filtered = msg.messages.filter(m => m.type !== "ToolMessage"); // TODO: add this back in
                 setResponse(JSON.stringify(msg.messages));
                 setIsStreaming(false);
+                setGraphStatus(""); // Clear status when response is complete
               }
               break;
             }
@@ -313,7 +314,8 @@ export default function QuerySection({
             case "tool_end":
             case "node_end": {
               console.log(type, msg.data);
-              setGraphStatus("");
+              // Don't clear status here - let it stay until streaming ends
+              // This prevents flickering between tool calls
               break;
             }
             default: {
@@ -326,6 +328,7 @@ export default function QuerySection({
           console.log("WebSocket connection closed");
           if (isEffectActive) {
             setIsStreaming(false);
+            setGraphStatus(""); // Clear status on close
           }
         };
 
@@ -333,6 +336,7 @@ export default function QuerySection({
           console.error("WebSocket error:", error);
           if (isEffectActive) {
             setIsStreaming(false);
+            setGraphStatus(""); // Clear status on error
           }
         };
       } catch (error) {
@@ -501,12 +505,12 @@ export default function QuerySection({
     }
   };
 
-  // filter out all ToolMessages
-  const parseMessages = (response: string): Message[] => {
+  // Memoize parsed messages to avoid re-parsing on every render
+  const parsedMessages = useMemo((): Message[] => {
     try {
       const parsed = JSON.parse(response);
       if (!Array.isArray(parsed)) return [];
-  
+
       return parsed
         .map((msg: any): Message => ({
           type: msg?.type === "HumanMessage"
@@ -519,10 +523,10 @@ export default function QuerySection({
         .filter((msg) => msg.type !== "ToolMessage"); // discard ToolMessage completely
     } catch {
       if (!response?.trim()) return [];
-      
+
       return [{ type: "AssistantMessage", content: String(response) }];
     }
-  };
+  }, [response]);
 
 
   return (
@@ -540,7 +544,7 @@ export default function QuerySection({
         </div>
       
       <div className={styles.messagesContainer} ref={chatContainerRef}>
-        {parseMessages(response).map((message, index) => {
+        {parsedMessages.map((message, index) => {
           const isHuman = message.type === "HumanMessage";
           const key = `${message.type}-${index}`;
           
@@ -594,7 +598,7 @@ export default function QuerySection({
           <div 
             className={`${styles.messageWrapper} ${styles.assistantMessageWrapper}`}
             style={{
-              animationDelay: `${parseMessages(response).length * 0.1}s`
+              animationDelay: `${parsedMessages.length * 0.1}s`
             }}
           >
             <div className={`${styles.message} ${styles.assistantMessage}`}>
