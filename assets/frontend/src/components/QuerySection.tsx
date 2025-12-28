@@ -200,6 +200,10 @@ export default function QuerySection({
   const hasAssistantContent = useRef(false);
   const fadeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Batch token updates to reduce re-renders during streaming
+  const pendingTokens = useRef<string>("");
+  const tokenFlushTimeout = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowButtons(true);
@@ -264,8 +268,31 @@ export default function QuerySection({
             case "history": {
               console.log('history messages: ', msg.messages);
               if (Array.isArray(msg.messages)) {
-                // const filtered = msg.messages.filter(m => m.type !== "ToolMessage"); // TODO: add this back in
-                setResponse(JSON.stringify(msg.messages));
+                // Flush any pending tokens before finishing
+                if (tokenFlushTimeout.current) {
+                  clearTimeout(tokenFlushTimeout.current);
+                }
+                if (pendingTokens.current) {
+                  const tokensToFlush = pendingTokens.current;
+                  pendingTokens.current = "";
+                  setResponse(prev => {
+                    try {
+                      const messages = JSON.parse(prev);
+                      const last = messages[messages.length - 1];
+                      if (last && last.type === "AssistantMessage") {
+                        last.content = String(last.content || "") + tokensToFlush;
+                      } else {
+                        messages.push({ type: "AssistantMessage", content: tokensToFlush });
+                      }
+                      return JSON.stringify(messages);
+                    } catch {
+                      return String(prev || "") + tokensToFlush;
+                    }
+                  });
+                } else if (!firstTokenReceived.current) {
+                  // Only update response if we haven't received streaming tokens
+                  setResponse(JSON.stringify(msg.messages));
+                }
                 setIsStreaming(false);
                 setGraphStatus(""); // Clear status when response is complete
               }
@@ -283,20 +310,35 @@ export default function QuerySection({
                 firstTokenReceived.current = true;
                 hasAssistantContent.current = true;
               }
-              setResponse(prev => {
-                try {
-                  const messages = JSON.parse(prev);
-                  const last = messages[messages.length - 1];
-                  if (last && last.type === "AssistantMessage") {
-                    last.content = String(last.content || "") + text;
-                  } else {
-                    messages.push({ type: "AssistantMessage", content: text });
-                  }
-                  return JSON.stringify(messages);
-                } catch {
-                  return String(prev || "") + text;
+
+              // Accumulate tokens and batch updates every 50ms to reduce re-renders
+              pendingTokens.current += text;
+
+              if (tokenFlushTimeout.current) {
+                clearTimeout(tokenFlushTimeout.current);
+              }
+
+              tokenFlushTimeout.current = setTimeout(() => {
+                const tokensToFlush = pendingTokens.current;
+                pendingTokens.current = "";
+
+                if (tokensToFlush) {
+                  setResponse(prev => {
+                    try {
+                      const messages = JSON.parse(prev);
+                      const last = messages[messages.length - 1];
+                      if (last && last.type === "AssistantMessage") {
+                        last.content = String(last.content || "") + tokensToFlush;
+                      } else {
+                        messages.push({ type: "AssistantMessage", content: tokensToFlush });
+                      }
+                      return JSON.stringify(messages);
+                    } catch {
+                      return String(prev || "") + tokensToFlush;
+                    }
+                  });
                 }
-              });
+              }, 50); // Batch updates every 50ms
               break;
             }
             case "node_start": {
@@ -350,6 +392,12 @@ export default function QuerySection({
     return () => {
       console.log('[WebSocket] Cleanup running for chatId:', currentChatId);
       isEffectActive = false;
+      // Clear token batching timeout
+      if (tokenFlushTimeout.current) {
+        clearTimeout(tokenFlushTimeout.current);
+        tokenFlushTimeout.current = null;
+      }
+      pendingTokens.current = "";
       // Close the WebSocket if it was assigned to ref (meaning it successfully opened)
       if (wsRef.current) {
         console.log('[WebSocket] Closing ref connection');
