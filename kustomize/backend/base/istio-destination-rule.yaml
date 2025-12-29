@@ -1,7 +1,7 @@
 # DestinationRule for WebSocket Connection Affinity
 # =================================================
 # Ensures WebSocket connections stick to the same backend pod
-# using consistent hashing based on the chat_id header or cookie.
+# using consistent hashing based on the chatId query parameter.
 #
 # Key settings:
 # - consistentHash: Routes same session to same pod
@@ -18,7 +18,7 @@ spec:
   trafficPolicy:
     loadBalancer:
       consistentHash:
-        httpHeaderName: x-chat-id  # Falls back to random if header not present
+        httpQueryParameterName: chatId  # WebSocket URL includes ?chatId=xxx
     connectionPool:
       http:
         h2UpgradePolicy: DO_NOT_UPGRADE  # Keep HTTP/1.1 for WebSocket upgrade

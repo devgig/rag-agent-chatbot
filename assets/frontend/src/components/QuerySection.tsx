@@ -244,7 +244,8 @@ export default function QuerySection({
         }
 
         // Connect to backend WebSocket via Next.js proxy
-        const wsUrl = getWebSocketUrl(`/ws/chat/${currentChatId}`);
+        // Include chatId as query param for Istio consistent hashing (session affinity)
+        const wsUrl = getWebSocketUrl(`/ws/chat/${currentChatId}?chatId=${currentChatId}`);
         console.log('[WebSocket] Creating new connection to:', wsUrl);
         ws = new WebSocket(wsUrl);
 
