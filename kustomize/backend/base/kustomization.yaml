@@ -9,6 +9,12 @@ resources:
   - service.yaml
   - postgres-external-secret.yaml
   - acr-external-secret.yaml
+  # Istio Ambient Mesh L7 resources
+  - istio-waypoint.yaml
+  - istio-destination-rule.yaml
+  - istio-virtual-service.yaml
+  # KEDA autoscaling
+  - keda-scaledobject.yaml
 
 patches:
   - target:

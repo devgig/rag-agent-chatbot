@@ -4,6 +4,7 @@ metadata:
   name: multi-agent-backend
   labels:
     app: multi-agent-backend
+    istio.io/use-waypoint: backend-waypoint  # Route through L7 waypoint
 spec:
   selector:
     app: multi-agent-backend

@@ -5,3 +5,4 @@ metadata:
   labels:
     name: multi-agent-dev
     environment: dev
+    istio.io/dataplane-mode: ambient

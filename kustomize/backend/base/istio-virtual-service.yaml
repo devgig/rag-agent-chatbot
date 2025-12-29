@@ -1,0 +1,46 @@
+# VirtualService for Backend WebSocket Routes
+# ============================================
+# Configures routing for WebSocket connections with proper timeouts.
+#
+# Key settings:
+# - timeout: 0s disables timeout for long-lived WebSocket connections
+# - retries: 0 for WebSocket (client handles reconnection)
+
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: multi-agent-backend-vs
+  namespace: multi-agent-dev
+spec:
+  hosts:
+    - multi-agent-backend
+  http:
+    # WebSocket routes - no timeout, no retries
+    - match:
+        - uri:
+            prefix: /ws
+        - headers:
+            upgrade:
+              exact: websocket
+      route:
+        - destination:
+            host: multi-agent-backend
+            port:
+              number: 8000
+      timeout: 0s  # Disable timeout for WebSocket
+      retries:
+        attempts: 0  # Client handles reconnection
+    # Regular HTTP routes
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: multi-agent-backend
+            port:
+              number: 8000
+      timeout: 300s  # 5 min timeout for LLM requests
+      retries:
+        attempts: 2
+        perTryTimeout: 120s
+        retryOn: 5xx,reset,connect-failure
