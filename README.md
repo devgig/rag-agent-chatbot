@@ -5,6 +5,11 @@
 ## Table of Contents
 
 - [Overview](#overview)
+- [Architecture](#architecture)
+  - [System Overview](#system-overview)
+  - [Document Ingestion Flow](#document-ingestion-flow)
+  - [RAG Query Flow](#rag-query-flow)
+  - [Component Details](#component-details)
 - [Instructions](#instructions)
 - [Troubleshooting](#troubleshooting)
 
@@ -20,6 +25,149 @@ With 128GB of unified memory, DGX Spark can run multiple LLMs and VLMs in parall
 At the core is a supervisor agent powered by gpt-oss-120B, orchestrating specialized downstream agents for coding, retrieval-augmented generation (RAG), and image understanding. 
 Thanks to DGX Spark's out-of-the-box support for popular AI frameworks and libraries, development and prototyping are fast and frictionless. 
 Together, these components demonstrate how complex, multimodal workflows can be executed efficiently on local, high-performance hardware.
+
+## Architecture
+
+### System Overview
+
+```mermaid
+flowchart TB
+    subgraph Frontend["Frontend (Next.js)"]
+        UI[Web UI<br/>Port 3000]
+        WS[WebSocket Client]
+        Upload[Document Upload]
+    end
+
+    subgraph Backend["Backend (FastAPI)"]
+        API[REST API<br/>Port 8000]
+        WSHandler[WebSocket Handler]
+        Agent[LangGraph Agent]
+        VectorStore[Vector Store Client]
+        MCPClient[MCP Client]
+    end
+
+    subgraph MCPServers["MCP Tool Servers"]
+        RAG[search_documents<br/>RAG Tool]
+        Vision[explain_image<br/>Vision Tool]
+        Code[write_code<br/>Code Tool]
+    end
+
+    subgraph Storage["Data Storage"]
+        Postgres[(PostgreSQL<br/>Conversations & Sources)]
+        Milvus[(Milvus<br/>Vector Embeddings)]
+    end
+
+    subgraph Models["Model Servers (vLLM)"]
+        LLM[gpt-oss-120b<br/>Supervisor LLM]
+        VLM[Qwen2.5-VL<br/>Vision Model]
+        Embed[Qwen3-Embedding<br/>Embeddings]
+    end
+
+    UI --> WS
+    UI --> Upload
+    WS <-->|WebSocket| WSHandler
+    Upload -->|HTTP POST| API
+
+    WSHandler --> Agent
+    API --> VectorStore
+
+    Agent <-->|stdio| MCPClient
+    MCPClient <--> RAG
+    MCPClient <--> Vision
+    MCPClient <--> Code
+
+    Agent -->|Chat Completion| LLM
+    Vision -->|Image Analysis| VLM
+    RAG --> VectorStore
+    VectorStore -->|Similarity Search| Milvus
+    VectorStore -->|Generate Embeddings| Embed
+
+    Agent -->|Save Messages| Postgres
+    VectorStore -->|Save Sources| Postgres
+```
+
+### Document Ingestion Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant Embedding as Embedding Model
+    participant Milvus
+    participant Postgres
+
+    User->>Frontend: Upload PDF/Documents
+    Frontend->>Backend: POST /ingest (multipart)
+    Backend-->>Frontend: task_id (queued)
+
+    Note over Backend: Background Task Starts
+
+    Backend->>Backend: Save files to disk
+    Backend->>Backend: Load & parse documents
+    Backend->>Backend: Chunk text (1000 chars, 200 overlap)
+
+    loop For each chunk
+        Backend->>Embedding: Generate embedding vector
+        Embedding-->>Backend: Vector [float array]
+    end
+
+    Backend->>Milvus: Store vectors + metadata
+    Milvus-->>Backend: Indexed
+
+    Backend->>Postgres: Save source metadata
+
+    Frontend->>Backend: GET /ingest/status/{task_id}
+    Backend-->>Frontend: status: completed
+    Frontend-->>User: Upload complete
+```
+
+### RAG Query Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend as Backend Agent
+    participant MCP as MCP Server
+    participant Milvus
+    participant LLM
+
+    User->>Frontend: "What does the doc say about X?"
+    Frontend->>Backend: WebSocket message
+
+    Backend->>LLM: Generate (with tools)
+    LLM-->>Backend: Tool call: search_documents
+
+    Backend->>MCP: Execute search_documents
+    MCP->>Milvus: Similarity search (top-k=8)
+    Milvus-->>MCP: Relevant chunks
+    MCP-->>Backend: Formatted context
+
+    Backend->>LLM: Generate with context
+
+    loop Streaming
+        LLM-->>Backend: Token
+        Backend-->>Frontend: WebSocket: token
+        Frontend-->>User: Display token
+    end
+
+    Backend->>Backend: Save to PostgreSQL
+    Backend-->>Frontend: WebSocket: history
+```
+
+### Component Details
+
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| **Frontend** | Next.js, React, Tailwind | Web interface with real-time streaming |
+| **Backend** | FastAPI, LangGraph | API server, agent orchestration |
+| **Vector Store** | Milvus | Document embeddings, similarity search |
+| **Conversations** | PostgreSQL | Chat history, document sources |
+| **Supervisor LLM** | vLLM (gpt-oss-120b) | Main reasoning, tool selection |
+| **Vision Model** | vLLM (Qwen2.5-VL) | Image understanding |
+| **Embeddings** | vLLM (Qwen3-Embedding) | Document vectorization |
+| **MCP Servers** | Python (stdio) | Tool implementations |
 
 ## What you'll accomplish
 
