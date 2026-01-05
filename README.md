@@ -32,13 +32,13 @@ Together, these components demonstrate how complex, multimodal workflows can be 
 
 ```mermaid
 flowchart TB
-    subgraph Frontend["Frontend (Next.js)"]
+    subgraph Frontend["Frontend (React + Next.js)"]
         UI[Web UI<br/>Port 3000]
+        Proxy[Next.js API Proxy<br/>/api/*]
         WS[WebSocket Client]
-        Upload[Document Upload]
     end
 
-    subgraph Backend["Backend (FastAPI)"]
+    subgraph Backend["Backend (FastAPI + CORS)"]
         API[REST API<br/>Port 8000]
         WSHandler[WebSocket Handler]
         Agent[LangGraph Agent]
@@ -63,10 +63,10 @@ flowchart TB
         Embed[Qwen3-Embedding<br/>Embeddings]
     end
 
+    UI -->|REST| Proxy
+    Proxy -->|HTTP| API
     UI --> WS
-    UI --> Upload
-    WS <-->|WebSocket| WSHandler
-    Upload -->|HTTP POST| API
+    WS <-->|Direct WebSocket| WSHandler
 
     WSHandler --> Agent
     API --> VectorStore
@@ -160,14 +160,17 @@ sequenceDiagram
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| **Frontend** | Next.js, React, Tailwind | Web interface with real-time streaming |
-| **Backend** | FastAPI, LangGraph | API server, agent orchestration |
+| **Frontend** | React, Next.js, Tailwind | Web UI, API proxy (REST), direct WebSocket |
+| **Backend** | FastAPI, LangGraph, CORS | API server, agent orchestration, WebSocket handler |
 | **Vector Store** | Milvus | Document embeddings, similarity search |
 | **Conversations** | PostgreSQL | Chat history, document sources |
 | **Supervisor LLM** | vLLM (gpt-oss-120b) | Main reasoning, tool selection |
 | **Vision Model** | vLLM (Qwen2.5-VL) | Image understanding |
 | **Embeddings** | vLLM (Qwen3-Embedding) | Document vectorization |
 | **MCP Servers** | Python (stdio) | Tool implementations |
+
+> **Note on CORS**: REST API calls are proxied through Next.js `/api` routes to avoid CORS.
+> WebSocket connections go directly to the backend, which has CORS middleware configured.
 
 ## What you'll accomplish
 
