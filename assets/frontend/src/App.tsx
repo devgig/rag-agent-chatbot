@@ -14,15 +14,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 */
-"use client";
 import { useState, useRef, useEffect } from 'react';
 import QuerySection from '@/components/QuerySection';
 import DocumentIngestion from '@/components/DocumentIngestion';
 import Sidebar from '@/components/Sidebar';
+import ThemeToggle from '@/components/ThemeToggle';
 import styles from '@/styles/Home.module.css';
 import { getApiUrl } from '@/lib/api';
 
-export default function Home() {
+export default function App() {
   const [query, setQuery] = useState("");
   const [response, setResponse] = useState("[]");
   const [files, setFiles] = useState<FileList | null>(null);
@@ -58,7 +58,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: newChatId })
       });
-      
+
       if (response.ok) {
         setCurrentChatId(newChatId);
         setResponse("[]"); // Clear current chat messages with empty JSON array
@@ -83,51 +83,54 @@ export default function Home() {
   };
 
   return (
-    <div className={styles.container}>
-      <Sidebar 
-        showIngestion={showIngestion}
-        setShowIngestion={setShowIngestion}
-        refreshTrigger={refreshTrigger}
-        currentChatId={currentChatId}
-        onChatChange={handleChatChange}
-      />
-      
-      <div className={styles.mainContent}>
-        <QuerySection
-          query={query}
-          response={response}
-          isStreaming={isStreaming}
-          setQuery={setQuery}
-          setResponse={setResponse}
-          setIsStreaming={setIsStreaming}
-          abortControllerRef={abortControllerRef}
+    <>
+      <ThemeToggle />
+      <div className={styles.container}>
+        <Sidebar
+          showIngestion={showIngestion}
           setShowIngestion={setShowIngestion}
+          refreshTrigger={refreshTrigger}
           currentChatId={currentChatId}
+          onChatChange={handleChatChange}
         />
-      </div>
 
-      {showIngestion && (
-        <>
-          <div className={styles.overlay} onClick={() => setShowIngestion(false)} />
-          <div className={styles.documentUploadContainer}>
-            <button 
-              className={styles.closeButton} 
-              onClick={() => setShowIngestion(false)}
-            >
-              ×
-            </button>
-            <DocumentIngestion
-              files={files}
-              ingestMessage={ingestMessage}
-              isIngesting={isIngesting}
-              setFiles={setFiles}
-              setIngestMessage={setIngestMessage}
-              setIsIngesting={setIsIngesting}
-              onSuccessfulIngestion={handleSuccessfulIngestion}
-            />
-          </div>
-        </>
-      )}
-    </div>
+        <div className={styles.mainContent}>
+          <QuerySection
+            query={query}
+            response={response}
+            isStreaming={isStreaming}
+            setQuery={setQuery}
+            setResponse={setResponse}
+            setIsStreaming={setIsStreaming}
+            abortControllerRef={abortControllerRef}
+            setShowIngestion={setShowIngestion}
+            currentChatId={currentChatId}
+          />
+        </div>
+
+        {showIngestion && (
+          <>
+            <div className={styles.overlay} onClick={() => setShowIngestion(false)} />
+            <div className={styles.documentUploadContainer}>
+              <button
+                className={styles.closeButton}
+                onClick={() => setShowIngestion(false)}
+              >
+                ×
+              </button>
+              <DocumentIngestion
+                files={files}
+                ingestMessage={ingestMessage}
+                isIngesting={isIngesting}
+                setFiles={setFiles}
+                setIngestMessage={setIngestMessage}
+                setIsIngesting={setIsIngesting}
+                onSuccessfulIngestion={handleSuccessfulIngestion}
+              />
+            </div>
+          </>
+        )}
+      </div>
+    </>
   );
 }

@@ -14,13 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 */
-import type { NextConfig } from "next";
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App'
+import './index.css'
 
-const nextConfig: NextConfig = {
-  output: 'standalone',
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-};
-
-export default nextConfig;
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)

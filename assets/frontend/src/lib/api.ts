@@ -17,17 +17,37 @@
 
 /**
  * Get the backend API base URL
- * Uses Next.js API proxy routes for backend access
+ * Connects directly to backend (no proxy needed - CORS is configured)
  */
 export function getBackendUrl(): string {
-  // Use /api prefix to proxy through Next.js server
-  return '/api';
+  // Use configured backend URL if available (set at build time)
+  const backendUrl = import.meta.env.VITE_BACKEND_URL;
+  if (backendUrl) {
+    return backendUrl;
+  }
+
+  // Derive backend URL from frontend hostname
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname } = window.location;
+
+    // Replace 'frontend' with 'backend' in hostname
+    if (hostname.startsWith('frontend.')) {
+      const backendHostname = hostname.replace('frontend.', 'backend.');
+      return `${protocol}//${backendHostname}`;
+    }
+
+    // For local development, use same host with port 8000
+    return `${protocol}//${hostname}:8000`;
+  }
+
+  // Fallback for SSR/build time
+  return 'http://localhost:8000';
 }
 
 /**
  * Construct full API URL from a path
  * @param path - API path (e.g., '/sources', '/chats')
- * @returns Full URL to proxied backend API
+ * @returns Full URL to backend API
  */
 export function getApiUrl(path: string): string {
   const backendUrl = getBackendUrl();
@@ -38,7 +58,6 @@ export function getApiUrl(path: string): string {
 
 /**
  * Get WebSocket URL for real-time communication
- * Connects directly to backend WebSocket server
  * @param path - WebSocket path (e.g., '/ws/chat/123')
  * @returns WebSocket URL
  */
@@ -46,28 +65,17 @@ export function getWebSocketUrl(path: string): string {
   // Ensure path starts with /
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
-  // Use direct backend WebSocket URL if configured at build time
-  const backendWsUrl = process.env.NEXT_PUBLIC_BACKEND_WS_URL;
+  // Use configured backend WebSocket URL if available
+  const backendWsUrl = import.meta.env.VITE_BACKEND_WS_URL;
   if (backendWsUrl) {
     return `${backendWsUrl}${normalizedPath}`;
   }
 
-  // Fallback: derive backend URL from frontend hostname
-  // Assumes backend is at backend.* when frontend is at frontend.*
-  if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const hostname = window.location.hostname;
+  // Derive from backend URL
+  const backendUrl = getBackendUrl();
+  const wsUrl = backendUrl
+    .replace('https://', 'wss://')
+    .replace('http://', 'ws://');
 
-    // Replace 'frontend' with 'backend' in hostname
-    if (hostname.startsWith('frontend.')) {
-      const backendHostname = hostname.replace('frontend.', 'backend.');
-      return `${protocol}//${backendHostname}${normalizedPath}`;
-    }
-
-    // For local development, use same host with port 8000
-    return `${protocol}//${hostname}:8000${normalizedPath}`;
-  }
-
-  // Server-side fallback
-  return `ws://localhost:8000${normalizedPath}`;
+  return `${wsUrl}${normalizedPath}`;
 }

@@ -29,30 +29,24 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# Build arguments for environment variables (optional)
+ARG VITE_BACKEND_URL
+ARG VITE_BACKEND_WS_URL
+
 # Build the application
 RUN npm run build
 
-# Production stage
-FROM node:20-alpine AS runner
+# Production stage - nginx for static files
+FROM nginx:alpine AS runner
 
-WORKDIR /app
+# Copy custom nginx config
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Set production environment
-ENV NODE_ENV=production
-ENV HOSTNAME="0.0.0.0"
+# Copy built assets from builder
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
-
-# Copy standalone output from builder
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-
-USER nextjs
-
+# Expose port 3000 (matching previous setup)
 EXPOSE 3000
 
-# Run the Next.js standalone server
-CMD ["node", "server.js"]
+# Run nginx in foreground
+CMD ["nginx", "-g", "daemon off;"]

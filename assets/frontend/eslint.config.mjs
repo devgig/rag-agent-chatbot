@@ -14,19 +14,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 */
-import { dirname } from "path";
-import { fileURLToPath } from "url";
-import { FlatCompat } from "@eslint/eslintrc";
+import js from "@eslint/js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
-
-const eslintConfig = [
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+export default [
+  js.configs.recommended,
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    languageOptions: {
+      ecmaVersion: 2020,
+      sourceType: "module",
+      globals: {
+        window: "readonly",
+        document: "readonly",
+        console: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        fetch: "readonly",
+        FileList: "readonly",
+        FormData: "readonly",
+        localStorage: "readonly",
+        WebSocket: "readonly",
+        NodeJS: "readonly",
+      },
+    },
+    rules: {
+      "no-unused-vars": "off", // TypeScript handles this
+    },
+  },
+  {
+    ignores: ["dist/", "node_modules/"],
+  },
 ];
-
-export default eslintConfig;

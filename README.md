@@ -32,10 +32,8 @@ Together, these components demonstrate how complex, multimodal workflows can be 
 
 ```mermaid
 flowchart TB
-    subgraph Frontend["Frontend (React + Next.js)"]
+    subgraph Frontend["Frontend (React + Vite + nginx)"]
         UI[Web UI<br/>Port 3000]
-        Proxy[Next.js API Proxy<br/>/api/*]
-        WS[WebSocket Client]
     end
 
     subgraph Backend["Backend (FastAPI + CORS)"]
@@ -63,10 +61,8 @@ flowchart TB
         Embed[Qwen3-Embedding<br/>Embeddings]
     end
 
-    UI -->|REST| Proxy
-    Proxy -->|HTTP| API
-    UI --> WS
-    WS <-->|Direct WebSocket| WSHandler
+    UI -->|REST API| API
+    UI <-->|WebSocket| WSHandler
 
     WSHandler --> Agent
     API --> VectorStore
@@ -160,7 +156,7 @@ sequenceDiagram
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| **Frontend** | React, Next.js, Tailwind | Web UI, API proxy (REST), direct WebSocket |
+| **Frontend** | React, Vite, Tailwind, nginx | Static web UI served by nginx |
 | **Backend** | FastAPI, LangGraph, CORS | API server, agent orchestration, WebSocket handler |
 | **Vector Store** | Milvus | Document embeddings, similarity search |
 | **Conversations** | PostgreSQL | Chat history, document sources |
@@ -168,9 +164,6 @@ sequenceDiagram
 | **Vision Model** | vLLM (Qwen2.5-VL) | Image understanding |
 | **Embeddings** | vLLM (Qwen3-Embedding) | Document vectorization |
 | **MCP Servers** | Python (stdio) | Tool implementations |
-
-> **Note on CORS**: REST API calls are proxied through Next.js `/api` routes to avoid CORS.
-> WebSocket connections go directly to the backend, which has CORS middleware configured.
 
 ## What you'll accomplish
 
