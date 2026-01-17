@@ -1,0 +1,95 @@
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: multi-agent-chatbot
+  description: Multi-agent chatbot system with RAG, vision, and code capabilities for DGX Spark
+  annotations:
+    dev.azure.com/project-repo: bytecourier/Applications/multi-agent-chatbot
+    backstage.io/techdocs-ref: dir:.
+  tags:
+    - llm
+    - multi-agent
+    - rag
+    - chatbot
+    - fastapi
+    - react
+spec:
+  owner: group:default/bytes
+  domain: ai-applications
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: multi-agent-chatbot-backend
+  description: FastAPI backend with LangGraph agent orchestration and MCP tool integration
+  annotations:
+    dev.azure.com/project-repo: bytecourier/Applications/multi-agent-chatbot
+    dev.azure.com/build-definition: azure-pipelines-backend.yaml
+  tags:
+    - python
+    - fastapi
+    - langgraph
+    - mcp
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/bytes
+  system: multi-agent-chatbot
+  providesApis:
+    - multi-agent-chatbot-api
+  dependsOn:
+    - resource:default/milvus
+    - resource:default/postgresql
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: multi-agent-chatbot-frontend
+  description: React web UI with Vite and Tailwind for interacting with the multi-agent system
+  annotations:
+    dev.azure.com/project-repo: bytecourier/Applications/multi-agent-chatbot
+    dev.azure.com/build-definition: azure-pipelines-frontend.yaml
+  tags:
+    - react
+    - vite
+    - typescript
+    - tailwind
+spec:
+  type: website
+  lifecycle: experimental
+  owner: group:default/bytes
+  system: multi-agent-chatbot
+  consumesApis:
+    - multi-agent-chatbot-api
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: multi-agent-chatbot-api
+  description: REST and WebSocket API for multi-agent chatbot interactions
+  tags:
+    - rest
+    - websocket
+spec:
+  type: openapi
+  lifecycle: experimental
+  owner: group:default/bytes
+  system: multi-agent-chatbot
+  definition: |
+    openapi: 3.0.0
+    info:
+      title: Multi-Agent Chatbot API
+      version: 0.1.0
+    paths:
+      /ingest:
+        post:
+          summary: Upload documents for RAG ingestion
+      /ingest/status/{task_id}:
+        get:
+          summary: Check document ingestion status
+      /ws:
+        get:
+          summary: WebSocket endpoint for chat interactions
