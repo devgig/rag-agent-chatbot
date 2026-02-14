@@ -28,6 +28,8 @@ spec:
       labels:
         workspace: gpt-oss-120b
         app: gpt-oss-120b
+      annotations:
+        ambient.istio.io/redirection: disabled  # Model pods don't need mesh; fixes probe timeouts from ztunnel interception
     spec:
       nodeSelector:
         nvidia.com/gpu.present: "true"
