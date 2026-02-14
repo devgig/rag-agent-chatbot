@@ -19,12 +19,12 @@
 
 ## Basic idea
 
-This playbook shows you how to use DGX Spark to prototype, build, and deploy a fully local multi-agent system. 
-With 128GB of unified memory, DGX Spark can run multiple LLMs and VLMs in parallel — enabling interactions across agents.
+This playbook shows you how to use DGX Spark to prototype, build, and deploy a fully local RAG chatbot system.
+With 128GB of unified memory, DGX Spark can run LLMs locally with sufficient headroom for document retrieval workloads.
 
-At the core is a supervisor agent powered by gpt-oss-120B, orchestrating specialized downstream agents for coding, retrieval-augmented generation (RAG), and image understanding. 
-Thanks to DGX Spark's out-of-the-box support for popular AI frameworks and libraries, development and prototyping are fast and frictionless. 
-Together, these components demonstrate how complex, multimodal workflows can be executed efficiently on local, high-performance hardware.
+At the core is a supervisor agent powered by gpt-oss-120B, orchestrating document retrieval through MCP (Model Context Protocol) tool servers.
+The system focuses on retrieval-augmented generation (RAG), enabling users to upload documents and ask questions grounded in their content.
+Thanks to DGX Spark's out-of-the-box support for popular AI frameworks and libraries, development and prototyping are fast and frictionless.
 
 ## Architecture
 
@@ -46,8 +46,6 @@ flowchart TB
 
     subgraph MCPServers["MCP Tool Servers"]
         RAG[search_documents<br/>RAG Tool]
-        Vision[explain_image<br/>Vision Tool]
-        Code[write_code<br/>Code Tool]
     end
 
     subgraph Storage["Data Storage"]
@@ -55,9 +53,8 @@ flowchart TB
         Milvus[(Milvus<br/>Vector Embeddings)]
     end
 
-    subgraph Models["Model Servers (vLLM)"]
+    subgraph Models["Model Servers"]
         LLM[gpt-oss-120b<br/>Supervisor LLM]
-        VLM[Qwen2.5-VL<br/>Vision Model]
         Embed[Qwen3-Embedding<br/>Embeddings]
     end
 
@@ -69,11 +66,8 @@ flowchart TB
 
     Agent <-->|stdio| MCPClient
     MCPClient <--> RAG
-    MCPClient <--> Vision
-    MCPClient <--> Code
 
     Agent -->|Chat Completion| LLM
-    Vision -->|Image Analysis| VLM
     RAG --> VectorStore
     VectorStore -->|Similarity Search| Milvus
     VectorStore -->|Generate Embeddings| Embed

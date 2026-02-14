@@ -1,34 +1,38 @@
 # Frontend
 
-Next.js React application providing the user interface for the chatbot demo.
+React application providing the user interface for Spark Chat.
 
 ## Overview
 
-The frontend provides a chat interface with support for:
-- Multi-model conversations
+The frontend provides a chat interface with:
 - Document upload and RAG (Retrieval Augmented Generation)
-- Image processing capabilities
-- Real-time streaming responses via WebSocket
+- Real-time streaming responses via WebSocket with auto-reconnection
 - Theme switching (light/dark mode)
-- Sidebar configuration for models and data sources
+- Sidebar configuration for data sources and chat history
 
 ## Key Components
 
-- **QuerySection**: Main chat interface with message display and input
-- **Sidebar**: Configuration panel for models, sources, and chat history
-- **DocumentIngestion**: File upload interface for RAG functionality
-- **WelcomeSection**: Landing page with quick-start templates
-- **ThemeToggle**: Dark/light mode switcher
+- **QuerySection**: Main chat interface with WebSocket streaming, token batching, and auto-reconnect
+- **Sidebar**: Configuration panel for document sources and chat history management
+- **DocumentIngestion**: File upload interface for RAG document ingestion
+- **WelcomeSection**: Landing page with RAG agent card
+- **ThemeToggle**: Dark/light mode switcher with localStorage persistence
 
 ## Architecture
 
-Built with Next.js 14, TypeScript, and CSS modules. Communicates with the backend via REST API and WebSocket connections for real-time chat streaming.
+Built with React 19, Vite 6, TypeScript, and CSS modules. Communicates with the backend via REST API and WebSocket connections for real-time chat streaming.
+
+### WebSocket Features
+- **Auto-reconnect**: Exponential backoff reconnection (up to 5 attempts) on unexpected disconnections
+- **Token batching**: Accumulates streaming tokens and flushes every 50ms to reduce re-renders
+- **Connection status**: User-visible error messages when connection is lost or reconnecting
+- **Istio session affinity**: Chat ID passed as query parameter for consistent hashing
 
 ## Local Development
 
 ### Prerequisites
 - Node.js 20.x or higher
-- npm or yarn package manager
+- npm package manager
 
 ### Setup
 
@@ -38,13 +42,7 @@ Built with Next.js 14, TypeScript, and CSS modules. Communicates with the backen
    npm install
    ```
 
-2. **Configure environment variables** (optional):
-   Create a `.env.local` file:
-   ```bash
-   NEXT_PUBLIC_API_URL=http://localhost:8000
-   ```
-
-3. **Start development server**:
+2. **Start development server**:
    ```bash
    npm run dev
    ```
@@ -53,40 +51,47 @@ Built with Next.js 14, TypeScript, and CSS modules. Communicates with the backen
 
 ### Available Scripts
 
-- `npm run dev` - Start development server with Turbopack
+- `npm run dev` - Start development server on port 3000
 - `npm run build` - Build production bundle
-- `npm start` - Start production server
+- `npm run preview` - Preview production build
 - `npm run lint` - Run ESLint
 
 ### Development Workflow
 
 1. Make changes to components in `src/` directory
-2. Hot reload will automatically refresh the browser
+2. Vite hot module replacement automatically refreshes the browser
 3. Backend should be running on port 8000 for full functionality
+
+## Project Structure
+
+```
+src/
+├── main.tsx                 # Entry point
+├── App.tsx                  # Root component, global state
+├── index.css                # CSS variables, theme definitions
+├── lib/
+│   └── api.ts               # Backend URL resolution, WebSocket URL generation
+├── types/
+│   └── config.ts            # TypeScript interfaces
+├── components/
+│   ├── QuerySection.tsx     # Chat UI, WebSocket client, markdown rendering
+│   ├── Sidebar.tsx          # Source/chat management, collapsible sections
+│   ├── WelcomeSection.tsx   # Landing page
+│   ├── DocumentIngestion.tsx # File upload with drag-and-drop
+│   └── ThemeToggle.tsx      # Dark/light mode toggle
+└── styles/
+    ├── QuerySection.module.css
+    ├── Sidebar.module.css
+    ├── WelcomeSection.module.css
+    ├── DocumentIngestion.module.css
+    └── Home.module.css
+```
 
 ## Docker Troubleshooting
 
-### Container Issues
-- **Port conflicts**: Ensure port 3000 is not in use by other applications
-- **Build failures**: Clear Docker cache with `docker system prune -a`
-- **Hot reload not working**: Restart the container or check volume mounts
-
 ### Common Commands
 ```bash
-# View frontend logs
-docker logs frontend
-
-# Restart frontend container
-docker restart frontend
-
-# Rebuild frontend
-docker-compose up --build -d frontend
-
-# Access container shell
-docker exec -it frontend /bin/sh
+docker logs frontend        # View logs
+docker restart frontend     # Restart container
+docker exec -it frontend sh # Access shell
 ```
-
-### Performance Issues
-- Check available memory: `docker stats`
-- Increase Docker memory allocation in Docker Desktop settings
-- Clear browser cache and cookies for localhost:3000

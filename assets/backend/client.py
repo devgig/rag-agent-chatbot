@@ -23,16 +23,15 @@ initialization, and tool retrieval across different server types.
 
 import os
 import sys
-from typing import List, Optional
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from mcp.types import Tool
+
+from logger import logger
 
 
 def get_mcp_env() -> dict:
     """Get environment variables to pass to MCP server subprocesses."""
     env = os.environ.copy()
-    # Ensure critical env vars are passed to MCP servers
     for key in ["CONFIG_PATH", "MILVUS_ADDRESS", "MODELS", "POSTGRES_HOST",
                 "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"]:
         if key in os.environ:
@@ -99,5 +98,5 @@ class MCPClient:
             tools = await self.mcp_client.get_tools()
             return tools
         except Exception as error:
-            print("Error encountered connecting to MCP server. Is the server running? Is your config server path correct?\n")
+            logger.error("Error connecting to MCP server. Is the server running? Is the config path correct?")
             raise error

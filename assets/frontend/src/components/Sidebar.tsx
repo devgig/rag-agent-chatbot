@@ -151,12 +151,13 @@ export default function Sidebar({
     }
   }, []);
 
-  // Get sources on initial load and when the context section is expanded
+  // Get sources when the context section is expanded
+  const isContextExpanded = expandedSections.has('context');
   useEffect(() => {
-    if (expandedSections.has('context')) {
+    if (isContextExpanded) {
       fetchSources();
     }
-  }, [expandedSections.has('context'), fetchSources]);
+  }, [isContextExpanded, fetchSources]);
 
   // Refresh sources when refreshTrigger changes (document ingestion)
   useEffect(() => {
@@ -205,11 +206,12 @@ export default function Sidebar({
   }, [fetchChatMetadata]);
 
   // Fetch chats when history section is expanded
+  const isHistoryExpanded = expandedSections.has('history');
   useEffect(() => {
-    if (expandedSections.has('history')) {
+    if (isHistoryExpanded) {
       fetchChats();
     }
-  }, [expandedSections.has('history'), fetchChats]);
+  }, [isHistoryExpanded, fetchChats]);
 
 
   // Update highlight position when currentChatId changes
@@ -509,7 +511,6 @@ export default function Sidebar({
 
   const handleModelChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
     const newModel = event.target.value;
-    const newModelLower = newModel.toLowerCase();
     setSelectedModel(newModel);
     
     try {

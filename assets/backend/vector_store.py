@@ -29,75 +29,87 @@ from typing import Optional, Callable
 import requests
 
 
+EMBEDDING_BATCH_SIZE = 32
+
+
 class CustomEmbeddings:
-    """Wraps qwen3 embedding model to match OpenAI format"""
+    """Wraps qwen3 embedding model to match OpenAI format.
+
+    Supports batched requests to reduce HTTP round-trips during document indexing.
+    """
     def __init__(self, model: str = "Qwen3-Embedding-4B-Q8_0.gguf", host: str = "http://qwen3-embedding.multi-agent-dev.svc.cluster.local:8000"):
         self.model = model
         self.url = f"{host}/v1/embeddings"
+        self._session = requests.Session()
 
     def __call__(self, texts: list[str]) -> list[list[float]]:
-        embeddings = []
-        for text in texts:
-            response = requests.post(
+        embeddings: list[list[float]] = []
+        # Batch requests to reduce HTTP overhead during large ingestions
+        for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+            batch = texts[i:i + EMBEDDING_BATCH_SIZE]
+            response = self._session.post(
                 self.url,
-                json={"input": text, "model": self.model},
-                headers={"Content-Type": "application/json"}
+                json={"input": batch, "model": self.model},
+                headers={"Content-Type": "application/json"},
+                timeout=60,
             )
             response.raise_for_status()
             data = response.json()
-            embeddings.append(data["data"][0]["embedding"])
+            # Sort by index to maintain ordering
+            sorted_data = sorted(data["data"], key=lambda x: x["index"])
+            embeddings.extend(item["embedding"] for item in sorted_data)
         return embeddings
 
-    
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embed a list of document texts. Required by Milvus library."""
         return self.__call__(texts)
-    
+
     def embed_query(self, text: str) -> list[float]:
         """Embed a single query text. Required by Milvus library."""
         return self.__call__([text])[0]
 
 
+def _sanitize_milvus_string(value: str) -> str:
+    """Sanitize a string value for use in Milvus filter expressions to prevent injection."""
+    return value.replace('\\', '\\\\').replace('"', '\\"')
+
+
 class VectorStore:
     """Vector store for document embedding and retrieval.
-    
+
     Decoupled from ConfigManager - uses optional callbacks for source management.
     """
-    
+
     def __init__(
         self,
         embeddings=None,
         uri: str = "http://milvus.milvus-system.svc.cluster.local:19530",
         on_source_deleted: Optional[Callable[[str], None]] = None
     ):
-        """Initialize the vector store.
-        
-        Args:
-            embeddings: Embedding model to use (defaults to OllamaEmbeddings)
-            uri: Milvus connection URI
-            on_source_deleted: Optional callback when a source is deleted
-        """
         try:
             self.embeddings = embeddings or CustomEmbeddings(model="qwen3-embedding-custom")
             self.uri = uri
             self.on_source_deleted = on_source_deleted
+            self._milvus_connected = False
             self._initialize_store()
-            
+
             self.text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=1000,
                 chunk_overlap=200
             )
-            
-            logger.debug({
-                "message": "VectorStore initialized successfully"
-            })
+
+            logger.debug({"message": "VectorStore initialized successfully"})
         except Exception as e:
-            logger.error({
-                "message": "Error initializing VectorStore",
-                "error": str(e)
-            }, exc_info=True)
+            logger.error({"message": "Error initializing VectorStore", "error": str(e)}, exc_info=True)
             raise
     
+    def _ensure_milvus_connection(self) -> None:
+        """Ensure a persistent Milvus connection exists, reconnecting if needed."""
+        from pymilvus import connections
+        if not self._milvus_connected:
+            connections.connect(uri=self.uri)
+            self._milvus_connected = True
+
     def _initialize_store(self):
         self._store = Milvus(
             embedding_function=self.embeddings,
@@ -256,26 +268,15 @@ class VectorStore:
             raise
 
     def flush_store(self):
-        """
-        Flush the Milvus collection to ensure that all added documents are persisted to disk.
-        """
+        """Flush the Milvus collection to persist all added documents to disk."""
         try:
-            from pymilvus import connections
-            
-            connections.connect(uri=self.uri)
-            
-
             from pymilvus import utility
+            self._ensure_milvus_connection()
             utility.flush_all()
-            
-            logger.debug({
-                "message": "Milvus store flushed (persisted to disk)"
-            })
+            logger.debug({"message": "Milvus store flushed (persisted to disk)"})
         except Exception as e:
-            logger.error({
-                "message": "Error flushing Milvus store",
-                "error": str(e)
-            }, exc_info=True)
+            self._milvus_connected = False
+            logger.error({"message": "Error flushing Milvus store", "error": str(e)}, exc_info=True)
 
 
     def get_documents(self, query: str, k: int = 8, sources: List[str] = None) -> List[Document]:
@@ -287,9 +288,9 @@ class VectorStore:
             
             if sources:
                 if len(sources) == 1:
-                    filter_expr = f'source == "{sources[0]}"'
+                    filter_expr = f'source == "{_sanitize_milvus_string(sources[0])}"'
                 else:
-                    source_conditions = [f'source == "{source}"' for source in sources]
+                    source_conditions = [f'source == "{_sanitize_milvus_string(s)}"' for s in sources]
                     filter_expr = " || ".join(source_conditions)
                 
                 search_kwargs["expr"] = filter_expr
@@ -319,19 +320,10 @@ class VectorStore:
             return []
 
     def delete_collection(self, collection_name: str) -> bool:
-        """
-        Delete a collection from Milvus.
-
-        Args:
-            collection_name: Name of the collection to delete
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
+        """Delete a collection from Milvus."""
         try:
-            from pymilvus import connections, Collection, utility
-
-            connections.connect(uri=self.uri)
+            from pymilvus import Collection, utility
+            self._ensure_milvus_connection()
 
             if utility.has_collection(collection_name):
                 collection = Collection(name=collection_name)
@@ -361,19 +353,10 @@ class VectorStore:
             return False
 
     def delete_documents_by_source(self, source_name: str) -> int:
-        """
-        Delete all documents with a specific source from Milvus.
-
-        Args:
-            source_name: The source name to delete documents for
-
-        Returns:
-            int: Number of documents deleted, -1 on error
-        """
+        """Delete all documents with a specific source from Milvus."""
         try:
-            from pymilvus import connections, Collection, utility
-
-            connections.connect(uri=self.uri)
+            from pymilvus import Collection, utility
+            self._ensure_milvus_connection()
 
             collection_name = "context"
             if not utility.has_collection(collection_name):
@@ -386,8 +369,7 @@ class VectorStore:
             collection = Collection(name=collection_name)
             collection.load()
 
-            # Delete documents where source matches
-            delete_expr = f'source == "{source_name}"'
+            delete_expr = f'source == "{_sanitize_milvus_string(source_name)}"'
 
             # First count how many will be deleted
             results = collection.query(
@@ -417,16 +399,10 @@ class VectorStore:
             return -1
 
     def get_sources_from_milvus(self) -> List[str]:
-        """
-        Get list of unique sources from Milvus collection.
-
-        Returns:
-            List of unique source names
-        """
+        """Get list of unique sources from Milvus collection."""
         try:
-            from pymilvus import connections, Collection, utility
-
-            connections.connect(uri=self.uri)
+            from pymilvus import Collection, utility
+            self._ensure_milvus_connection()
 
             collection_name = "context"
             if not utility.has_collection(collection_name):

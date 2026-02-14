@@ -30,7 +30,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, UploadFile, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent import ChatAgent
@@ -48,6 +48,8 @@ POSTGRES_USER = os.getenv("POSTGRES_USER", "chatbot_user")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "chatbot_password")
 MILVUS_ADDRESS = os.getenv("MILVUS_ADDRESS", "tcp://milvus.milvus-system.svc.cluster.local:19530")
 CONFIG_PATH = os.getenv("CONFIG_PATH", "./config.json")
+MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
+MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 config_manager = ConfigManager(CONFIG_PATH)
 
@@ -103,13 +105,17 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+_default_origins = [
+    "http://localhost:3000",
+    "http://frontend.bytecourier.local",
+    "http://frontend.bytecourier.local:3000",
+]
+_env_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+CORS_ORIGINS = [o.strip() for o in _env_origins.split(",") if o.strip()] if _env_origins else _default_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://frontend.bytecourier.local",
-        "http://frontend.bytecourier.local:3000",
-    ],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -136,7 +142,8 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
         logger.debug(f"WebSocket connection accepted for chat_id: {chat_id}")
         
         history_messages = await postgres_storage.get_messages(chat_id)
-        history = [postgres_storage._message_to_dict(msg) for i, msg in enumerate(history_messages) if i != 0]
+        # Skip the first message (system prompt) using slicing instead of enumerate
+        history = [postgres_storage._message_to_dict(msg) for msg in history_messages[1:]]
         await websocket.send_json({"type": "history", "messages": history})
         
         while True:
@@ -152,7 +159,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
                 await websocket.send_json({"type": "error", "content": f"Error processing request: {str(query_error)}"})
         
             final_messages = await postgres_storage.get_messages(chat_id)
-            final_history = [postgres_storage._message_to_dict(msg) for i, msg in enumerate(final_messages) if i != 0]
+            final_history = [postgres_storage._message_to_dict(msg) for msg in final_messages[1:]]
             await websocket.send_json({"type": "history", "messages": final_history})
             
     except WebSocketDisconnect:
@@ -174,13 +181,21 @@ async def ingest_files(files: Optional[List[UploadFile]] = File(None), backgroun
         Task information for tracking ingestion progress
     """
     try:
-        log_request({"file_count": len(files) if files else 0}, "/ingest")
-        
+        if not files:
+            raise HTTPException(status_code=400, detail="No files provided")
+
+        log_request({"file_count": len(files)}, "/ingest")
+
         task_id = str(uuid.uuid4())
-        
+
         file_info = []
         for file in files:
             content = await file.read()
+            if len(content) > MAX_UPLOAD_SIZE_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File '{file.filename}' exceeds maximum size of {MAX_UPLOAD_SIZE_MB}MB"
+                )
             file_info.append({
                 "filename": file.filename,
                 "content": content

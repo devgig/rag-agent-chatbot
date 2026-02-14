@@ -204,6 +204,12 @@ export default function QuerySection({
   const pendingTokens = useRef<string>("");
   const tokenFlushTimeout = useRef<NodeJS.Timeout | null>(null);
 
+  // WebSocket reconnection state
+  const reconnectAttempts = useRef(0);
+  const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
+  const maxReconnectAttempts = 5;
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowButtons(true);
@@ -228,7 +234,6 @@ export default function QuerySection({
   }, []);
 
   useEffect(() => {
-    console.log('[WebSocket] Effect running, currentChatId:', currentChatId);
     if (!currentChatId) return;
 
     let isEffectActive = true;
@@ -236,40 +241,33 @@ export default function QuerySection({
 
     const initWebSocket = () => {
       try {
-        // Close existing connection if any
         if (wsRef.current) {
-          console.log('[WebSocket] Closing existing wsRef connection');
           wsRef.current.close();
           wsRef.current = null;
         }
 
-        // Connect to backend WebSocket via Next.js proxy
         // Include chatId as query param for Istio consistent hashing (session affinity)
         const wsUrl = getWebSocketUrl(`/ws/chat/${currentChatId}?chatId=${currentChatId}`);
-        console.log('[WebSocket] Creating new connection to:', wsUrl);
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
           if (isEffectActive && ws) {
-            console.log('[WebSocket] Connection opened');
             wsRef.current = ws;
+            reconnectAttempts.current = 0;
+            setConnectionError(null);
           } else if (ws) {
-            // Effect was cleaned up before connection opened, close this WebSocket
-            console.log('[WebSocket] Closing stale connection');
             ws.close();
           }
         };
 
         ws.onmessage = (event) => {
           const msg = JSON.parse(event.data);
-          const type = msg.type
+          const type = msg.type;
           const text = msg.data ?? msg.token ?? "";
-        
+
           switch (type) {
             case "history": {
-              console.log('history messages: ', msg.messages);
               if (Array.isArray(msg.messages)) {
-                // Flush any pending tokens before finishing
                 if (tokenFlushTimeout.current) {
                   clearTimeout(tokenFlushTimeout.current);
                 }
@@ -291,11 +289,10 @@ export default function QuerySection({
                     }
                   });
                 } else if (!firstTokenReceived.current) {
-                  // Only update response if we haven't received streaming tokens
                   setResponse(JSON.stringify(msg.messages));
                 }
                 setIsStreaming(false);
-                setGraphStatus(""); // Clear status when response is complete
+                setGraphStatus("");
               }
               break;
             }
@@ -312,7 +309,6 @@ export default function QuerySection({
                 hasAssistantContent.current = true;
               }
 
-              // Accumulate tokens and batch updates every 50ms to reduce re-renders
               pendingTokens.current += text;
 
               if (tokenFlushTimeout.current) {
@@ -339,7 +335,7 @@ export default function QuerySection({
                     }
                   });
                 }
-              }, 50); // Batch updates every 50ms
+              }, 50);
               break;
             }
             case "node_start": {
@@ -347,69 +343,75 @@ export default function QuerySection({
                 setGraphStatus("Thinking...");
               }
               break;
-            } 
+            }
             case "tool_start": {
-              console.log(type, msg.data);
-              // Keep showing "Thinking..." instead of revealing tool names
               setGraphStatus("Thinking...");
               break;
             }
-            case "tool_end":
-            case "node_end": {
-              console.log(type, msg.data);
-              // Don't clear status here - let it stay until streaming ends
-              // This prevents flickering between tool calls
+            case "error": {
+              setConnectionError(msg.content || msg.data || "An error occurred");
+              setIsStreaming(false);
+              setGraphStatus("");
               break;
             }
-            default: {
-              // ignore unknown events
-            }
+            case "tool_end":
+            case "node_end":
+            default:
+              break;
           }
         };
 
-        ws.onclose = () => {
-          console.log("WebSocket connection closed");
-          if (isEffectActive) {
-            setIsStreaming(false);
-            setGraphStatus(""); // Clear status on close
+        ws.onclose = (event) => {
+          if (!isEffectActive) return;
+          setIsStreaming(false);
+          setGraphStatus("");
+
+          // Auto-reconnect on unexpected close (not user-initiated)
+          if (event.code !== 1000 && reconnectAttempts.current < maxReconnectAttempts) {
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 16000);
+            reconnectAttempts.current += 1;
+            setConnectionError(`Connection lost. Reconnecting (${reconnectAttempts.current}/${maxReconnectAttempts})...`);
+            reconnectTimeout.current = setTimeout(() => {
+              if (isEffectActive) initWebSocket();
+            }, delay);
+          } else if (reconnectAttempts.current >= maxReconnectAttempts) {
+            setConnectionError("Unable to connect. Please refresh the page.");
           }
         };
 
-        ws.onerror = (error) => {
-          console.error("WebSocket error:", error);
+        ws.onerror = () => {
           if (isEffectActive) {
             setIsStreaming(false);
-            setGraphStatus(""); // Clear status on error
+            setGraphStatus("");
           }
         };
       } catch (error) {
         console.error("Error initializing WebSocket:", error);
         setIsStreaming(false);
+        setConnectionError("Failed to connect to server.");
       }
     };
 
     initWebSocket();
 
     return () => {
-      console.log('[WebSocket] Cleanup running for chatId:', currentChatId);
       isEffectActive = false;
-      // Clear token batching timeout
+      if (reconnectTimeout.current) {
+        clearTimeout(reconnectTimeout.current);
+        reconnectTimeout.current = null;
+      }
       if (tokenFlushTimeout.current) {
         clearTimeout(tokenFlushTimeout.current);
         tokenFlushTimeout.current = null;
       }
       pendingTokens.current = "";
-      // Close the WebSocket if it was assigned to ref (meaning it successfully opened)
+      reconnectAttempts.current = 0;
       if (wsRef.current) {
-        console.log('[WebSocket] Closing ref connection');
-        wsRef.current.close();
+        wsRef.current.close(1000); // Normal closure prevents reconnect
         wsRef.current = null;
       }
-      // For websockets still CONNECTING, don't close them here - it causes 1006 errors
-      // The onopen handler checks isEffectActive and will close stale connections
       if (ws && ws !== wsRef.current && ws.readyState === WebSocket.OPEN) {
-        console.log('[WebSocket] Closing local ws that opened but was not assigned to ref');
-        ws.close();
+        ws.close(1000);
       }
     };
   }, [currentChatId]);
@@ -644,18 +646,26 @@ export default function QuerySection({
         })}
 
         {isStreaming && (
-          <div 
+          <div
             className={`${styles.messageWrapper} ${styles.assistantMessageWrapper}`}
             style={{
               animationDelay: `${parsedMessages.length * 0.1}s`
             }}
           >
             <div className={`${styles.message} ${styles.assistantMessage}`}>
-              <div className={styles.typingIndicator}>
+              <div className={styles.typingIndicator} role="status" aria-label="Assistant is typing">
                 <span></span>
                 <span></span>
                 <span></span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {connectionError && (
+          <div className={`${styles.messageWrapper} ${styles.assistantMessageWrapper}`}>
+            <div className={`${styles.message} ${styles.assistantMessage}`} style={{ color: '#ef4444', fontSize: '0.875rem' }}>
+              {connectionError}
             </div>
           </div>
         )}

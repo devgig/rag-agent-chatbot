@@ -127,7 +127,7 @@ These are notable libraries pulled in as transitive dependencies:
 | [nginx](https://hub.docker.com/_/nginx) (Alpine) | alpine | BSD-2-Clause | Frontend static file serving |
 | [python](https://hub.docker.com/_/python) (slim) | 3.12-slim | PSF License | Backend runtime |
 | [NVIDIA CUDA](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda) | 13.0.1 | NVIDIA EULA (proprietary) | llama.cpp build/runtime |
-| [NVIDIA TensorRT-LLM](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorrt-llm) | spark-single-gpu-dev | NVIDIA EULA (proprietary) | Vision model serving |
+| [NVIDIA TensorRT-LLM](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorrt-llm) | spark-single-gpu-dev | NVIDIA EULA (proprietary) | LLM serving (optional) |
 
 ### Infrastructure Services
 
@@ -153,9 +153,7 @@ These models are downloaded and served at runtime. They are not bundled in the r
 | Model | Provider | License | Purpose |
 |-------|----------|---------|---------|
 | [gpt-oss-120b](https://huggingface.co/nvidia) | NVIDIA | NVIDIA Open Model License | Supervisor LLM |
-| [Qwen2.5-VL-7B-Instruct](https://huggingface.co/Qwen/Qwen2-VL-7B-Instruct) | Alibaba Cloud (Qwen) | Apache-2.0 | Vision/image understanding |
 | [Qwen3-Embedding-4B](https://huggingface.co/Qwen) | Alibaba Cloud (Qwen) | Apache-2.0 | Document embedding/vectorization |
-| [DeepSeek-Coder-6.7B-Instruct](https://huggingface.co/deepseek-ai/deepseek-coder-6.7b-instruct) | DeepSeek | DeepSeek License | Code generation agent |
 
 ---
 
@@ -186,7 +184,6 @@ The following license types are used across all dependencies:
 | **MPL-2.0** | Weak copyleft | certifi |
 | **NVIDIA EULA** | Proprietary | CUDA containers, TensorRT-LLM |
 | **NVIDIA Open Model License** | Model-specific | gpt-oss-120b |
-| **DeepSeek License** | Model-specific | DeepSeek Coder |
 
 ### AGPL-3.0 Note
 

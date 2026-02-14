@@ -32,7 +32,7 @@ graph TB
 
         subgraph GPU_TIER["<b>GPU TIER</b>"]
             subgraph spark["<b>spark-7eb5</b><br/>NVIDIA DGX Spark | 20 CPU | 128 GB | Blackwell GB10 GPU<br/>192.168.68.94 | CUDA 13.0 | Driver 580.95"]
-                spark_gpt["GPT-OSS-120B<br/>(LLM — Qwen2.5-VL-7B via vLLM)"]
+                spark_gpt["GPT-OSS-120B<br/>(Supervisor LLM via vLLM)"]
                 spark_nvidia["NVIDIA Container Toolkit<br/>+ Device Plugin"]
             end
         end

@@ -25,6 +25,7 @@ from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemM
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
+import httpx
 from openai import AsyncOpenAI
 
 from client import MCPClient
@@ -37,6 +38,10 @@ from utils import convert_langgraph_messages_to_openai
 memory = MemorySaver()
 SENTINEL = object()
 StreamCallback = Callable[[Dict[str, Any]], Awaitable[None]]
+
+LLM_REQUEST_TIMEOUT = 120.0
+MAX_ITERATIONS = 3
+
 
 class State(TypedDict, total=False):
     iterations: int
@@ -65,15 +70,14 @@ class ChatAgent:
         self.config_manager = config_manager
         self.conversation_store = postgres_storage
         self.current_model = None
-        
-        self.current_model = None
-        self.max_iterations = 3
-        
+        self.max_iterations = MAX_ITERATIONS
+        self.model_client: Optional[AsyncOpenAI] = None
+
         self.mcp_client = None
         self.openai_tools = None
         self.tools_by_name = None
         self.system_prompt = None
-        
+
         self.graph = self._build_graph()
         self.stream_callback = None
         self.last_state = None
@@ -142,28 +146,22 @@ class ChatAgent:
 
     def set_current_model(self, model_name: str) -> None:
         """Set the current model for completions.
-        
-        Args:
-            model_name: Name of the model to use
-            
-        Raises:
-            ValueError: If the model is not available
+
+        Creates a new AsyncOpenAI client with a bounded HTTP timeout to prevent
+        hung connections when the model service is slow or unreachable.
         """
         available_models = self.config_manager.get_available_models()
 
-        try:
-            if model_name in available_models:
-                self.current_model = model_name
-                logger.info(f"Switched to model: {model_name}")
-                self.model_client = AsyncOpenAI(
-                    base_url=f"http://{self.current_model}:8000/v1",
-                    api_key="api_key"
-                )
-            else:
-                raise ValueError(f"Model {model_name} is not available. Available models: {available_models}")
-        except Exception as e:
-            logger.error(f"Error setting current model: {e}")
+        if model_name not in available_models:
             raise ValueError(f"Model {model_name} is not available. Available models: {available_models}")
+
+        self.current_model = model_name
+        logger.info(f"Switched to model: {model_name}")
+        self.model_client = AsyncOpenAI(
+            base_url=f"http://{self.current_model}:8000/v1",
+            api_key="api_key",
+            timeout=httpx.Timeout(LLM_REQUEST_TIMEOUT, connect=10.0),
+        )
 
     def should_continue(self, state: State) -> str:
         """Determine whether to continue the tool calling loop.
@@ -471,8 +469,6 @@ class ChatAgent:
                         messages_to_process.append(msg)
 
             messages_to_process.append(HumanMessage(content=query_text))
-
-            config_obj = self.config_manager.read_config()
 
             initial_state = {
                 "iterations": 0,

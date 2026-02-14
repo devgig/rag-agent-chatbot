@@ -49,7 +49,7 @@ kustomize/
 The deployment includes the following components:
 
 ### Application Services
-- **Frontend**: Next.js application (port 3000)
+- **Frontend**: React + Vite application (port 3000)
 - **Backend**: FastAPI application (port 8000)
 
 ### Infrastructure Services

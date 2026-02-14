@@ -14,18 +14,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-"""PostgreSQL-based conversation storage with caching and I/O optimization."""
+"""PostgreSQL-based conversation storage with LRU caching and I/O optimization."""
 
 import json
 import time
+from collections import OrderedDict
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 import asyncio
 import asyncpg
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage, ToolMessage
 
 from logger import logger
+
+MAX_CACHE_ENTRIES = 200
+POOL_CONNECT_MAX_RETRIES = 5
+POOL_CONNECT_BASE_DELAY = 1.0
 
 
 @dataclass
@@ -34,35 +38,72 @@ class CacheEntry:
     data: Any
     timestamp: float
     ttl: float = 300
-    
+
     def is_expired(self) -> bool:
         return time.time() - self.timestamp > self.ttl
 
 
+class LRUCache:
+    """Bounded LRU cache with TTL expiration to prevent unbounded memory growth."""
+
+    def __init__(self, max_size: int = MAX_CACHE_ENTRIES, default_ttl: float = 300):
+        self._data: OrderedDict[str, CacheEntry] = OrderedDict()
+        self.max_size = max_size
+        self.default_ttl = default_ttl
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, key: str) -> Optional[Any]:
+        entry = self._data.get(key)
+        if entry is None:
+            self.misses += 1
+            return None
+        if entry.is_expired():
+            del self._data[key]
+            self.misses += 1
+            return None
+        self._data.move_to_end(key)
+        self.hits += 1
+        return entry.data
+
+    def put(self, key: str, value: Any, ttl: Optional[float] = None) -> None:
+        if key in self._data:
+            self._data.move_to_end(key)
+        self._data[key] = CacheEntry(
+            data=value, timestamp=time.time(), ttl=ttl or self.default_ttl
+        )
+        while len(self._data) > self.max_size:
+            self._data.popitem(last=False)
+
+    def remove(self, key: str) -> None:
+        self._data.pop(key, None)
+
+    def clear(self) -> None:
+        self._data.clear()
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def evict_expired(self) -> int:
+        expired = [k for k, v in self._data.items() if v.is_expired()]
+        for k in expired:
+            del self._data[k]
+        return len(expired)
+
+
 class PostgreSQLConversationStorage:
-    """PostgreSQL-based conversation storage with intelligent caching and I/O optimization."""
-    
+    """PostgreSQL-based conversation storage with LRU caching and I/O optimization."""
+
     def __init__(
-        self, 
-        host: str = 'postgres', 
-        port: int = 5432, 
-        database: str = 'chatbot', 
-        user: str = 'chatbot_user', 
+        self,
+        host: str = 'postgres',
+        port: int = 5432,
+        database: str = 'chatbot',
+        user: str = 'chatbot_user',
         password: str = 'chatbot_password',
         pool_size: int = 10,
         cache_ttl: int = 300
     ):
-        """Initialize PostgreSQL connection pool and caching.
-        
-        Args:
-            host: PostgreSQL host
-            port: PostgreSQL port
-            database: Database name
-            user: Database user
-            password: Database password
-            pool_size: Connection pool size
-            cache_ttl: Cache TTL in seconds
-        """
         self.host = host
         self.port = port
         self.database = database
@@ -70,46 +111,54 @@ class PostgreSQLConversationStorage:
         self.password = password
         self.pool_size = pool_size
         self.cache_ttl = cache_ttl
-        
+
         self.pool: Optional[asyncpg.Pool] = None
-        
-        self._message_cache: Dict[str, CacheEntry] = {}
-        self._metadata_cache: Dict[str, CacheEntry] = {}
-        self._image_cache: Dict[str, CacheEntry] = {}
+
+        self._message_cache = LRUCache(max_size=MAX_CACHE_ENTRIES, default_ttl=cache_ttl)
+        self._metadata_cache = LRUCache(max_size=MAX_CACHE_ENTRIES, default_ttl=cache_ttl)
         self._chat_list_cache: Optional[CacheEntry] = None
-        
+
         self._pending_saves: Dict[str, List[BaseMessage]] = {}
         self._save_lock = asyncio.Lock()
         self._batch_save_task: Optional[asyncio.Task] = None
-        
-        self._cache_hits = 0
-        self._cache_misses = 0
+        self._cache_eviction_task: Optional[asyncio.Task] = None
+
         self._db_operations = 0
 
     async def init_pool(self) -> None:
-        """Initialize the connection pool and create tables."""
-        try:
-            await self._ensure_database_exists()
-            
-            self.pool = await asyncpg.create_pool(
-                host=self.host,
-                port=self.port,
-                database=self.database,
-                user=self.user,
-                password=self.password,
-                min_size=2,
-                max_size=self.pool_size,
-                command_timeout=30
-            )
-            
-            await self._create_tables()
-            logger.debug("PostgreSQL connection pool initialized successfully")
-            
-            self._batch_save_task = asyncio.create_task(self._batch_save_worker())
-            
-        except Exception as e:
-            logger.error(f"Failed to initialize PostgreSQL pool: {e}")
-            raise
+        """Initialize the connection pool with retry logic and create tables."""
+        last_error = None
+        for attempt in range(POOL_CONNECT_MAX_RETRIES):
+            try:
+                await self._ensure_database_exists()
+
+                self.pool = await asyncpg.create_pool(
+                    host=self.host,
+                    port=self.port,
+                    database=self.database,
+                    user=self.user,
+                    password=self.password,
+                    min_size=2,
+                    max_size=self.pool_size,
+                    command_timeout=30
+                )
+
+                await self._create_tables()
+                logger.debug("PostgreSQL connection pool initialized successfully")
+
+                self._batch_save_task = asyncio.create_task(self._batch_save_worker())
+                self._cache_eviction_task = asyncio.create_task(self._cache_eviction_worker())
+                return
+
+            except Exception as e:
+                last_error = e
+                if attempt < POOL_CONNECT_MAX_RETRIES - 1:
+                    delay = POOL_CONNECT_BASE_DELAY * (2 ** attempt)
+                    logger.warning(f"PostgreSQL connection attempt {attempt + 1} failed: {e}, retrying in {delay}s")
+                    await asyncio.sleep(delay)
+
+        logger.error(f"Failed to initialize PostgreSQL pool after {POOL_CONNECT_MAX_RETRIES} attempts: {last_error}")
+        raise last_error
 
     async def _ensure_database_exists(self) -> None:
         """Ensure the target database exists, create if it doesn't."""
@@ -142,14 +191,36 @@ class PostgreSQLConversationStorage:
             pass
 
     async def close(self) -> None:
-        """Close the connection pool and cleanup."""
-        if self._batch_save_task:
-            self._batch_save_task.cancel()
+        """Close the connection pool and cleanup background tasks."""
+        for task in (self._batch_save_task, self._cache_eviction_task):
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        # Flush remaining pending saves before closing
+        if self._pending_saves and self.pool:
             try:
-                await self._batch_save_task
-            except asyncio.CancelledError:
-                pass
-        
+                async with self._save_lock:
+                    saves = self._pending_saves.copy()
+                    self._pending_saves.clear()
+                async with self.pool.acquire() as conn:
+                    async with conn.transaction():
+                        for chat_id, messages in saves.items():
+                            serialized = [self._message_to_dict(msg) for msg in messages]
+                            await conn.execute("""
+                                INSERT INTO conversations (chat_id, messages, message_count)
+                                VALUES ($1, $2, $3)
+                                ON CONFLICT (chat_id)
+                                DO UPDATE SET messages = EXCLUDED.messages,
+                                    message_count = EXCLUDED.message_count,
+                                    updated_at = CURRENT_TIMESTAMP
+                            """, chat_id, json.dumps(serialized), len(messages))
+            except Exception as e:
+                logger.error(f"Error flushing pending saves on shutdown: {e}")
+
         if self.pool:
             await self.pool.close()
             logger.debug("PostgreSQL connection pool closed")
@@ -262,27 +333,17 @@ class PostgreSQLConversationStorage:
             return HumanMessage(content=content)
 
     def _get_cached_messages(self, chat_id: str) -> Optional[List[BaseMessage]]:
-        """Get messages from cache if available and not expired."""
-        cache_entry = self._message_cache.get(chat_id)
-        if cache_entry and not cache_entry.is_expired():
-            self._cache_hits += 1
-            return cache_entry.data
-        
-        self._cache_misses += 1
-        return None
+        """Get messages from LRU cache if available and not expired."""
+        return self._message_cache.get(chat_id)
 
     def _cache_messages(self, chat_id: str, messages: List[BaseMessage]) -> None:
-        """Cache messages with TTL."""
-        self._message_cache[chat_id] = CacheEntry(
-            data=messages.copy(),
-            timestamp=time.time(),
-            ttl=self.cache_ttl
-        )
+        """Cache messages in LRU cache."""
+        self._message_cache.put(chat_id, messages.copy())
 
     def _invalidate_cache(self, chat_id: str) -> None:
         """Invalidate cache entries for a chat."""
-        self._message_cache.pop(chat_id, None)
-        self._metadata_cache.pop(chat_id, None)
+        self._message_cache.remove(chat_id)
+        self._metadata_cache.remove(chat_id)
         self._chat_list_cache = None
 
     async def exists(self, chat_id: str) -> bool:
@@ -415,86 +476,37 @@ class PostgreSQLConversationStorage:
     async def list_conversations(self) -> List[str]:
         """List all conversation IDs with caching."""
         if self._chat_list_cache and not self._chat_list_cache.is_expired():
-            self._cache_hits += 1
             return self._chat_list_cache.data
-        
+
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT chat_id FROM conversations ORDER BY updated_at DESC"
             )
             self._db_operations += 1
-            
+
             chat_ids = [row['chat_id'] for row in rows]
-            
+
             self._chat_list_cache = CacheEntry(
                 data=chat_ids,
                 timestamp=time.time(),
                 ttl=60
             )
-            self._cache_misses += 1
-            
+
             return chat_ids
 
-    async def store_image(self, image_id: str, image_base64: str) -> None:
-        """Store base64 image data with TTL."""
-        async with self.pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO images (image_id, image_data)
-                VALUES ($1, $2)
-                ON CONFLICT (image_id)
-                DO UPDATE SET 
-                    image_data = EXCLUDED.image_data,
-                    created_at = CURRENT_TIMESTAMP,
-                    expires_at = CURRENT_TIMESTAMP + INTERVAL '1 hour'
-            """, image_id, image_base64)
-            self._db_operations += 1
-        
-        self._image_cache[image_id] = CacheEntry(
-            data=image_base64,
-            timestamp=time.time(),
-            ttl=3600
-        )
-
-    async def get_image(self, image_id: str) -> Optional[str]:
-        """Retrieve base64 image data with caching."""
-        cache_entry = self._image_cache.get(image_id)
-        if cache_entry and not cache_entry.is_expired():
-            self._cache_hits += 1
-            return cache_entry.data
-        
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("""
-                SELECT image_data FROM images 
-                WHERE image_id = $1 AND expires_at > CURRENT_TIMESTAMP
-            """, image_id)
-            self._db_operations += 1
-            
-            if row:
-                image_data = row['image_data']
-                self._image_cache[image_id] = CacheEntry(
-                    data=image_data,
-                    timestamp=time.time(),
-                    ttl=3600
-                )
-                self._cache_misses += 1
-                return image_data
-            
-            return None
-
     async def get_chat_metadata(self, chat_id: str) -> Optional[Dict]:
-        """Get chat metadata with caching."""
-        cache_entry = self._metadata_cache.get(chat_id)
-        if cache_entry and not cache_entry.is_expired():
-            self._cache_hits += 1
-            return cache_entry.data
-        
+        """Get chat metadata with LRU caching."""
+        cached = self._metadata_cache.get(chat_id)
+        if cached is not None:
+            return cached
+
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT name, created_at FROM chat_metadata WHERE chat_id = $1",
                 chat_id
             )
             self._db_operations += 1
-            
+
             if row:
                 metadata = {
                     "name": row['name'],
@@ -502,14 +514,8 @@ class PostgreSQLConversationStorage:
                 }
             else:
                 metadata = {"name": f"Chat {chat_id[:8]}"}
-            
-            self._metadata_cache[chat_id] = CacheEntry(
-                data=metadata,
-                timestamp=time.time(),
-                ttl=self.cache_ttl
-            )
-            self._cache_misses += 1
-            
+
+            self._metadata_cache.put(chat_id, metadata)
             return metadata
 
     async def set_chat_metadata(self, chat_id: str, name: str) -> None:
@@ -519,69 +525,43 @@ class PostgreSQLConversationStorage:
                 INSERT INTO chat_metadata (chat_id, name)
                 VALUES ($1, $2)
                 ON CONFLICT (chat_id)
-                DO UPDATE SET 
+                DO UPDATE SET
                     name = EXCLUDED.name,
                     updated_at = CURRENT_TIMESTAMP
             """, chat_id, name)
             self._db_operations += 1
-        
-        self._metadata_cache[chat_id] = CacheEntry(
-            data={"name": name},
-            timestamp=time.time(),
-            ttl=self.cache_ttl
-        )
 
-    async def cleanup_expired_images(self) -> int:
-        """Clean up expired images and return count of deleted images."""
-        async with self.pool.acquire() as conn:
-            result = await conn.execute(
-                "DELETE FROM images WHERE expires_at < CURRENT_TIMESTAMP"
-            )
-            self._db_operations += 1
-            
-            expired_keys = [
-                key for key, entry in self._image_cache.items()
-                if entry.is_expired()
-            ]
-            for key in expired_keys:
-                del self._image_cache[key]
-            
-            deleted_count = int(result.split()[-1]) if result else 0
-            if deleted_count > 0:
-                logger.debug(f"Cleaned up {deleted_count} expired images")
-            
-            return deleted_count
+        self._metadata_cache.put(chat_id, {"name": name})
+
+    async def _cache_eviction_worker(self) -> None:
+        """Periodically evict expired cache entries to free memory."""
+        while True:
+            try:
+                await asyncio.sleep(60)
+                msg_evicted = self._message_cache.evict_expired()
+                meta_evicted = self._metadata_cache.evict_expired()
+                if msg_evicted or meta_evicted:
+                    logger.debug(f"Cache eviction: {msg_evicted} messages, {meta_evicted} metadata entries expired")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in cache eviction worker: {e}")
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache performance statistics."""
-        total_requests = self._cache_hits + self._cache_misses
-        hit_rate = (self._cache_hits / total_requests * 100) if total_requests > 0 else 0
-        
+        total_hits = self._message_cache.hits + self._metadata_cache.hits
+        total_misses = self._message_cache.misses + self._metadata_cache.misses
+        total = total_hits + total_misses
+        hit_rate = (total_hits / total * 100) if total > 0 else 0
+
         return {
-            "cache_hits": self._cache_hits,
-            "cache_misses": self._cache_misses,
+            "cache_hits": total_hits,
+            "cache_misses": total_misses,
             "hit_rate_percent": round(hit_rate, 2),
             "db_operations": self._db_operations,
             "cached_conversations": len(self._message_cache),
             "cached_metadata": len(self._metadata_cache),
-            "cached_images": len(self._image_cache)
         }
-
-    def load_conversation_history(self, chat_id: str) -> List[Dict]:
-        """Legacy method - converts to async call."""
-        import asyncio
-        return asyncio.create_task(self._load_conversation_history_dict(chat_id))
-
-    async def _load_conversation_history_dict(self, chat_id: str) -> List[Dict]:
-        """Load conversation history in dict format for compatibility."""
-        messages = await self.get_messages(chat_id)
-        return [self._message_to_dict(msg) for msg in messages]
-
-    def save_conversation_history(self, chat_id: str, messages: List[Dict]) -> None:
-        """Legacy method - converts to async call."""
-        import asyncio
-        message_objects = [self._dict_to_message(msg) for msg in messages]
-        return asyncio.create_task(self.save_messages(chat_id, message_objects))
 
     # Document source management methods
     async def add_document_source(self, source_name: str, file_path: str = None, task_id: str = None, chunk_count: int = 0) -> None:

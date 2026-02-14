@@ -219,7 +219,6 @@ async def search_documents(query: str) -> str:
 The LLM decides when to call this tool based on the user's question:
 - Questions about document content → calls `search_documents`
 - General questions → responds directly
-- Image questions → calls `explain_image`
 
 ---
 
@@ -292,7 +291,7 @@ Responses stream token-by-token to the frontend:
 
 ```python
 # main.py - WebSocket handler
-async for event in agent.query(query_text, chat_id, image_data):
+async for event in agent.query(query_text, chat_id):
     await websocket.send_json(event)
 ```
 
