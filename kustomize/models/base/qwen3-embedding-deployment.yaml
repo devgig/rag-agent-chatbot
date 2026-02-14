@@ -23,7 +23,7 @@ metadata:
     component: embedding-service
 spec:
   replicas: 1
-  progressDeadlineSeconds: 600  # Model download + pip install takes ~5 minutes
+  progressDeadlineSeconds: 900  # pip install + model download can take ~10 min on ARM64
   selector:
     matchLabels:
       app: qwen3-embedding
@@ -103,15 +103,22 @@ spec:
         resources:
           requests:
             cpu: "500m"
-            memory: "1Gi"
+            memory: "2Gi"
           limits:
             cpu: "2"
-            memory: "2Gi"
+            memory: "4Gi"
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 40   # 60s + 40*15s = 660s max startup time
         livenessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 120  # Allow time for pip install + model download
           periodSeconds: 30
           timeoutSeconds: 10
           failureThreshold: 3
@@ -119,7 +126,6 @@ spec:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 120
           periodSeconds: 10
           timeoutSeconds: 10
           failureThreshold: 3
