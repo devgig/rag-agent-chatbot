@@ -1,6 +1,6 @@
 # Open Source Software Notice
 
-This document identifies all open source software used in the **Multi-Agent Chatbot** project.
+This document identifies all open source software used in the **RAG Agent Chatbot** project.
 
 **Project License:** Apache-2.0
 **Copyright:** NVIDIA CORPORATION & AFFILIATES, 1993-2025

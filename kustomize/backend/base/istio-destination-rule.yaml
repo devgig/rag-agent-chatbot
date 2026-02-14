@@ -11,10 +11,10 @@
 apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
-  name: multi-agent-backend-ws
-  namespace: multi-agent-dev
+  name: rag-agent-backend-ws
+  namespace: rag-agent-dev
 spec:
-  host: multi-agent-backend
+  host: rag-agent-backend
   trafficPolicy:
     loadBalancer:
       consistentHash:

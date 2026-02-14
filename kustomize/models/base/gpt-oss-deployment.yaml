@@ -3,13 +3,13 @@
 # Qwen2.5-VL-7B-Instruct handles text, images, RAG, and code generation.
 # 7B model for better quality responses on Blackwell GPU (128GB VRAM).
 #
-# Backend connects via: gpt-oss-120b.multi-agent-dev.svc.cluster.local:8000
+# Backend connects via: gpt-oss-120b.rag-agent-dev.svc.cluster.local:8000
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: gpt-oss-120b
-  namespace: multi-agent-dev
+  namespace: rag-agent-dev
   labels:
     app: gpt-oss-120b
     workspace: gpt-oss-120b

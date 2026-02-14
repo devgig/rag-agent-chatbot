@@ -1,14 +1,14 @@
 apiVersion: backstage.io/v1alpha1
 kind: System
 metadata:
-  name: multi-agent-chatbot
+  name: rag-agent-chatbot
   description: Multi-agent chatbot system with RAG, vision, and code capabilities for DGX Spark
   annotations:
-    dev.azure.com/project-repo: bytecourier/Applications/multi-agent-chatbot
+    dev.azure.com/project-repo: bytecourier/Applications/rag-agent-chatbot
     backstage.io/techdocs-ref: dir:.
   tags:
     - llm
-    - multi-agent
+    - rag-agent
     - rag
     - chatbot
     - fastapi
@@ -21,10 +21,10 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: multi-agent-chatbot-backend
+  name: rag-agent-chatbot-backend
   description: FastAPI backend with LangGraph agent orchestration and MCP tool integration
   annotations:
-    dev.azure.com/project-repo: bytecourier/Applications/multi-agent-chatbot
+    dev.azure.com/project-repo: bytecourier/Applications/rag-agent-chatbot
     dev.azure.com/build-definition: azure-pipelines-backend.yaml
   tags:
     - python
@@ -35,9 +35,9 @@ spec:
   type: service
   lifecycle: experimental
   owner: group:default/bytes
-  system: multi-agent-chatbot
+  system: rag-agent-chatbot
   providesApis:
-    - multi-agent-chatbot-api
+    - rag-agent-chatbot-api
   dependsOn:
     - resource:default/milvus
     - resource:default/postgresql
@@ -46,10 +46,10 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: multi-agent-chatbot-frontend
-  description: React web UI with Vite and Tailwind for interacting with the multi-agent system
+  name: rag-agent-chatbot-frontend
+  description: React web UI with Vite and Tailwind for interacting with the rag-agent system
   annotations:
-    dev.azure.com/project-repo: bytecourier/Applications/multi-agent-chatbot
+    dev.azure.com/project-repo: bytecourier/Applications/rag-agent-chatbot
     dev.azure.com/build-definition: azure-pipelines-frontend.yaml
   tags:
     - react
@@ -60,16 +60,16 @@ spec:
   type: website
   lifecycle: experimental
   owner: group:default/bytes
-  system: multi-agent-chatbot
+  system: rag-agent-chatbot
   consumesApis:
-    - multi-agent-chatbot-api
+    - rag-agent-chatbot-api
 
 ---
 apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
-  name: multi-agent-chatbot-api
-  description: REST and WebSocket API for multi-agent chatbot interactions
+  name: rag-agent-chatbot-api
+  description: REST and WebSocket API for rag-agent chatbot interactions
   tags:
     - rest
     - websocket
@@ -77,11 +77,11 @@ spec:
   type: openapi
   lifecycle: experimental
   owner: group:default/bytes
-  system: multi-agent-chatbot
+  system: rag-agent-chatbot
   definition: |
     openapi: 3.0.0
     info:
-      title: Multi-Agent Chatbot API
+      title: RAG Agent Chatbot API
       version: 0.1.0
     paths:
       /ingest:

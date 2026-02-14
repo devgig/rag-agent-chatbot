@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: multi-agent-backend
+  name: rag-agent-backend
   labels:
-    app: multi-agent-backend
+    app: rag-agent-backend
     component: backend
 spec:
   replicas: 1  # KEDA will manage scaling
@@ -14,11 +14,11 @@ spec:
       maxUnavailable: 0
   selector:
     matchLabels:
-      app: multi-agent-backend
+      app: rag-agent-backend
   template:
     metadata:
       labels:
-        app: multi-agent-backend
+        app: rag-agent-backend
       annotations:
         # Graceful shutdown for WebSocket connections
         cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
@@ -34,7 +34,7 @@ spec:
           mountPath: /config
       containers:
       - name: backend
-        image: multi-agent-chatbot/backend:latest
+        image: rag-agent-chatbot/backend:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000

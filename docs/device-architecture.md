@@ -1,10 +1,10 @@
-# Multi-Agent Chatbot — Device Architecture
+# RAG Agent Chatbot — Device Architecture
 
-> Nodes used by the multi-agent-chatbot in K8s (subset of the 17-node K3s v1.33.6 ARM64 cluster on `192.168.68.x`)
+> Nodes used by the rag-agent-chatbot in K8s (subset of the 17-node K3s v1.33.6 ARM64 cluster on `192.168.68.x`)
 
 ## Nodes Overview
 
-The multi-agent-chatbot runs across **8 nodes** spanning all 4 hardware tiers:
+The rag-agent-chatbot runs across **8 nodes** spanning all 4 hardware tiers:
 
 | Node | Tier | Hardware | CPU | RAM | Chatbot Role |
 |------|------|----------|-----|-----|--------------|
@@ -40,7 +40,7 @@ graph TB
         subgraph COMPUTE["<b>COMPUTE WORKERS</b>"]
             direction LR
             subgraph cube01["<b>cube01</b><br/>.88 | 4C 8G"]
-                c01_1["Multi-Agent Frontend<br/>(React + Vite + nginx)"]
+                c01_1["RAG Agent Frontend<br/>(React + Vite + nginx)"]
             end
             subgraph cube02["<b>cube02</b><br/>.89 | 4C 8G"]
                 c02_1["PostgreSQL<br/>(chatbot DB)"]
@@ -56,7 +56,7 @@ graph TB
         subgraph STORAGE["<b>STORAGE WORKERS</b>"]
             direction LR
             subgraph storage01["<b>storage01</b><br/>.105 | 8C 16G"]
-                s01_1["Multi-Agent Backend<br/>(FastAPI + LangGraph)"]
+                s01_1["RAG Agent Backend<br/>(FastAPI + LangGraph)"]
                 s01_2["Milvus etcd + Proxy"]
             end
             subgraph storage02["<b>storage02</b><br/>.104 | 8C 16G"]
@@ -128,10 +128,10 @@ graph LR
 
 | Component | Namespace | Service DNS | Port |
 |-----------|-----------|-------------|------|
-| Frontend | multi-agent-dev | multi-agent-frontend.multi-agent-dev.svc.cluster.local | 3000 |
-| Backend | multi-agent-dev | multi-agent-backend.multi-agent-dev.svc.cluster.local | 8000 |
-| GPT-OSS-120B | multi-agent-dev | gpt-oss-120b.multi-agent-dev.svc.cluster.local | 8000 |
-| Qwen3 Embedding | multi-agent-dev | qwen3-embedding.multi-agent-dev.svc.cluster.local | 8000 |
+| Frontend | rag-agent-dev | rag-agent-frontend.rag-agent-dev.svc.cluster.local | 3000 |
+| Backend | rag-agent-dev | rag-agent-backend.rag-agent-dev.svc.cluster.local | 8000 |
+| GPT-OSS-120B | rag-agent-dev | gpt-oss-120b.rag-agent-dev.svc.cluster.local | 8000 |
+| Qwen3 Embedding | rag-agent-dev | qwen3-embedding.rag-agent-dev.svc.cluster.local | 8000 |
 | PostgreSQL | postgres-system | postgresql.postgres-system.svc.cluster.local | 5432 |
 | Milvus | milvus-system | milvus.milvus-system.svc.cluster.local | 19530 |
 

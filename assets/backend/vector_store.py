@@ -37,7 +37,7 @@ class CustomEmbeddings:
 
     Supports batched requests to reduce HTTP round-trips during document indexing.
     """
-    def __init__(self, model: str = "Qwen3-Embedding-4B-Q8_0.gguf", host: str = "http://qwen3-embedding.multi-agent-dev.svc.cluster.local:8000"):
+    def __init__(self, model: str = "Qwen3-Embedding-4B-Q8_0.gguf", host: str = "http://qwen3-embedding.rag-agent-dev.svc.cluster.local:8000"):
         self.model = model
         self.url = f"{host}/v1/embeddings"
         self._session = requests.Session()

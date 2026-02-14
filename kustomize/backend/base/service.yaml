@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: multi-agent-backend
+  name: rag-agent-backend
   labels:
-    app: multi-agent-backend
+    app: rag-agent-backend
     istio.io/use-waypoint: backend-waypoint  # Route through L7 waypoint
 spec:
   selector:
-    app: multi-agent-backend
+    app: rag-agent-backend
   ports:
   - port: 8000
     targetPort: 8000

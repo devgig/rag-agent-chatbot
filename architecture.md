@@ -1,6 +1,6 @@
 # RAG Architecture
 
-This document explains how Retrieval-Augmented Generation (RAG) works in this multi-agent chatbot system.
+This document explains how Retrieval-Augmented Generation (RAG) works in this rag-agent chatbot system.
 
 ## Overview
 

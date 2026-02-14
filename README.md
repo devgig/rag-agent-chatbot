@@ -1,6 +1,6 @@
-# Build and Deploy a Multi-Agent Chatbot
+# Build and Deploy a RAG Agent Chatbot
 
-> Deploy a multi-agent chatbot system and chat with agents on your Spark
+> Deploy a rag-agent chatbot system and chat with agents on your Spark
 
 ## Table of Contents
 
@@ -161,7 +161,7 @@ sequenceDiagram
 
 ## What you'll accomplish
 
-You will have a full-stack multi-agent chatbot system running on your DGX Spark, accessible through
+You will have a full-stack rag-agent chatbot system running on your DGX Spark, accessible through
 your local web browser. 
 The setup includes:
 - LLM and VLM model serving using llama.cpp servers and TensorRT LLM servers
@@ -211,7 +211,7 @@ newgrp docker
 
 ```bash
 git clone https://github.com/NVIDIA/dgx-spark-playbooks
-cd dgx-spark-playbooks/nvidia/multi-agent-chatbot/assets
+cd dgx-spark-playbooks/nvidia/rag-agent-chatbot/assets
 ```
 
 ## Step 3. Run the model download script
@@ -260,7 +260,7 @@ as context by going to the link, downloading the PDF to the local filesystem, cl
 
 Steps to completely remove the containers and free up resources.
 
-From the root directory of the multi-agent-chatbot project, run the following commands:
+From the root directory of the rag-agent-chatbot project, run the following commands:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose-models.yml down
@@ -270,7 +270,7 @@ docker volume rm "$(basename "$PWD")_postgres_data"
 
 ## Step 9. Next steps
 
-- Try different prompts with the multi-agent chatbot system.
+- Try different prompts with the rag-agent chatbot system.
 - Try different models by following the instructions in the repository.
 - Try adding new MCP (Model Context Protocol) servers as tools for the supervisor agent.
 

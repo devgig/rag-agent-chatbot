@@ -11,7 +11,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: model-cache-pvc
-  namespace: multi-agent-dev
+  namespace: rag-agent-dev
   labels:
     app: gpt-oss-120b
     component: model-inference

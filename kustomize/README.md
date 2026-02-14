@@ -1,6 +1,6 @@
 # Kubernetes Deployment with Kustomize
 
-This directory contains Kubernetes manifests for deploying the Multi-Agent Chatbot system using Kustomize.
+This directory contains Kubernetes manifests for deploying the RAG Agent Chatbot system using Kustomize.
 
 ## Structure
 
@@ -94,7 +94,7 @@ cd kustomize/base/frontend/app
 cat <<EOF >image_patch.yaml
 - op: replace
   path: /spec/template/spec/containers/0/image
-  value: your-registry.azurecr.io/multi-agent-chatbot/frontend:v1.2.3
+  value: your-registry.azurecr.io/rag-agent-chatbot/frontend:v1.2.3
 EOF
 ```
 
@@ -104,14 +104,14 @@ EOF
 - Single replica for frontend and backend
 - Lower resource limits
 - Debug logging enabled
-- Namespace: `multi-agent-dev`
+- Namespace: `rag-agent-dev`
 - Name prefix: `dev-`
 
 ### Production (prod)
 - 2 replicas for frontend and backend
 - Higher resource limits
 - Info-level logging
-- Namespace: `multi-agent-prod`
+- Namespace: `rag-agent-prod`
 - Name prefix: `prod-`
 - **Note**: Update the PostgreSQL password in `kustomize/overlays/prod/kustomization.yaml` before deploying!
 
@@ -124,7 +124,7 @@ The base manifests reference secrets that need to be created:
 kubectl create secret generic postgres-credentials \
   --from-literal=username=chatbot_user \
   --from-literal=password=YOUR_SECURE_PASSWORD \
-  -n multi-agent-dev
+  -n rag-agent-dev
 ```
 
 Or use the secretGenerator in the overlay's `kustomization.yaml` (already configured).
@@ -156,26 +156,26 @@ kubectl delete -k ./kustomize/overlays/prod
 
 ### Check pod status
 ```bash
-kubectl get pods -n multi-agent-dev
-kubectl describe pod <pod-name> -n multi-agent-dev
+kubectl get pods -n rag-agent-dev
+kubectl describe pod <pod-name> -n rag-agent-dev
 ```
 
 ### View logs
 ```bash
-kubectl logs <pod-name> -n multi-agent-dev
-kubectl logs <pod-name> -n multi-agent-dev --previous  # Previous container instance
+kubectl logs <pod-name> -n rag-agent-dev
+kubectl logs <pod-name> -n rag-agent-dev --previous  # Previous container instance
 ```
 
 ### Check services
 ```bash
-kubectl get svc -n multi-agent-dev
+kubectl get svc -n rag-agent-dev
 ```
 
 ### Port forwarding for local testing
 ```bash
 # Frontend
-kubectl port-forward svc/dev-multi-agent-frontend 3000:3000 -n multi-agent-dev
+kubectl port-forward svc/dev-rag-agent-frontend 3000:3000 -n rag-agent-dev
 
 # Backend
-kubectl port-forward svc/dev-multi-agent-backend 8000:8000 -n multi-agent-dev
+kubectl port-forward svc/dev-rag-agent-backend 8000:8000 -n rag-agent-dev
 ```

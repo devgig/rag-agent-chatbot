@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: multi-agent-frontend
+  name: rag-agent-frontend
 
 resources:
   - deployment.yaml
@@ -12,11 +12,11 @@ resources:
 patches:
   - target:
       kind: Deployment
-      name: multi-agent-frontend
+      name: rag-agent-frontend
     path: image-patch.yaml
 
 labels:
 - includeSelectors: true
   pairs:
-    app: multi-agent-frontend
+    app: rag-agent-frontend
     component: frontend

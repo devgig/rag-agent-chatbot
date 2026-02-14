@@ -20,7 +20,7 @@
 # - Target node: spark-7eb5 (update in kaito-workspace.yaml line 24)
 #
 # BACKEND INTEGRATION:
-# Backend connects via: gpt-oss-120b.multi-agent-dev.svc.cluster.local:8000
+# Backend connects via: gpt-oss-120b.rag-agent-dev.svc.cluster.local:8000
 # No code changes needed - backend uses model name as hostname: http://gpt-oss-120b:8000/v1
 #
 # AZURE DEVOPS:
@@ -34,7 +34,7 @@ kind: Kustomization
 metadata:
   name: gpt-oss-120b
 
-namespace: multi-agent-dev
+namespace: rag-agent-dev
 
 resources:
   - hf-external-secret.yaml          # HuggingFace token from Azure Key Vault

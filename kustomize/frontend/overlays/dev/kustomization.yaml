@@ -2,9 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: multi-agent-frontend-dev
+  name: rag-agent-frontend-dev
 
-namespace: multi-agent-dev
+namespace: rag-agent-dev
 
 resources:
   - namespace.yaml
@@ -16,18 +16,18 @@ labels:
     environment: dev
 
 replicas:
-  - name: multi-agent-frontend
+  - name: rag-agent-frontend
     count: 1
 
 # Patch deployment to use internal Kubernetes service names for backend
 patches:
   - target:
       kind: Deployment
-      name: multi-agent-frontend
+      name: rag-agent-frontend
     patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/env/0/value
-        value: "http://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000"
+        value: "http://rag-agent-backend.rag-agent-dev.svc.cluster.local:8000"
       - op: replace
         path: /spec/template/spec/containers/0/env/1/value
-        value: "ws://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000"
+        value: "ws://rag-agent-backend.rag-agent-dev.svc.cluster.local:8000"

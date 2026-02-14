@@ -66,12 +66,12 @@ kubectl exec -it -n milvus-system milvus-standalone-0 -- bash
 ```bash
 az keyvault secret set \
   --vault-name <your-keyvault-name> \
-  --name multi-agent-milvus-username \
+  --name rag-agent-milvus-username \
   --value "your_milvus_user"
 
 az keyvault secret set \
   --vault-name <your-keyvault-name> \
-  --name multi-agent-milvus-password \
+  --name rag-agent-milvus-password \
   --value "your_secure_password"
 ```
 
@@ -115,13 +115,13 @@ kubectl get svc -n milvus-system milvus
 
 ```bash
 # Get a backend pod
-BACKEND_POD=$(kubectl get pods -n multi-agent-dev -l app=multi-agent-backend -o jsonpath='{.items[0].metadata.name}')
+BACKEND_POD=$(kubectl get pods -n rag-agent-dev -l app=rag-agent-backend -o jsonpath='{.items[0].metadata.name}')
 
 # Test DNS resolution
-kubectl exec -n multi-agent-dev $BACKEND_POD -- nslookup milvus.milvus-system.svc.cluster.local
+kubectl exec -n rag-agent-dev $BACKEND_POD -- nslookup milvus.milvus-system.svc.cluster.local
 
 # Test connectivity (if nc/netcat is available)
-kubectl exec -n multi-agent-dev $BACKEND_POD -- nc -zv milvus.milvus-system.svc.cluster.local 19530
+kubectl exec -n rag-agent-dev $BACKEND_POD -- nc -zv milvus.milvus-system.svc.cluster.local 19530
 ```
 
 ### Check Collection Status
@@ -262,7 +262,7 @@ If the collection isn't being created:
 
 1. Check backend logs for errors:
    ```bash
-   kubectl logs -n multi-agent-dev -l app=multi-agent-backend --tail=100
+   kubectl logs -n rag-agent-dev -l app=rag-agent-backend --tail=100
    ```
 
 2. Verify Milvus has sufficient resources and is healthy
@@ -276,12 +276,12 @@ If you enabled authentication and see auth errors:
 1. Verify credentials are correctly stored in Azure Key Vault
 2. Check ExternalSecret is syncing:
    ```bash
-   kubectl get externalsecret -n multi-agent-dev milvus-external-secret
-   kubectl describe externalsecret -n multi-agent-dev milvus-external-secret
+   kubectl get externalsecret -n rag-agent-dev milvus-external-secret
+   kubectl describe externalsecret -n rag-agent-dev milvus-external-secret
    ```
 3. Verify the secret was created:
    ```bash
-   kubectl get secret -n multi-agent-dev milvus-credentials
+   kubectl get secret -n rag-agent-dev milvus-credentials
    ```
 
 ## Security Notes

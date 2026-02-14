@@ -42,7 +42,7 @@ This project is designed to be customizable, serving as a framework that develop
 ---
 
 ## Quick Start
-#### 1. Clone the repository and change directories to the multi-agent chatbot directory.
+#### 1. Clone the repository and change directories to the rag-agent chatbot directory.
 
 #### 2. Configure docker permissions
 ```bash
@@ -85,7 +85,7 @@ Upload a document using the "Upload Documents" button in the sidebar under "Cont
 
 ## Cleanup
 
-From the root directory of the multi-agent-chatbot project:
+From the root directory of the rag-agent-chatbot project:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose-models.yml down

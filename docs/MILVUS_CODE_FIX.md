@@ -55,7 +55,7 @@ The function `create_vector_store_with_config` already accepts a `uri` parameter
 
 ```bash
 cd assets/backend
-docker build -t multi-agent-chatbot/backend:latest .
+docker build -t rag-agent-chatbot/backend:latest .
 ```
 
 ### 2. Deploy to Kubernetes
@@ -69,7 +69,7 @@ kubectl apply -k kustomize/backend/overlays/dev
 Check backend logs to ensure Milvus connection succeeds:
 
 ```bash
-kubectl logs -n multi-agent-dev -l app=multi-agent-backend --tail=50 | grep -i milvus
+kubectl logs -n rag-agent-dev -l app=rag-agent-backend --tail=50 | grep -i milvus
 ```
 
 You should see logs like:

@@ -1,24 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: multi-agent-frontend
+  name: rag-agent-frontend
   labels:
-    app: multi-agent-frontend
+    app: rag-agent-frontend
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: multi-agent-frontend
+      app: rag-agent-frontend
   template:
     metadata:
       labels:
-        app: multi-agent-frontend
+        app: rag-agent-frontend
     spec:
       imagePullSecrets:
       - name: acr-secret
       containers:
       - name: frontend
-        image: multi-agent-chatbot/frontend:latest
+        image: rag-agent-chatbot/frontend:latest
         imagePullPolicy: IfNotPresent
         securityContext:
           capabilities:
@@ -30,9 +30,9 @@ spec:
           name: http
         env:
         - name: BACKEND_URL
-          value: "http://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000"
+          value: "http://rag-agent-backend.rag-agent-dev.svc.cluster.local:8000"
         - name: BACKEND_WS_URL
-          value: "ws://multi-agent-backend.multi-agent-dev.svc.cluster.local:8000"
+          value: "ws://rag-agent-backend.rag-agent-dev.svc.cluster.local:8000"
         resources:
           requests:
             cpu: "200m"

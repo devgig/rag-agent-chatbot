@@ -4,7 +4,7 @@ kind: Kustomization
 metadata:
   name: gpt-oss-120b-dev
 
-namespace: multi-agent-dev
+namespace: rag-agent-dev
 
 resources:
   - namespace.yaml

@@ -10,11 +10,11 @@
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: multi-agent-backend-scaler
-  namespace: multi-agent-dev
+  name: rag-agent-backend-scaler
+  namespace: rag-agent-dev
 spec:
   scaleTargetRef:
-    name: multi-agent-backend
+    name: rag-agent-backend
   minReplicaCount: 1
   maxReplicaCount: 5
   pollingInterval: 15  # Check every 15 seconds
@@ -58,6 +58,6 @@ spec:
     #     threshold: "100"
     #     query: |
     #       sum(rate(istio_requests_total{
-    #         destination_service_name="multi-agent-backend",
+    #         destination_service_name="rag-agent-backend",
     #         reporter="destination"
     #       }[1m]))

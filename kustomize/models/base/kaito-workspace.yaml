@@ -11,7 +11,7 @@ apiVersion: kaito.sh/v1beta1
 kind: Workspace
 metadata:
   name: gpt-oss-120b
-  namespace: multi-agent-dev
+  namespace: rag-agent-dev
 
 # Resource Configuration for BYO GPU Mode
 resource:

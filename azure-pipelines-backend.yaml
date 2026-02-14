@@ -21,7 +21,7 @@ resources:
 
 variables:
   system.debug: false
-  imageRepository: 'multi-agent-chatbot-backend'
+  imageRepository: 'rag-agent-chatbot-backend'
   containerRegistry: 'acr-bytecourier'
   containerRegistryUrl: 'bytecourier.azurecr.io'
   kubernetesServiceConnection: 'k3s-cluster'
@@ -33,7 +33,7 @@ variables:
   base_path: '$(Build.SourceBranchName)'
   source_branch_name: '$(Build.SourceBranchName)'
   imagePullSecret: 'acr-secret'
-  namespace: 'multi-agent-dev'
+  namespace: 'rag-agent-dev'
   sourceNamespace: 'bytecourier-apps'
 
 stages:

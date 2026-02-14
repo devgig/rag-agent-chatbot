@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: multi-agent-chatbot
+  name: rag-agent-chatbot
   labels:
-    name: multi-agent-chatbot
+    name: rag-agent-chatbot
     environment: production

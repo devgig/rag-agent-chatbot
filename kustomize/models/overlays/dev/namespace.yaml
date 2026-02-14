@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: multi-agent-dev
+  name: rag-agent-dev
   labels:
-    name: multi-agent-dev
+    name: rag-agent-dev
     environment: dev

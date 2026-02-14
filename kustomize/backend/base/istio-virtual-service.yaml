@@ -9,11 +9,11 @@
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
-  name: multi-agent-backend-vs
-  namespace: multi-agent-dev
+  name: rag-agent-backend-vs
+  namespace: rag-agent-dev
 spec:
   hosts:
-    - multi-agent-backend
+    - rag-agent-backend
   http:
     # WebSocket routes - no timeout, no retries
     - match:
@@ -24,7 +24,7 @@ spec:
               exact: websocket
       route:
         - destination:
-            host: multi-agent-backend
+            host: rag-agent-backend
             port:
               number: 8000
       retries:
@@ -35,7 +35,7 @@ spec:
             prefix: /
       route:
         - destination:
-            host: multi-agent-backend
+            host: rag-agent-backend
             port:
               number: 8000
       timeout: 300s  # 5 min timeout for LLM requests

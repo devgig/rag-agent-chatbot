@@ -6,7 +6,7 @@ This directory contains Kubernetes manifests for deploying GPU-accelerated LLM i
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ Backend (multi-agent-backend)                           │
+│ Backend (rag-agent-backend)                           │
 │ http://gpt-oss-120b:8000/v1                            │
 └────────────────┬────────────────────────────────────────┘
                  │
@@ -81,12 +81,12 @@ kubectl kustomize kustomize/models/overlays/dev
 kubectl apply -k kustomize/models/overlays/dev
 
 # Check status
-kubectl get pods -n multi-agent-dev -l workspace=gpt-oss-120b
-kubectl logs -n multi-agent-dev -l workspace=gpt-oss-120b -f
+kubectl get pods -n rag-agent-dev -l workspace=gpt-oss-120b
+kubectl logs -n rag-agent-dev -l workspace=gpt-oss-120b -f
 
 # Test API endpoint
 kubectl run -it --rm debug --image=curlimages/curl --restart=Never \
-  -- curl http://gpt-oss-120b.multi-agent-dev.svc.cluster.local:8000/v1/models
+  -- curl http://gpt-oss-120b.rag-agent-dev.svc.cluster.local:8000/v1/models
 ```
 
 ## Switching Models
@@ -158,7 +158,7 @@ Backend automatically connects using model name as hostname:
 base_url=f"http://{self.current_model}:8000/v1"
 
 # Resolves to: http://gpt-oss-120b:8000/v1
-# Via service: gpt-oss-120b.multi-agent-dev.svc.cluster.local:8000
+# Via service: gpt-oss-120b.rag-agent-dev.svc.cluster.local:8000
 ```
 
 **No backend code changes required!**
@@ -169,13 +169,13 @@ base_url=f"http://{self.current_model}:8000/v1"
 
 ```bash
 # Check pod status
-kubectl get pods -n multi-agent-dev -l workspace=gpt-oss-120b
+kubectl get pods -n rag-agent-dev -l workspace=gpt-oss-120b
 
 # View logs
-kubectl logs -n multi-agent-dev -l workspace=gpt-oss-120b --tail=100
+kubectl logs -n rag-agent-dev -l workspace=gpt-oss-120b --tail=100
 
 # Check service endpoints
-kubectl get endpoints gpt-oss-120b -n multi-agent-dev
+kubectl get endpoints gpt-oss-120b -n rag-agent-dev
 ```
 
 ### Startup Time
@@ -191,11 +191,11 @@ Subsequent restarts: ~2-3 minutes (cached image and model)
 
 ```bash
 # Test models endpoint
-kubectl exec -it -n multi-agent-dev deployment/multi-agent-backend -- \
+kubectl exec -it -n rag-agent-dev deployment/rag-agent-backend -- \
   curl http://gpt-oss-120b:8000/v1/models
 
 # Test chat completion
-kubectl exec -it -n multi-agent-dev deployment/multi-agent-backend -- \
+kubectl exec -it -n rag-agent-dev deployment/rag-agent-backend -- \
   curl -X POST http://gpt-oss-120b:8000/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d '{"model":"microsoft/Phi-3.5-mini-instruct","messages":[{"role":"user","content":"Hello!"}],"max_tokens":50}'
@@ -207,7 +207,7 @@ kubectl exec -it -n multi-agent-dev deployment/multi-agent-backend -- \
 
 ```bash
 # Check events
-kubectl describe pod -n multi-agent-dev -l workspace=gpt-oss-120b
+kubectl describe pod -n rag-agent-dev -l workspace=gpt-oss-120b
 
 # Common issues:
 # - Insufficient GPU: Check node has nvidia.com/gpu available
@@ -221,14 +221,14 @@ kubectl describe pod -n multi-agent-dev -l workspace=gpt-oss-120b
 # For gated models (Meta-Llama):
 # 1. Request access on HuggingFace
 # 2. Verify token in Azure Key Vault: hugging-face-read-only-token
-# 3. Check secret exists: kubectl get secret hf-credentials -n multi-agent-dev
+# 3. Check secret exists: kubectl get secret hf-credentials -n rag-agent-dev
 ```
 
 ### Health Check Failing
 
 ```bash
 # Check logs for model loading progress
-kubectl logs -n multi-agent-dev -l workspace=gpt-oss-120b --tail=200
+kubectl logs -n rag-agent-dev -l workspace=gpt-oss-120b --tail=200
 
 # Health checks start after 300s (initialDelaySeconds)
 # Model must be fully loaded before health check passes

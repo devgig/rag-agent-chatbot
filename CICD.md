@@ -1,6 +1,6 @@
 # CI/CD Pipeline Documentation
 
-This document describes the Azure Pipelines configuration for the Multi-Agent Chatbot project.
+This document describes the Azure Pipelines configuration for the RAG Agent Chatbot project.
 
 ## Pipeline Files
 
@@ -203,7 +203,7 @@ kubectl apply -f dev-workloads.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: multi-agent-chatbot-dev
+  name: rag-agent-chatbot-dev
 spec:
   source:
     repoURL: https://your-repo.git
@@ -211,7 +211,7 @@ spec:
     path: kustomize/overlays/dev
   destination:
     server: https://kubernetes.default.svc
-    namespace: multi-agent-dev
+    namespace: rag-agent-dev
   syncPolicy:
     automated:
       prune: true

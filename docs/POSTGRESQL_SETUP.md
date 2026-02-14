@@ -18,7 +18,7 @@ helmCharts:
 
 ## Database Setup
 
-After the PostgreSQL Helm chart is deployed, you need to create the database and user for the multi-agent chatbot application.
+After the PostgreSQL Helm chart is deployed, you need to create the database and user for the rag-agent chatbot application.
 
 ### 1. Connect to PostgreSQL
 
@@ -67,7 +67,7 @@ Create the password secret in Azure Key Vault:
 ```bash
 az keyvault secret set \
   --vault-name <your-keyvault-name> \
-  --name multi-agent-postgresql-password \
+  --name rag-agent-postgresql-password \
   --value "your-secure-password-here"
 ```
 
@@ -76,15 +76,15 @@ az keyvault secret set \
 The backend deployment includes an ExternalSecret resource that pulls the password from Azure Key Vault:
 
 - **Secret Name**: `postgres-credentials`
-- **Key Vault Secret**: `multi-agent-postgresql-password`
+- **Key Vault Secret**: `rag-agent-postgresql-password`
 - **Database**: `chatbot`
 - **Username**: `chatbot_user`
 
 Verify the ExternalSecret is syncing correctly:
 
 ```bash
-kubectl get externalsecret -n multi-agent-dev postgres-external-secret
-kubectl get secret -n multi-agent-dev postgres-credentials
+kubectl get externalsecret -n rag-agent-dev postgres-external-secret
+kubectl get secret -n rag-agent-dev postgres-credentials
 ```
 
 ## Connection Details
@@ -116,16 +116,16 @@ kubectl run -it --rm psql-test --image=postgres:15-alpine --restart=Never -- \
 
 ```bash
 # Check ExternalSecret
-kubectl describe externalsecret -n multi-agent-dev postgres-external-secret
+kubectl describe externalsecret -n rag-agent-dev postgres-external-secret
 
 # Check if secret was created
-kubectl get secret -n multi-agent-dev postgres-credentials -o yaml
+kubectl get secret -n rag-agent-dev postgres-credentials -o yaml
 ```
 
 ### Check Backend Logs
 
 ```bash
-kubectl logs -n multi-agent-dev -l app=multi-agent-backend --tail=50
+kubectl logs -n rag-agent-dev -l app=rag-agent-backend --tail=50
 ```
 
 ## Security Notes

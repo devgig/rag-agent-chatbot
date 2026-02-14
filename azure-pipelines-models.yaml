@@ -19,7 +19,7 @@ resources:
 
 variables:
   system.debug: false
-  namespace: 'multi-agent-dev'
+  namespace: 'rag-agent-dev'
   poolName: '$(buildAgentPool)'
 
 stages:
