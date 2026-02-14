@@ -3,7 +3,7 @@
 # Configures routing for WebSocket connections with proper timeouts.
 #
 # Key settings:
-# - timeout: 0s disables timeout for long-lived WebSocket connections
+# - timeout omitted on WebSocket route to disable it for long-lived connections
 # - retries: 0 for WebSocket (client handles reconnection)
 
 apiVersion: networking.istio.io/v1beta1
@@ -27,7 +27,6 @@ spec:
             host: multi-agent-backend
             port:
               number: 8000
-      timeout: 0s  # Disable timeout for WebSocket
       retries:
         attempts: 0  # Client handles reconnection
     # Regular HTTP routes
