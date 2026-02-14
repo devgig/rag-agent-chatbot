@@ -19,7 +19,6 @@
 import asyncio
 import contextlib
 import json
-import re
 from typing import AsyncIterator, List, Dict, Any, TypedDict, Optional, Callable, Awaitable
 
 from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage, ToolMessage, ToolCall
@@ -39,23 +38,10 @@ memory = MemorySaver()
 SENTINEL = object()
 StreamCallback = Callable[[Dict[str, Any]], Awaitable[None]]
 
-# Pattern to detect image URLs in text
-IMAGE_URL_PATTERN = re.compile(
-    r'https?://[^\s<>"{}|\\^`\[\]]+\.(?:png|jpg|jpeg|gif|webp|bmp|svg|tiff?)(?:\?[^\s]*)?',
-    re.IGNORECASE
-)
-
-
-def contains_image_url(text: str) -> bool:
-    """Check if text contains an image URL."""
-    return bool(IMAGE_URL_PATTERN.search(text))
-
-
 class State(TypedDict, total=False):
     iterations: int
     messages: List[AnyMessage]
     chat_id: Optional[str]
-    image_data: Optional[str]
 
 
 class ChatAgent:
@@ -64,8 +50,7 @@ class ChatAgent:
     This agent orchestrates conversation flow using a LangGraph state machine that can:
     - Generate responses using LLMs
     - Execute tool calls (including MCP tools)
-    - Handle image processing
-    - Manage conversation history via Redis
+    - Manage conversation history via PostgreSQL
     """
 
     def __init__(self, vector_store, config_manager, postgres_storage: PostgreSQLConversationStorage):
@@ -245,17 +230,8 @@ class ChatAgent:
             await self.stream_callback({'type': 'tool_start', 'data': tool_call["name"]})
             
             try:
-                if tool_call["name"] == "explain_image" and state.get("image_data"):
-                    tool_args = tool_call["args"].copy()
-                    tool_args["image"] = state["image_data"]
-                    logger.info(f'Executing tool {tool_call["name"]} with args: {tool_args}')
-                    tool_result = await self.tools_by_name[tool_call["name"]].ainvoke(tool_args)
-                    state["process_image_used"] = True
-                else:
-                    tool_result = await self.tools_by_name[tool_call["name"]].ainvoke(tool_call["args"])
-                if "code" in tool_call["name"]:
-                    content = str(tool_result)
-                elif isinstance(tool_result, str):
+                tool_result = await self.tools_by_name[tool_call["name"]].ainvoke(tool_call["args"])
+                if isinstance(tool_result, str):
                     content = tool_result
                 else:
                     content = json.dumps(tool_result)
@@ -307,23 +283,6 @@ class ChatAgent:
         supports_tools = self.current_model in {"gpt-oss-20b", "gpt-oss-120b"}
         has_tools = supports_tools and self.openai_tools and len(self.openai_tools) > 0
 
-        # Check if there's an image - force tool calls for vision tasks
-        has_image = bool(state.get("image_data"))
-
-        # Check if the latest user message contains an image URL
-        has_image_url = False
-        state_messages = state.get("messages", [])
-        if state_messages:
-            for msg in reversed(state_messages):
-                if isinstance(msg, HumanMessage):
-                    has_image_url = contains_image_url(str(msg.content))
-                    break
-
-        # Only force tool calling for images (uploaded or URL)
-        # Let the model decide when to use search_documents based on the query
-        iterations = state.get("iterations", 0)
-        force_tool_call = (has_image or has_image_url) and iterations == 0
-
         logger.debug({
             "message": "Tool calling debug info",
             "chat_id": state.get("chat_id"),
@@ -331,17 +290,13 @@ class ChatAgent:
             "supports_tools": supports_tools,
             "openai_tools_count": len(self.openai_tools) if self.openai_tools else 0,
             "has_tools": has_tools,
-            "has_image": has_image,
-            "has_image_url": has_image_url,
-            "force_tool_call": force_tool_call,
-            "iterations": iterations
         })
 
         tool_params = {}
         if has_tools:
             tool_params = {
                 "tools": self.openai_tools,
-                "tool_choice": "required" if force_tool_call else "auto"
+                "tool_choice": "auto"
             }
         
         stream = await self.model_client.chat.completions.create(
@@ -486,13 +441,13 @@ class ChatAgent:
 
         return llm_output_buffer, tool_calls_buffer
 
-    async def query(self, query_text: str, chat_id: str, image_data: str = None) -> AsyncIterator[Dict[str, Any]]:
+    async def query(self, query_text: str, chat_id: str) -> AsyncIterator[Dict[str, Any]]:
         """Process user query and stream response tokens.
-        
+
         Args:
             query_text: User's input text
             chat_id: Unique chat identifier
-            
+
         Yields:
             Streaming events and tokens
         """
@@ -508,13 +463,7 @@ class ChatAgent:
         try:
             existing_messages = await self.conversation_store.get_messages(chat_id, limit=1)
             
-            base_system_prompt = self.system_prompt
-            if image_data:
-                image_context = "\n\nIMAGE CONTEXT: The user has uploaded an image with their message. You MUST use the explain_image tool to analyze it."
-                system_prompt_with_image = base_system_prompt + image_context
-                messages_to_process = [SystemMessage(content=system_prompt_with_image)]
-            else:
-                messages_to_process = [SystemMessage(content=base_system_prompt)]
+            messages_to_process = [SystemMessage(content=self.system_prompt)]
 
             if existing_messages:
                 for msg in existing_messages:
@@ -529,8 +478,6 @@ class ChatAgent:
                 "iterations": 0,
                 "chat_id": chat_id,
                 "messages": messages_to_process,
-                "image_data": image_data if image_data else None,
-                "process_image_used": False
             }
             
 

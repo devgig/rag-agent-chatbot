@@ -64,4 +64,4 @@ ENV UPLOADS_DIR=/app/data/uploads
 EXPOSE 8000
 
 # Run in production mode (no --reload)
-CMD ["uv", "run", "--", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/.venv/bin/python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

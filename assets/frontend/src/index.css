@@ -33,13 +33,13 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0f172a;
+    --background: #2d2d2d;
     --foreground: #f8fafc;
-    --primary: #76B900;
-    --primary-dark: #669f00;
-    --secondary: #1e293b;
+    --primary: #000000;
+    --primary-dark: #1a1a1a;
+    --secondary: #383838;
     --accent: #ef4444;
-    --border: #334155;
+    --border: #4a4a4a;
     --shimmer-base: #444;
     --shimmer-peak: #222;
     --placeholder-opacity-min: .4;

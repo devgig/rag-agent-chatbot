@@ -104,7 +104,7 @@
 }
 
 :global(.dark) .chatContainer {
-  background: #111827;
+  background: #2d2d2d;
 }
 
 .configBar {
@@ -143,7 +143,7 @@
 }
 
 :global(.dark) .messagesContainer {
-  background-color: #111827;
+  background-color: #2d2d2d;
 }
 
 .messageWrapper {
@@ -201,7 +201,7 @@
 }
 
 .userMessage {
-  background-color: #76B900;
+  background-color: #000000;
   color: white;
   padding: 12px 16px;
   border-radius: 12px;
@@ -212,13 +212,13 @@
 }
 
 :global(.dark) .userMessage {
-  background-color: #76B900;
+  background-color: #000000;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .assistantMessage {
   background-color: white;
-  color: #1f2937;
+  color: #383838;
   padding: 12px 16px;
   border-radius: 12px;
   margin-right: auto;
@@ -228,7 +228,7 @@
 }
 
 :global(.dark) .assistantMessage {
-  background-color: #1f2937;
+  background-color: #383838;
   color: #e5e7eb;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
@@ -363,7 +363,7 @@
 }
 
 :global(.dark) .inputContainer {
-  background-color: #111827;
+  background-color: #2d2d2d;
   /* background-color: greenyellow; */
 }
 
@@ -402,7 +402,7 @@
 }
 
 :global(.dark) .messageInput {
-  background-color: #1f2937;
+  background-color: #383838;
   border-color: #374151;
   color: #e5e7eb;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
@@ -437,7 +437,7 @@
 }
 
 .messageInput:focus {
-  border-color: #76B900;
+  border-color: #000000;
   box-shadow: 0 0 0 2px rgba(118, 185, 0, 0.2);
 }
 
@@ -479,11 +479,11 @@
 }
 
 .sendButton {
-  background-color: #76B900;
+  background-color: #000000;
 }
 
 .sendButton:hover {
-  background-color: #669f00;
+  background-color: #1a1a1a;
 }
 
 .sendButton:disabled {
@@ -516,7 +516,7 @@
 }
 
 :global(.dark) .typingIndicator {
-  background-color: #1f2937;
+  background-color: #383838;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
@@ -574,7 +574,7 @@
 }
 
 :global(.dark) .querySection {
-  background-color: #111827;
+  background-color: #2d2d2d;
 }
 
 .textarea {
@@ -588,7 +588,7 @@
   font-family: inherit;
   font-size: 0.875rem;
   line-height: 1.5;
-  color: #1f2937;
+  color: #383838;
   background-color: #f9fafb;
   transition: all 0.3s ease;
 }
@@ -601,7 +601,7 @@
 
 .textarea:focus {
   outline: none;
-  border-color: #76B900;
+  border-color: #000000;
   box-shadow: 0 0 0 3px rgba(118, 185, 0, 0.2);
 }
 
@@ -611,7 +611,7 @@
 
 .sendButton {
   padding: 0 16px;
-  background-color: #76B900;
+  background-color: #000000;
   color: white;
   border: none;
   border-radius: 8px;
@@ -623,7 +623,7 @@
 }
 
 .sendButton:hover {
-  background-color: #669f00;
+  background-color: #1a1a1a;
 }
 
 .sendButton:disabled {
@@ -634,13 +634,13 @@
 .dot {
   width: 8px;
   height: 8px;
-  background-color: #76B900;
+  background-color: #000000;
   border-radius: 50%;
   animation: bounce 1.4s infinite ease-in-out;
 }
 
 :global(.dark) .dot {
-  background-color: #76B900;
+  background-color: #000000;
 }
 
 .dot:nth-child(1) { animation-delay: -0.32s; }
@@ -702,14 +702,14 @@
 }
 
 .toolMessage {
-  background-color: #1f2937;
+  background-color: #383838;
   border-radius: 0 0 8px 8px;
   padding: 0;
   margin-top: 0;
 }
 
 .dark .toolMessage {
-  background-color: #1f2937;
+  background-color: #383838;
 }
 
 .toolMessageLabel {
@@ -759,7 +759,7 @@
   align-items: center;
   align-self: center;
   width: min(800px, 90%);
-  /* background-color: #1f2937; */
+  /* background-color: #383838; */
   /* border-radius: 8px; */
   /* box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); */
   z-index: 1;
@@ -798,11 +798,11 @@
 } 
 
 .dark .pinnedToolOutput {
-  background-color: #1f2937;
+  background-color: #383838;
 }
 
 .toolHeader {
-  border-color: #76B900;
+  border-color: #000000;
   box-shadow: 0 0 0 2px rgba(118, 185, 0, 0.2);
   padding: 12px 16px;
   background-color: var(--primary-dark);
@@ -889,7 +889,7 @@
   z-index: 1;
   font-size: 12px;
   color: var(--primary);
-  /* color: #111827; */
+  /* color: #2d2d2d; */
   cursor: pointer;
   transition: opacity .15s ease, background .2s ease, transform .1s ease;
   display: inline-flex;

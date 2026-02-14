@@ -559,39 +559,6 @@ export default function Sidebar({
               <h2 className={styles.title}>Spark Chat</h2>
             </div>
             
-            {/* Model Selection */}
-            <div className={styles.sidebarSection}>
-              <div 
-                className={styles.sectionHeader} 
-                onClick={() => toggleSection('model')}
-              >
-                <h3>Model</h3>
-                <span className={isSectionExpanded('model') ? styles.arrowUp : styles.arrowDown}>▼</span>
-              </div>
-              <div className={`${styles.sectionContent} ${isSectionExpanded('model') ? styles.expanded : ''}`}>
-                <div className={styles.configItem}>
-                  <label htmlFor="model-select">Select Supervisor Model</label>
-                  <select
-                    id="model-select"
-                    className={styles.modelSelect}
-                    value={selectedModel}
-                    onChange={handleModelChange}
-                    disabled={isLoadingModels}
-                  >
-                    {isLoadingModels ? (
-                      <option value="">Loading models...</option>
-                    ) : (
-                      availableModels.map(model => (
-                        <option key={model.id} value={model.id}>
-                          {model.name}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
-              </div>
-            </div>
-            
             {/* Context */}
             <div className={styles.sidebarSection}>
               <div 

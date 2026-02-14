@@ -35,7 +35,7 @@
 }
 
 :global(.dark) .sidebar {
-  background-color: #1f2937;
+  background-color: #383838;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
@@ -117,11 +117,11 @@
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
   font-size: 18px;
   transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-  color: #1f2937;
+  color: #383838;
 }
 
 :global(.dark) .toggleSidebarButton {
-  background-color: #1f2937;
+  background-color: #383838;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
   color: white;
 }
@@ -340,7 +340,7 @@
 }
 
 input:checked + .toggleSlider {
-  background-color: #76B900;
+  background-color: #000000;
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
@@ -351,7 +351,7 @@ input:checked + .toggleSlider:before {
 
 .toolLabel {
   font-size: 14px;
-  color: #1f2937;
+  color: #383838;
 }
 
 :global(.dark) .toolLabel {
@@ -407,7 +407,7 @@ input:checked + .toggleSlider:before {
   overflow: hidden;
   text-overflow: ellipsis;
   transition: color 0.2s ease;
-  color: #1f2937;
+  color: #383838;
   line-height: 24px;
   padding-top: 1px;
 }
@@ -417,7 +417,7 @@ input:checked + .toggleSlider:before {
 }
 
 .chatItem.active .chatName {
-  color: #76B900;
+  color: #000000;
   font-weight: 600;
 }
 
@@ -449,7 +449,7 @@ input:checked + .toggleSlider:before {
 
 .chatActionButton:hover {
   background-color: rgba(0, 0, 0, 0.05);
-  color: #1f2937;
+  color: #383838;
 }
 
 .loadingText, .noChatText {
@@ -467,7 +467,7 @@ input:checked + .toggleSlider:before {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: #76B900;
+  background-color: #000000;
   margin-right: 8px;
   flex-shrink: 0;
 }
@@ -491,7 +491,7 @@ input:checked + .toggleSlider:before {
 .actionButton {
   width: 100%;
   padding: 10px 16px;
-  background-color: #76B900;
+  background-color: #000000;
   color: white;
   border: none;
   border-radius: 8px;
@@ -503,7 +503,7 @@ input:checked + .toggleSlider:before {
 }
 
 .actionButton:hover {
-  background-color: #669f00;
+  background-color: #1a1a1a;
 }
 
 .refreshButton {
@@ -543,7 +543,7 @@ input:checked + .toggleSlider:before {
 
 .uploadDocumentsButton {
   padding: 8px 12px;
-  background-color: #76B900;
+  background-color: #000000;
   color: white;
   border: none;
   border-radius: 4px;
@@ -558,15 +558,15 @@ input:checked + .toggleSlider:before {
 }
 
 .uploadDocumentsButton:hover {
-  background-color: #669f00;
+  background-color: #1a1a1a;
 }
 
 :global(.dark) .uploadDocumentsButton {
-  background-color: #76B900;
+  background-color: #000000;
 }
 
 :global(.dark) .uploadDocumentsButton:hover {
-  background-color: #669f00;
+  background-color: #1a1a1a;
 }
 
 .sourcesContainer {
@@ -695,7 +695,7 @@ input:checked + .toggleSlider:before {
 
 .modelSelect:focus {
   outline: none;
-  border-color: #76B900;
+  border-color: #000000;
   box-shadow: 0 0 0 3px rgba(118, 185, 0, 0.2);
 }
 
@@ -712,7 +712,7 @@ input:checked + .toggleSlider:before {
 .newChatButton {
   width: 100%;
   padding: 12px;
-  background-color: #76B900;
+  background-color: #000000;
   color: white;
   border: none;
   border-radius: 12px;
@@ -743,7 +743,7 @@ input:checked + .toggleSlider:before {
 }
 
 .newChatButton:hover {
-  background-color: #669f00;
+  background-color: #1a1a1a;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(118, 185, 0, 0.3);
 }

@@ -580,7 +580,7 @@ export default function QuerySection({
 
   return (
     <div className={styles.chatContainer}>
-      {showWelcome && <WelcomeSection setQuery={setQuery}/>}
+      {showWelcome && <WelcomeSection />}
 
       {/* Minimal fade-in/fade-out: always start hidden, fade in on next tick */}
       {/* {isPinnedToolOutputVisible && ( )}*/}
@@ -697,14 +697,6 @@ export default function QuerySection({
           </button>
         )}
       </form>
-      
-      <div className={styles.disclaimer}>
-        This is a concept demo to showcase multiple models and MCP use. It is not optimized for performance. Developers can customize and further optimize it for performance.
-        <br />
-        <span className={styles.info}>Note: If a response is cut short, please start a new chat to continue.</span>
-        <br />
-        <span className={styles.warning}>Don't forget to shutdown docker containers at the end of the demo.</span>
-      </div>
     </div>
   );
 }

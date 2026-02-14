@@ -53,7 +53,7 @@ class MCPClient:
     """Client for managing connections to multiple MCP servers.
 
     Provides a unified interface for connecting to and interacting with
-    various MCP servers including RAG, image understanding, and code generation.
+    MCP servers including the RAG server.
     """
 
     def __init__(self):
@@ -61,18 +61,6 @@ class MCPClient:
         mcp_env = get_mcp_env()
         python_exe = get_python_executable()
         self.server_configs = {
-            "image-understanding-server": {
-                "command": python_exe,
-                "args": ["tools/mcp_servers/image_understanding.py"],
-                "transport": "stdio",
-                "env": mcp_env,
-            },
-            "code-generation-server": {
-                "command": python_exe,
-                "args": ["tools/mcp_servers/code_generation.py"],
-                "transport": "stdio",
-                "env": mcp_env,
-            },
             "rag-server": {
                 "command": python_exe,
                 "args": ["tools/mcp_servers/rag.py"],

@@ -24,14 +24,13 @@ This module provides the main HTTP API endpoints and WebSocket connections for:
 - Vector store operations
 """
 
-import base64
 import json
 import os
 import uuid
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict
 
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent import ChatAgent
@@ -144,15 +143,9 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
             data = await websocket.receive_text()
             client_message = json.loads(data)
             new_message = client_message.get("message")
-            image_id = client_message.get("image_id")
-            
-            image_data = None
-            if image_id:
-                image_data = await postgres_storage.get_image(image_id)
-                logger.debug(f"Retrieved image data for image_id: {image_id}, data length: {len(image_data) if image_data else 0}")
-            
+
             try:
-                async for event in agent.query(query_text=new_message, chat_id=chat_id, image_data=image_data):
+                async for event in agent.query(query_text=new_message, chat_id=chat_id):
                     await websocket.send_json(event)
             except Exception as query_error:
                 logger.error(f"Error in agent.query: {str(query_error)}", exc_info=True)
@@ -167,24 +160,6 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
     except Exception as e:
         logger.error(f"WebSocket error for chat {chat_id}: {str(e)}", exc_info=True)
 
-
-@app.post("/upload-image")
-async def upload_image(image: UploadFile = File(...), chat_id: str = Form(...)):
-    """Upload and store an image for chat processing.
-    
-    Args:
-        image: Uploaded image file
-        chat_id: Chat identifier for context
-        
-    Returns:
-        Dictionary with generated image_id
-    """
-    image_data = await image.read()
-    image_base64 = base64.b64encode(image_data).decode('utf-8')
-    data_uri = f"data:{image.content_type};base64,{image_base64}"
-    image_id = str(uuid.uuid4())
-    await postgres_storage.store_image(image_id, data_uri)
-    return {"image_id": image_id}
 
 
 @app.post("/ingest")
