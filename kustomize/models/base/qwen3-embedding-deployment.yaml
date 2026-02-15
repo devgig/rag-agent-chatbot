@@ -13,6 +13,9 @@
 # - Fast on CPU (90ms per embedding)
 # - Small model size (~80MB)
 # - OpenAI-compatible API
+#
+# Image: Built by azure-pipelines-embedding.yaml, pushed to ACR
+# Source: assets/embedding/
 
 apiVersion: apps/v1
 kind: Deployment
@@ -23,7 +26,7 @@ metadata:
     component: embedding-service
 spec:
   replicas: 1
-  progressDeadlineSeconds: 900  # pip install + model download can take ~10 min on ARM64
+  progressDeadlineSeconds: 300
   selector:
     matchLabels:
       app: qwen3-embedding
@@ -39,66 +42,7 @@ spec:
         node-type: storage  # Deploy on storage nodes (CPU-only)
       containers:
       - name: embedding-server
-        image: python:3.11-slim
-        command: ["/bin/bash", "-c"]
-        args:
-        - |
-          # Create app directory
-          mkdir -p /app
-
-          # Install dependencies
-          pip install --no-cache-dir sentence-transformers==2.3.1 fastapi==0.109.0 uvicorn==0.27.0 pydantic==2.5.3
-
-          # Create server script
-          cat > /app/server.py << 'EOF'
-          from fastapi import FastAPI
-          from pydantic import BaseModel
-          from sentence_transformers import SentenceTransformer
-          from typing import List
-          import logging
-
-          logging.basicConfig(level=logging.INFO)
-          logger = logging.getLogger(__name__)
-
-          app = FastAPI()
-          model = None
-
-          class EmbeddingRequest(BaseModel):
-              input: str | List[str]
-              model: str = "all-MiniLM-L6-v2"
-
-          class EmbeddingResponse(BaseModel):
-              object: str = "list"
-              data: List[dict]
-              model: str
-              usage: dict
-
-          @app.on_event("startup")
-          async def load_model():
-              global model
-              logger.info("Loading sentence-transformers model...")
-              model = SentenceTransformer('all-MiniLM-L6-v2')
-              logger.info("Model loaded successfully")
-
-          @app.post("/v1/embeddings")
-          async def create_embedding(request: EmbeddingRequest):
-              texts = [request.input] if isinstance(request.input, str) else request.input
-              embeddings = model.encode(texts).tolist()
-
-              return EmbeddingResponse(
-                  data=[{"object": "embedding", "embedding": emb, "index": i}
-                        for i, emb in enumerate(embeddings)],
-                  model=request.model,
-                  usage={"prompt_tokens": sum(len(t.split()) for t in texts), "total_tokens": sum(len(t.split()) for t in texts)}
-              )
-
-          @app.get("/health")
-          async def health():
-              return {"status": "ok", "model_loaded": model is not None}
-          EOF
-
-          # Start server
-          cd /app && uvicorn server:app --host 0.0.0.0 --port 8000
+        image: rag-agent-chatbot-embedding:latest
         ports:
         - containerPort: 8000
           name: http
@@ -113,10 +57,10 @@ spec:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 60
-          periodSeconds: 15
-          timeoutSeconds: 10
-          failureThreshold: 40   # 60s + 40*15s = 660s max startup time
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 24   # 10s + 24*5s = 130s max startup time
         livenessProbe:
           httpGet:
             path: /health
