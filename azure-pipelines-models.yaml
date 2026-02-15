@@ -4,6 +4,7 @@ trigger:
       - main
   paths:
     include:
+      - assets/embedding/**
       - kustomize/models/**
 
 pr:
@@ -12,6 +13,7 @@ pr:
       - main
   paths:
     include:
+      - assets/embedding/**
       - kustomize/models/**
 
 resources:
@@ -19,12 +21,40 @@ resources:
 
 variables:
   system.debug: false
+  imageRepository: 'rag-agent-chatbot-embedding'
+  containerRegistry: 'acr-bytecourier'
+  containerRegistryUrl: 'bytecourier.azurecr.io'
+  dockerfilePath: './assets/embedding/Dockerfile'
+  tag: '$(Build.SourceVersion)'
   namespace: 'rag-agent-dev'
   poolName: '$(buildAgentPool)'
 
 stages:
+- stage: BuildEmbeddingImage
+  displayName: Build Embedding Image
+  pool:
+    name: $(poolName)
+  jobs:
+  - job: BuildAndPush
+    displayName: Build and push embedding image to ACR
+    steps:
+      - checkout: self
+
+      - task: Docker@2
+        displayName: Build and push an image to ACR
+        inputs:
+          containerRegistry: '$(containerRegistry)'
+          repository: '$(imageRepository)'
+          command: buildAndPush
+          dockerfile: $(dockerfilePath)
+          buildContext: '$(Build.SourcesDirectory)/assets/embedding'
+          tags: |
+            $(tag)
+            latest
+
 - stage: ValidateAndPublish
-  displayName: Validate and Publish KAITO Manifests
+  displayName: Validate and Publish Model Manifests
+  dependsOn: BuildEmbeddingImage
   pool:
     name: $(poolName)
   jobs:
@@ -38,16 +68,28 @@ stages:
           script: |
             # Build kustomize manifests for dev overlay
             kubectl kustomize kustomize/models/overlays/dev > /tmp/models-manifests.yaml || {
-              echo "❌ Kustomize build failed"
+              echo "Kustomize build failed"
               exit 1
             }
 
-            echo "✅ Kustomize build passed"
+            echo "Kustomize build passed"
 
   - job: PublishManifest
     displayName: Publish manifests
     dependsOn: Validate
     steps:
+      - task: Bash@3
+        displayName: Update embedding image in manifests
+        inputs:
+          targetType: 'inline'
+          script: |
+            cd kustomize/models/base
+            cat <<EOF >qwen3-embedding-image-patch.yaml
+            - op: replace
+              path: /spec/template/spec/containers/0/image
+              value: bytecourier.azurecr.io/$(imageRepository):$(tag)
+            EOF
+
       - task: Bash@3
         displayName: Generate manifests for dev
         inputs:
