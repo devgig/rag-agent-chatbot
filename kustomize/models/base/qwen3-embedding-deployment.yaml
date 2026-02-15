@@ -38,6 +38,8 @@ spec:
       annotations:
         ambient.istio.io/redirection: disabled  # Exempt from mesh; fixes istio-cni iptables failure on storage nodes
     spec:
+      imagePullSecrets:
+      - name: acr-secret
       nodeSelector:
         node-type: storage  # Deploy on storage nodes (CPU-only)
       containers:
