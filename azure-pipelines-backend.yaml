@@ -34,7 +34,6 @@ variables:
   source_branch_name: '$(Build.SourceBranchName)'
   imagePullSecret: 'acr-secret'
   namespace: 'rag-agent-dev'
-  sourceNamespace: 'bytecourier-apps'
 
 stages:
 - stage: BuildAndTest

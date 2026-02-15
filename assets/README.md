@@ -44,63 +44,13 @@ This project is designed to be customizable, serving as a framework that develop
 ## Quick Start
 #### 1. Clone the repository and change directories to the rag-agent chatbot directory.
 
-#### 2. Configure docker permissions
-```bash
-sudo usermod -aG docker $USER
-newgrp docker
-```
+#### 2. Deploy with Azure DevOps
+Push to the `main` branch to trigger the CI/CD pipeline, which builds the container images, pushes them to ACR, and deploys to Kubernetes via Kustomize.
 
-> **Warning**: After running usermod, you may need to reboot using `sudo reboot` to start a new
-> session with updated group permissions.
-
-#### 3. Run the model download script
-The setup script pulls model GGUF files from HuggingFace including gpt-oss-120B (~63GB) and Qwen3-Embedding-4B (~4GB). This may take between 30 minutes to 2 hours depending on network speed.
-```bash
-chmod +x model_download.sh
-./model_download.sh
-```
-
-#### 4. Start the docker containers for the application
-This step builds the base llama cpp server image and starts all the required docker services. This step can take 10 to 20 minutes depending on network speed.
-```bash
-docker compose -f docker-compose.yml -f docker-compose-models.yml up -d --build
-```
-
-Wait for all the containers to become ready and healthy.
-```bash
-watch 'docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}"'
-```
-
-#### 5. Access the frontend UI
-
-Open your browser and go to: [http://localhost:3000](http://localhost:3000)
-
-> Note: If you are running this on a remote GPU via an SSH connection, in a new terminal window, run:
->```bash
-> ssh -L 3000:localhost:3000 -L 8000:localhost:8000 username@IP-address
->```
-
-#### 6. Try it out
+#### 4. Try it out
 Upload a document using the "Upload Documents" button in the sidebar under "Context", select it in the "Select Sources" section, then ask questions about its content.
 
-## Cleanup
-
-From the root directory of the rag-agent-chatbot project:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose-models.yml down
-
-docker volume rm "$(basename "$PWD")_postgres_data"
-sudo sh -c 'sync; echo 3 > /proc/sys/vm/drop_caches'
-```
-
 ## Customizations
-
-### Using different models
-
-1. In `setup.sh`, uncomment the line to download gpt-oss-20b.
-2. In `docker-compose-models.yml`, uncomment the block for gpt-oss-20b.
-3. In `docker-compose.yml`, add `gpt-oss-20b` to the `MODELS` environment variable.
 
 ### Environment Configuration
 

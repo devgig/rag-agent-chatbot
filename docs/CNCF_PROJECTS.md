@@ -10,7 +10,7 @@ This document catalogs all [Cloud Native Computing Foundation (CNCF)](https://ww
 |---------|-------|-------|
 | [Kubernetes](https://kubernetes.io/) | Target deployment platform; all manifests define K8s resources | `kustomize/` |
 | [Istio](https://istio.io/) | Service mesh (ambient mode) with waypoint proxies, L7 routing, WebSocket affinity, and timeout/retry policies | `kustomize/backend/base/istio-waypoint.yaml`, `istio-destination-rule.yaml`, `istio-virtual-service.yaml` |
-| [etcd](https://etcd.io/) | Distributed key-value store for Milvus metadata | `assets/docker-compose.yml` (etcd v3.5.5 service) |
+| [etcd](https://etcd.io/) | Distributed key-value store for Milvus metadata | Milvus dependency in K8s cluster |
 | [KEDA](https://keda.sh/) | Event-driven autoscaling for backend pods (1-5 replicas) based on CPU, memory, and optional Prometheus metrics | `kustomize/backend/base/keda-scaledobject.yaml` |
 
 ## Incubating Projects

@@ -164,7 +164,7 @@ These models are downloaded and served at runtime. They are not bundled in the r
 | [npm](https://github.com/npm/cli) | Artistic-2.0 | Node.js package manager (frontend) |
 | [uv](https://github.com/astral-sh/uv) | Apache-2.0 / MIT | Python package manager (backend) |
 | [Docker](https://www.docker.com/) | Apache-2.0 | Container runtime |
-| [Docker Compose](https://github.com/docker/compose) | Apache-2.0 | Multi-container orchestration |
+| [Kustomize](https://kustomize.io/) | Apache-2.0 | Kubernetes manifest management |
 
 ---
 
