@@ -106,12 +106,12 @@ class RAGAgent:
 
     def _get_generation_prompt(self) -> str:
         """Get the system prompt template for the generation node."""
-        return """You are an assistant for question-answering tasks. 
-        Use the following pieces of retrieved context to answer the question.
-        If no context is provided, answer the question using your own knowledge, but state that you could not find relevant information in the provided documents.
+        return """You are an assistant for question-answering tasks.
+        Use ONLY the following pieces of retrieved context to answer the question.
+        If no relevant context is provided, state that no relevant information was found in the uploaded documents. Do NOT answer from your own knowledge.
         Don't make up any information that is not provided in the context. Keep the answer concise.
-        
-        Context: 
+
+        Context:
         {context}
         """
 

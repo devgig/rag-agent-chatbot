@@ -14,26 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 */
+import type React from "react";
 import styles from "@/styles/WelcomeSection.module.css";
 
-export default function WelcomeSection() {
+export default function WelcomeSection({ children }: { children?: React.ReactNode }) {
   return (
     <div className={styles.welcomeContainer}>
       <div className={styles.welcomeMessage}>
         Hello! Send a message to Spark Chat.
       </div>
-      <div className={styles.agentCards}>
-        <div className={`${styles.agentCard} ${styles.animate1}`}>
-          <div className={styles.agentIcon}>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="24" height="24">
-              <circle cx="11" cy="11" r="8"/>
-              <path d="m21 21-4.35-4.35"/>
-            </svg>
-          </div>
-          <h3 className={styles.agentTitle}>Search Documents</h3>
-          <p className={styles.agentSubtitle}>RAG Agent</p>
-        </div>
-      </div>
+      {children}
     </div>
   );
 }

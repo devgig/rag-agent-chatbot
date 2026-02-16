@@ -580,9 +580,47 @@ export default function QuerySection({
   }, [response]);
 
 
+  const inputForm = (
+    <form onSubmit={handleQuerySubmit} className={`${styles.inputContainer} ${showWelcome ? styles.inputCentered : ''}`}>
+      <div className={styles.inputWrapper}>
+        <textarea
+          rows={1}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Send a message..."
+          disabled={isStreaming}
+          className={styles.messageInput}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleQuerySubmit(e as any);
+            }
+          }}
+        />
+      </div>
+      {!isStreaming ? (
+        <button
+          type="submit"
+          className={`${styles.sendButton} ${showButtons ? styles.show : ''}`}
+          disabled={!query.trim()}
+        >
+          →
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={handleCancelStream}
+          className={`${styles.streamingCancelButton} ${showButtons ? styles.show : ''}`}
+        >
+          ✕
+        </button>
+      )}
+    </form>
+  );
+
   return (
     <div className={styles.chatContainer}>
-      {showWelcome && <WelcomeSection />}
+      {showWelcome && <WelcomeSection>{inputForm}</WelcomeSection>}
 
       {/* Minimal fade-in/fade-out: always start hidden, fade in on next tick */}
       {/* {isPinnedToolOutputVisible && ( )}*/}
@@ -593,17 +631,17 @@ export default function QuerySection({
           </div>
         )}
         </div>
-      
+
       <div className={styles.messagesContainer} ref={chatContainerRef}>
         {parsedMessages.map((message, index) => {
           const isHuman = message.type === "HumanMessage";
           const key = `${message.type}-${index}`;
-          
+
           if (!message.content?.trim()) return null;
-          
+
           return (
-            <div 
-              key={key} 
+            <div
+              key={key}
               className={`${styles.messageWrapper} ${isHuman ? styles.userMessageWrapper : styles.assistantMessageWrapper}`}
               style={{
                 animationDelay: `${index * 0.1}s`
@@ -671,42 +709,8 @@ export default function QuerySection({
         )}
         <div ref={messagesEndRef} />
       </div>
-      
-      <form onSubmit={handleQuerySubmit} className={styles.inputContainer}>
-        <div className={styles.inputWrapper}>
-          <textarea
-            rows={1}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Send a message..."
-            disabled={isStreaming}
-            className={styles.messageInput}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleQuerySubmit(e as any);
-              }
-            }}
-          />
-        </div>
-        {!isStreaming ? (
-          <button 
-            type="submit" 
-            className={`${styles.sendButton} ${showButtons ? styles.show : ''}`}
-            disabled={!query.trim()}
-          >
-            →
-          </button>
-        ) : (
-          <button 
-            type="button" 
-            onClick={handleCancelStream} 
-            className={`${styles.streamingCancelButton} ${showButtons ? styles.show : ''}`}
-          >
-            ✕
-          </button>
-        )}
-      </form>
+
+      {!showWelcome && inputForm}
     </div>
   );
 }

@@ -362,6 +362,16 @@
   gap: 12px;
 }
 
+.inputCentered {
+  background: transparent;
+  padding: 0;
+  margin-top: 20px;
+}
+
+:global(.dark) .inputCentered {
+  background: transparent;
+}
+
 :global(.dark) .inputContainer {
   background-color: #2d2d2d;
   /* background-color: greenyellow; */
