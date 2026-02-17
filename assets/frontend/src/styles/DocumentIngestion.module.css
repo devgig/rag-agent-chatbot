@@ -80,7 +80,7 @@
   border: 1px solid var(--primary);
 }
 .customFileLabel:active, .customFileLabel:focus {
-  outline: 2px solid #000000;
+  outline: 2px solid #0F71DA;
 }
 
 .fileName {

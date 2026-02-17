@@ -21,8 +21,8 @@
 :root {
   --background: white;
   --foreground: #1e293b;
-  --primary: #76B900;
-  --primary-dark: #669f00;
+  --primary: #0F71DA;
+  --primary-dark: #0B5FBA;
   --secondary: #f0f0f0;
   --accent: #f56565;
   --border: #e2e8f0;
@@ -35,8 +35,8 @@
   :root {
     --background: #2d2d2d;
     --foreground: #f8fafc;
-    --primary: #000000;
-    --primary-dark: #1a1a1a;
+    --primary: #0F71DA;
+    --primary-dark: #0B5FBA;
     --secondary: #383838;
     --accent: #ef4444;
     --border: #4a4a4a;
