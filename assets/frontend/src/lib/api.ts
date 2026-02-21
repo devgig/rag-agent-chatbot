@@ -61,21 +61,63 @@ export function getApiUrl(path: string): string {
  * @param path - WebSocket path (e.g., '/ws/chat/123')
  * @returns WebSocket URL
  */
-export function getWebSocketUrl(path: string): string {
+export function getWebSocketUrl(path: string, token?: string | null): string {
   // Ensure path starts with /
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
   // Use configured backend WebSocket URL if available
   const backendWsUrl = import.meta.env.VITE_BACKEND_WS_URL;
+  let base: string;
   if (backendWsUrl) {
-    return `${backendWsUrl}${normalizedPath}`;
+    base = `${backendWsUrl}${normalizedPath}`;
+  } else {
+    const backendUrl = getBackendUrl();
+    const wsUrl = backendUrl
+      .replace('https://', 'wss://')
+      .replace('http://', 'ws://');
+    base = `${wsUrl}${normalizedPath}`;
   }
 
-  // Derive from backend URL
-  const backendUrl = getBackendUrl();
-  const wsUrl = backendUrl
-    .replace('https://', 'wss://')
-    .replace('http://', 'ws://');
+  // Append token as query param if provided
+  if (token) {
+    const separator = base.includes('?') ? '&' : '?';
+    return `${base}${separator}token=${encodeURIComponent(token)}`;
+  }
+  return base;
+}
 
-  return `${wsUrl}${normalizedPath}`;
+/**
+ * Create auth headers for authenticated requests
+ */
+export function getAuthHeaders(token: string | null): Record<string, string> {
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
+
+/**
+ * Fetch wrapper that includes auth headers and handles 401 responses.
+ * @param url - Request URL
+ * @param token - JWT token
+ * @param options - Fetch options
+ * @param onUnauthorized - Callback when 401 is received (e.g., trigger logout)
+ * @returns Fetch Response
+ */
+export async function authenticatedFetch(
+  url: string,
+  token: string | null,
+  options: RequestInit = {},
+  onUnauthorized?: () => void,
+): Promise<Response> {
+  const headers = new Headers(options.headers);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const res = await fetch(url, { ...options, headers });
+
+  if (res.status === 401 && onUnauthorized) {
+    onUnauthorized();
+  }
+
+  return res;
 }

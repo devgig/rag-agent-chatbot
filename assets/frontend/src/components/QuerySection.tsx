@@ -22,7 +22,7 @@ import remarkGfm from 'remark-gfm'; // NEW
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"; // NEW
 import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism"; // NEW
 import WelcomeSection from "./WelcomeSection";
-import { getApiUrl, getWebSocketUrl } from "@/lib/api";
+import { getApiUrl, getWebSocketUrl, authenticatedFetch } from "@/lib/api";
 
 export function makeChatTheme(isDark: boolean) {
   const base = isDark ? oneDark : oneLight;
@@ -165,6 +165,8 @@ interface QuerySectionProps {
   abortControllerRef: React.RefObject<AbortController | null>;
   setShowIngestion: (value: boolean) => void;
   currentChatId: string | null;
+  token: string | null;
+  onLogout: () => void;
 }
 
 interface Message {
@@ -184,6 +186,8 @@ export default function QuerySection({
   abortControllerRef,
   setShowIngestion,
   currentChatId,
+  token,
+  onLogout,
 }: QuerySectionProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -219,9 +223,10 @@ export default function QuerySection({
 
 
   useEffect(() => {
+    if (!token) return;
     const fetchSelectedSources = async () => {
       try {
-        const response = await fetch(getApiUrl("/selected_sources"));
+        const response = await authenticatedFetch(getApiUrl("/selected_sources"), token, {}, onLogout);
         if (response.ok) {
           const { sources } = await response.json();
           setSelectedSources(sources);
@@ -231,7 +236,7 @@ export default function QuerySection({
       }
     };
     fetchSelectedSources();
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (!currentChatId) return;
@@ -247,7 +252,7 @@ export default function QuerySection({
         }
 
         // Include chatId as query param for Istio consistent hashing (session affinity)
-        const wsUrl = getWebSocketUrl(`/ws/chat/${currentChatId}?chatId=${currentChatId}`);
+        const wsUrl = getWebSocketUrl(`/ws/chat/${currentChatId}?chatId=${currentChatId}`, token);
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
@@ -365,6 +370,13 @@ export default function QuerySection({
           if (!isEffectActive) return;
           setIsStreaming(false);
           setGraphStatus("");
+
+          // Auth failure — don't reconnect, log out
+          if (event.code === 4001) {
+            setConnectionError("Authentication failed. Please log in again.");
+            onLogout();
+            return;
+          }
 
           // Auto-reconnect on unexpected close (not user-initiated)
           if (event.code !== 1000 && reconnectAttempts.current < maxReconnectAttempts) {

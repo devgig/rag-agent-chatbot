@@ -16,7 +16,7 @@
 */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import styles from '@/styles/Sidebar.module.css';
-import { getApiUrl } from '@/lib/api';
+import { getApiUrl, authenticatedFetch } from '@/lib/api';
 
 interface Model {
   id: string;
@@ -33,15 +33,19 @@ interface SidebarProps {
   refreshTrigger?: number;
   currentChatId: string | null;
   onChatChange: (chatId: string) => Promise<void>;
+  token: string | null;
+  onLogout: () => void;
 }
 
 
-export default function Sidebar({ 
-  showIngestion, 
-  setShowIngestion, 
+export default function Sidebar({
+  showIngestion,
+  setShowIngestion,
   refreshTrigger = 0,
   currentChatId,
-  onChatChange
+  onChatChange,
+  token,
+  onLogout
 }: SidebarProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
@@ -67,14 +71,14 @@ export default function Sidebar({
         setIsLoading(true);
         
         // Get selected model
-        const modelResponse = await fetch(getApiUrl("/selected_model"));
+        const modelResponse = await authenticatedFetch(getApiUrl("/selected_model"), token, {}, onLogout);
         if (modelResponse.ok) {
           const { model } = await modelResponse.json();
           setSelectedModel(model);
         }
 
         // Get selected sources
-        const sourcesResponse = await fetch(getApiUrl("/selected_sources"));
+        const sourcesResponse = await authenticatedFetch(getApiUrl("/selected_sources"), token, {}, onLogout);
         if (sourcesResponse.ok) {
           const { sources } = await sourcesResponse.json();
           setSelectedSources(sources);
@@ -105,8 +109,8 @@ export default function Sidebar({
   const fetchAvailableModels = async () => {
     try {
       setIsLoadingModels(true);
-      const response = await fetch(getApiUrl("/available_models"));
-      
+      const response = await authenticatedFetch(getApiUrl("/available_models"), token, {}, onLogout);
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`Error fetching available models: ${response.status} - ${errorText}`);
@@ -131,8 +135,8 @@ export default function Sidebar({
     try {
       setIsLoadingSources(true);
       console.log("Fetching sources...");
-      const response = await fetch(getApiUrl("/sources"));
-      
+      const response = await authenticatedFetch(getApiUrl("/sources"), token, {}, onLogout);
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`Error fetching sources: ${response.status} - ${errorText}`);
@@ -169,7 +173,7 @@ export default function Sidebar({
   // Add function to fetch chat metadata
   const fetchChatMetadata = useCallback(async (chatId: string) => {
     try {
-      const response = await fetch(getApiUrl(`/chat/${chatId}/metadata`));
+      const response = await authenticatedFetch(getApiUrl(`/chat/${chatId}/metadata`), token, {}, onLogout);
       if (response.ok) {
         const metadata = await response.json();
         setChatMetadata(prev => ({
@@ -187,7 +191,7 @@ export default function Sidebar({
     try {
       console.log("fetchChats: Starting to fetch chats...");
       setIsLoadingChats(true);
-      const response = await fetch(getApiUrl("/chats"));
+      const response = await authenticatedFetch(getApiUrl("/chats"), token, {}, onLogout);
       if (response.ok) {
         const data = await response.json();
         console.log("fetchChats: Received chats:", data.chats);
@@ -293,11 +297,11 @@ export default function Sidebar({
     setSelectedSources(newSelectedSources);
 
     try {
-      const response = await fetch(getApiUrl("/selected_sources"), {
+      const response = await authenticatedFetch(getApiUrl("/selected_sources"), token, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newSelectedSources)
-      });
+      }, onLogout);
 
       if (!response.ok) {
         console.error("Failed to update selected sources");
@@ -323,9 +327,9 @@ export default function Sidebar({
     }
 
     try {
-      const response = await fetch(getApiUrl(`/sources/${encodeURIComponent(source)}`), {
+      const response = await authenticatedFetch(getApiUrl(`/sources/${encodeURIComponent(source)}`), token, {
         method: "DELETE"
-      });
+      }, onLogout);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -369,11 +373,11 @@ export default function Sidebar({
     const newName = prompt("Enter new chat name:", currentName);
     if (newName && newName.trim() && newName !== currentName) {
       try {
-        const response = await fetch(getApiUrl("/chat/rename"), {
+        const response = await authenticatedFetch(getApiUrl("/chat/rename"), token, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat_id: chatId, new_name: newName.trim() })
-        });
+        }, onLogout);
 
         if (!response.ok) {
           console.error("Failed to rename chat");
@@ -391,9 +395,9 @@ export default function Sidebar({
   const handleDeleteChat = async (chatId: string) => {
     try {
       // Delete the chat
-      const response = await fetch(getApiUrl(`/chat/${chatId}`), {
+      const response = await authenticatedFetch(getApiUrl(`/chat/${chatId}`), token, {
         method: "DELETE"
-      });
+      }, onLogout);
 
       if (!response.ok) {
         console.error("Failed to delete chat");
@@ -406,7 +410,7 @@ export default function Sidebar({
       // If we deleted the current chat
       if (currentChatId === chatId) {
         // Get updated list of chats
-        const chatsResponse = await fetch(getApiUrl("/chats"));
+        const chatsResponse = await authenticatedFetch(getApiUrl("/chats"), token, {}, onLogout);
         const { chats: remainingChats } = await chatsResponse.json();
 
         if (remainingChats.length > 0) {
@@ -427,9 +431,9 @@ export default function Sidebar({
       console.log("handleNewChat: Starting new chat creation...");
       
       // Create new chat using backend endpoint
-      const response = await fetch(getApiUrl("/chat/new"), {
+      const response = await authenticatedFetch(getApiUrl("/chat/new"), token, {
         method: "POST"
-      });
+      }, onLogout);
       
       if (!response.ok) {
         console.error("Failed to create new chat");
@@ -479,9 +483,9 @@ export default function Sidebar({
     }
 
     try {
-      const response = await fetch(getApiUrl("/chats/clear"), {
+      const response = await authenticatedFetch(getApiUrl("/chats/clear"), token, {
         method: "DELETE"
-      });
+      }, onLogout);
 
       if (!response.ok) {
         console.error("Failed to clear all chats");
@@ -516,11 +520,11 @@ export default function Sidebar({
     try {
       console.log("Updating selected model to:", newModel);
       
-      const response = await fetch(getApiUrl("/selected_model"), {
+      const response = await authenticatedFetch(getApiUrl("/selected_model"), token, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: newModel })
-      });
+      }, onLogout);
       
       if (!response.ok) {
         console.error("Failed to update selected model");
@@ -700,7 +704,7 @@ export default function Sidebar({
 
             {/* Chat Action Buttons at bottom */}
             <div className={styles.chatButtonsContainer}>
-              <button 
+              <button
                 className={styles.newChatButton}
                 onClick={handleNewChat}
               >
@@ -718,8 +722,8 @@ export default function Sidebar({
                 </svg>
                 New Chat
               </button>
-              
-              <button 
+
+              <button
                 className={styles.clearChatsButton}
                 onClick={handleClearAllChats}
                 disabled={chats.length === 0}
@@ -738,6 +742,30 @@ export default function Sidebar({
                   <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
                 </svg>
                 Clear All
+              </button>
+            </div>
+
+            <div className={styles.logoutContainer}>
+              <button
+                className={styles.logoutButton}
+                onClick={onLogout}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  width="16"
+                  height="16"
+                >
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Sign Out
               </button>
             </div>
           </div>

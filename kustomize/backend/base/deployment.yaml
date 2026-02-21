@@ -63,6 +63,16 @@ spec:
           value: "gpt-oss-120b"
         - name: CONFIG_PATH
           value: "/config/config.json"
+        - name: AUTH_ALLOWED_EMAILS
+          valueFrom:
+            secretKeyRef:
+              name: auth-credentials
+              key: allowed-emails
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: auth-credentials
+              key: jwt-secret
         volumeMounts:
         - name: tmp-volume
           mountPath: /tmp

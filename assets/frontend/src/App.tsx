@@ -17,10 +17,12 @@
 import { useState, useRef, useEffect } from 'react';
 import QuerySection from '@/components/QuerySection';
 import DocumentIngestion from '@/components/DocumentIngestion';
+import LoginPage from '@/components/LoginPage';
 import Sidebar from '@/components/Sidebar';
 import ThemeToggle from '@/components/ThemeToggle';
 import styles from '@/styles/Home.module.css';
 import { getApiUrl } from '@/lib/api';
+import { getToken, setAuth, clearAuth, isTokenExpired } from '@/lib/auth';
 
 export default function App() {
   const [query, setQuery] = useState("");
@@ -34,34 +36,90 @@ export default function App() {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Load initial chat ID
+  // Auth state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // Check for existing token on mount
   useEffect(() => {
+    const checkAuth = async () => {
+      const token = getToken();
+      if (!token || isTokenExpired(token)) {
+        clearAuth();
+        setAuthChecked(true);
+        return;
+      }
+      try {
+        const res = await fetch(getApiUrl("/auth/me"), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          setAuthToken(token);
+          setIsAuthenticated(true);
+        } else {
+          clearAuth();
+        }
+      } catch {
+        clearAuth();
+      }
+      setAuthChecked(true);
+    };
+    checkAuth();
+  }, []);
+
+  const handleLoginSuccess = (token: string, email: string) => {
+    setAuth(token, email);
+    setAuthToken(token);
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    clearAuth();
+    setAuthToken(null);
+    setIsAuthenticated(false);
+    setCurrentChatId(null);
+    setResponse("[]");
+  };
+
+  // Load initial chat ID (only when authenticated)
+  useEffect(() => {
+    if (!isAuthenticated || !authToken) return;
     const fetchCurrentChatId = async () => {
       try {
-        const response = await fetch(getApiUrl("/chat_id"));
+        const response = await fetch(getApiUrl("/chat_id"), {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
         if (response.ok) {
           const { chat_id } = await response.json();
           setCurrentChatId(chat_id);
+        } else if (response.status === 401) {
+          handleLogout();
         }
       } catch (error) {
         console.error("Error fetching current chat ID:", error);
       }
     };
     fetchCurrentChatId();
-  }, []);
+  }, [isAuthenticated, authToken]);
 
   // Handle chat changes
   const handleChatChange = async (newChatId: string) => {
     try {
       const response = await fetch(getApiUrl("/chat_id"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify({ chat_id: newChatId })
       });
 
       if (response.ok) {
         setCurrentChatId(newChatId);
-        setResponse("[]"); // Clear current chat messages with empty JSON array
+        setResponse("[]");
+      } else if (response.status === 401) {
+        handleLogout();
       }
     } catch (error) {
       console.error("Error updating chat ID:", error);
@@ -82,6 +140,19 @@ export default function App() {
     setRefreshTrigger(prev => prev + 1);
   };
 
+  if (!authChecked) {
+    return null; // Avoid flash while checking token
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <>
+        <ThemeToggle />
+        <LoginPage onLoginSuccess={handleLoginSuccess} />
+      </>
+    );
+  }
+
   return (
     <>
       <ThemeToggle />
@@ -92,6 +163,8 @@ export default function App() {
           refreshTrigger={refreshTrigger}
           currentChatId={currentChatId}
           onChatChange={handleChatChange}
+          token={authToken}
+          onLogout={handleLogout}
         />
 
         <div className={styles.mainContent}>
@@ -105,6 +178,8 @@ export default function App() {
             abortControllerRef={abortControllerRef}
             setShowIngestion={setShowIngestion}
             currentChatId={currentChatId}
+            token={authToken}
+            onLogout={handleLogout}
           />
         </div>
 
@@ -126,6 +201,7 @@ export default function App() {
                 setIngestMessage={setIngestMessage}
                 setIsIngesting={setIsIngesting}
                 onSuccessfulIngestion={handleSuccessfulIngestion}
+                token={authToken}
               />
             </div>
           </>

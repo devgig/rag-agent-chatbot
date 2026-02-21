@@ -862,4 +862,43 @@ input:checked + .toggleSlider:before {
 :global(.dark) .chatList::before {
   background: rgba(15, 113, 218, 0.15);
   border-color: rgba(15, 113, 218, 0.3);
-} 
+}
+
+.logoutContainer {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.logoutButton {
+  width: 100%;
+  padding: 10px;
+  background: none;
+  color: #6b7280;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.logoutButton:hover {
+  color: #ef4444;
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+:global(.dark) .logoutButton {
+  color: #9ca3af;
+}
+
+:global(.dark) .logoutButton:hover {
+  color: #ef4444;
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}

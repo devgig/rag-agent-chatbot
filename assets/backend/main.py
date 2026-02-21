@@ -30,13 +30,22 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent import ChatAgent
+from auth import (
+    create_jwt_token,
+    generate_qr_code_base64,
+    generate_totp_secret,
+    get_current_user,
+    load_allowed_emails,
+    verify_totp_code,
+    verify_websocket_token,
+)
 from config import ConfigManager
 from logger import logger, log_request, log_response, log_error
-from models import ChatIdRequest, ChatRenameRequest, SelectedModelRequest
+from models import ChatIdRequest, ChatRenameRequest, LoginRequest, LoginResponse, SelectedModelRequest, TOTPVerifyRequest, TokenResponse
 from postgres_storage import PostgreSQLConversationStorage
 from utils import process_and_ingest_files_background
 from vector_store import create_vector_store_with_config
@@ -85,6 +94,11 @@ async def lifespan(app: FastAPI):
             postgres_storage=postgres_storage
         )
         logger.info("ChatAgent initialized successfully.")
+
+        # Sync auth allowlist from environment
+        allowed_emails = load_allowed_emails()
+        if allowed_emails:
+            await postgres_storage.sync_allowed_users(allowed_emails)
     except Exception as e:
         logger.error(f"Failed to initialize PostgreSQL storage: {e}")
         raise
@@ -128,6 +142,60 @@ async def health_check():
     return {"status": "healthy"}
 
 
+# --- Auth endpoints (unprotected) ---
+
+@app.post("/auth/login", response_model=LoginResponse)
+async def auth_login(request: LoginRequest):
+    """Step 1: Check email against allowlist and initiate TOTP setup or prompt."""
+    email = request.email.strip().lower()
+    user = await postgres_storage.get_auth_user(email)
+
+    if not user or not user["is_allowed"]:
+        raise HTTPException(status_code=403, detail="Email not authorized")
+
+    if user["is_totp_setup"]:
+        return LoginResponse(status="code_required", requires_setup=False, message="Enter your authenticator code")
+
+    # First-time setup: generate TOTP secret and QR code
+    secret = generate_totp_secret()
+    await postgres_storage.create_auth_user_totp(email, secret)
+    qr_b64 = generate_qr_code_base64(email, secret)
+
+    return LoginResponse(
+        status="setup_required",
+        requires_setup=True,
+        qr_code=qr_b64,
+        message="Scan the QR code with your authenticator app, then enter the 6-digit code",
+    )
+
+
+@app.post("/auth/verify", response_model=TokenResponse)
+async def auth_verify(request: TOTPVerifyRequest):
+    """Step 2: Verify TOTP code and issue JWT."""
+    email = request.email.strip().lower()
+    user = await postgres_storage.get_auth_user(email)
+
+    if not user or not user["is_allowed"] or not user["totp_secret"]:
+        raise HTTPException(status_code=403, detail="Email not authorized or TOTP not set up")
+
+    if not verify_totp_code(user["totp_secret"], request.code):
+        raise HTTPException(status_code=401, detail="Invalid code")
+
+    if not user["is_totp_setup"]:
+        await postgres_storage.mark_totp_setup_complete(email)
+
+    token = create_jwt_token(email)
+    return TokenResponse(status="success", token=token, email=email)
+
+
+@app.get("/auth/me")
+async def auth_me(current_user: str = Depends(get_current_user)):
+    """Check token validity. Returns the authenticated user's email."""
+    return {"email": current_user}
+
+
+# --- WebSocket (token-protected) ---
+
 @app.websocket("/ws/chat/{chat_id}")
 async def websocket_endpoint(websocket: WebSocket, chat_id: str):
     """WebSocket endpoint for real-time chat communication.
@@ -137,6 +205,17 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
         chat_id: Unique chat identifier
     """
     logger.debug(f"WebSocket connection attempt for chat_id: {chat_id}")
+
+    # Validate JWT from query param
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=4001, reason="Missing authentication token")
+        return
+    user_email = verify_websocket_token(token)
+    if not user_email:
+        await websocket.close(code=4001, reason="Invalid or expired token")
+        return
+
     try:
         await websocket.accept()
         logger.debug(f"WebSocket connection accepted for chat_id: {chat_id}")
@@ -170,7 +249,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
 
 
 @app.post("/ingest")
-async def ingest_files(files: Optional[List[UploadFile]] = File(None), background_tasks: BackgroundTasks = None):
+async def ingest_files(files: Optional[List[UploadFile]] = File(None), background_tasks: BackgroundTasks = None, current_user: str = Depends(get_current_user)):
     """Ingest documents for vector search and RAG.
     
     Args:
@@ -232,7 +311,7 @@ async def ingest_files(files: Optional[List[UploadFile]] = File(None), backgroun
 
 
 @app.get("/ingest/status/{task_id}")
-async def get_indexing_status(task_id: str):
+async def get_indexing_status(task_id: str, current_user: str = Depends(get_current_user)):
     """Get the status of a file ingestion task.
     
     Args:
@@ -248,7 +327,7 @@ async def get_indexing_status(task_id: str):
 
 
 @app.get("/sources")
-async def get_sources():
+async def get_sources(current_user: str = Depends(get_current_user)):
     """Get all available document sources from PostgreSQL."""
     try:
         sources = await postgres_storage.get_source_names()
@@ -258,7 +337,7 @@ async def get_sources():
 
 
 @app.delete("/sources/{source_name}")
-async def delete_source(source_name: str):
+async def delete_source(source_name: str, current_user: str = Depends(get_current_user)):
     """Delete a document source and its embeddings from Milvus.
 
     Args:
@@ -300,7 +379,7 @@ async def delete_source(source_name: str):
 
 
 @app.get("/selected_sources")
-async def get_selected_sources():
+async def get_selected_sources(current_user: str = Depends(get_current_user)):
     """Get currently selected document sources for RAG."""
     try:
         config = config_manager.read_config()
@@ -310,7 +389,7 @@ async def get_selected_sources():
 
 
 @app.post("/selected_sources")
-async def update_selected_sources(selected_sources: List[str]):
+async def update_selected_sources(selected_sources: List[str], current_user: str = Depends(get_current_user)):
     """Update the selected document sources for RAG.
     
     Args:
@@ -324,7 +403,7 @@ async def update_selected_sources(selected_sources: List[str]):
 
 
 @app.get("/selected_model")
-async def get_selected_model():
+async def get_selected_model(current_user: str = Depends(get_current_user)):
     """Get the currently selected LLM model."""
     try:
         model = config_manager.get_selected_model()
@@ -334,7 +413,7 @@ async def get_selected_model():
 
 
 @app.post("/selected_model")
-async def update_selected_model(request: SelectedModelRequest):
+async def update_selected_model(request: SelectedModelRequest, current_user: str = Depends(get_current_user)):
     """Update the selected LLM model.
     
     Args:
@@ -349,7 +428,7 @@ async def update_selected_model(request: SelectedModelRequest):
 
 
 @app.get("/available_models")
-async def get_available_models():
+async def get_available_models(current_user: str = Depends(get_current_user)):
     """Get list of all available LLM models."""
     try:
         models = config_manager.get_available_models()
@@ -359,7 +438,7 @@ async def get_available_models():
 
 
 @app.get("/chats")
-async def list_chats():
+async def list_chats(current_user: str = Depends(get_current_user)):
     """Get list of all chat conversations."""
     try:
         chat_ids = await postgres_storage.list_conversations()
@@ -369,7 +448,7 @@ async def list_chats():
 
 
 @app.get("/chat_id")
-async def get_chat_id():
+async def get_chat_id(current_user: str = Depends(get_current_user)):
     """Get the current active chat ID, creating a conversation if it doesn't exist."""
     try:
         config = config_manager.read_config()
@@ -400,7 +479,7 @@ async def get_chat_id():
 
 
 @app.post("/chat_id")
-async def update_chat_id(request: ChatIdRequest):
+async def update_chat_id(request: ChatIdRequest, current_user: str = Depends(get_current_user)):
     """Update the current active chat ID.
     
     Args:
@@ -421,7 +500,7 @@ async def update_chat_id(request: ChatIdRequest):
 
 
 @app.get("/chat/{chat_id}/metadata")
-async def get_chat_metadata(chat_id: str):
+async def get_chat_metadata(chat_id: str, current_user: str = Depends(get_current_user)):
     """Get metadata for a specific chat.
     
     Args:
@@ -441,7 +520,7 @@ async def get_chat_metadata(chat_id: str):
 
 
 @app.post("/chat/rename")
-async def rename_chat(request: ChatRenameRequest):
+async def rename_chat(request: ChatRenameRequest, current_user: str = Depends(get_current_user)):
     """Rename a chat conversation.
     
     Args:
@@ -461,7 +540,7 @@ async def rename_chat(request: ChatRenameRequest):
 
 
 @app.post("/chat/new")
-async def create_new_chat():
+async def create_new_chat(current_user: str = Depends(get_current_user)):
     """Create a new chat conversation and set it as current."""
     try:
         new_chat_id = str(uuid.uuid4())
@@ -483,7 +562,7 @@ async def create_new_chat():
 
 
 @app.delete("/chat/{chat_id}")
-async def delete_chat(chat_id: str):
+async def delete_chat(chat_id: str, current_user: str = Depends(get_current_user)):
     """Delete a specific chat and its messages.
     
     Args:
@@ -510,7 +589,7 @@ async def delete_chat(chat_id: str):
 
 
 @app.delete("/chats/clear")
-async def clear_all_chats():
+async def clear_all_chats(current_user: str = Depends(get_current_user)):
     """Clear all chat conversations and create a new default chat."""
     try:
         chat_ids = await postgres_storage.list_conversations()
@@ -540,7 +619,7 @@ async def clear_all_chats():
 
 
 @app.delete("/collections/{collection_name}")
-async def delete_collection(collection_name: str):
+async def delete_collection(collection_name: str, current_user: str = Depends(get_current_user)):
     """Delete a document collection from the vector store.
     
     Args:

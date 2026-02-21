@@ -16,7 +16,7 @@
 */
 import { HTMLAttributes } from 'react';
 import styles from '@/styles/DocumentIngestion.module.css';
-import { getApiUrl } from '@/lib/api';
+import { getApiUrl, authenticatedFetch } from '@/lib/api';
 
 declare module 'react' {
   interface InputHTMLAttributes<T> extends HTMLAttributes<T> {
@@ -33,6 +33,7 @@ interface DocumentIngestionProps {
   setIngestMessage: (message: string) => void;
   setIsIngesting: (value: boolean) => void;
   onSuccessfulIngestion?: () => void;
+  token: string | null;
 }
 
 export default function DocumentIngestion({
@@ -42,7 +43,8 @@ export default function DocumentIngestion({
   setFiles,
   setIngestMessage,
   setIsIngesting,
-  onSuccessfulIngestion
+  onSuccessfulIngestion,
+  token
 }: DocumentIngestionProps) {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFiles(e.target.files);
@@ -61,7 +63,7 @@ export default function DocumentIngestion({
         }
 
         // Send directly to backend via external DNS
-        const res = await fetch(getApiUrl("/ingest"), {
+        const res = await authenticatedFetch(getApiUrl("/ingest"), token, {
           method: "POST",
           body: formData,
         });
