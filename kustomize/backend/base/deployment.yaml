@@ -23,6 +23,17 @@ spec:
         # Graceful shutdown for WebSocket connections
         cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values:
+                - storage01
+                - storage02
+                - storage03
       imagePullSecrets:
       - name: acr-secret
       initContainers:
