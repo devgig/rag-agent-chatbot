@@ -4,7 +4,8 @@ metadata:
   name: rag-agent-frontend-httproute
 spec:
   hostnames:
-    - frontend.bytecourier.local
+    - sparkchat.bytecourier.local
+    - sparkchat.bytecourier.com
   parentRefs:
     - name: multi-agent-gateway
       namespace: istio-ingress-dev
