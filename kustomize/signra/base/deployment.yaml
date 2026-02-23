@@ -1,12 +1,12 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: rag-agent-backend
+  name: signra
   labels:
-    app: rag-agent-backend
-    component: backend
+    app: signra
+    component: auth
 spec:
-  replicas: 1  # KEDA will manage scaling
+  replicas: 1
   progressDeadlineSeconds: 300
   strategy:
     type: RollingUpdate
@@ -15,14 +15,11 @@ spec:
       maxUnavailable: 0
   selector:
     matchLabels:
-      app: rag-agent-backend
+      app: signra
   template:
     metadata:
       labels:
-        app: rag-agent-backend
-      annotations:
-        # Graceful shutdown for WebSocket connections
-        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+        app: signra
     spec:
       affinity:
         nodeAffinity:
@@ -37,16 +34,9 @@ spec:
                 - storage03
       imagePullSecrets:
       - name: acr-secret
-      initContainers:
-      - name: create-config
-        image: busybox
-        command: ['sh', '-c', 'echo ''{"sources":[],"models":["gpt-oss-120b"],"selected_model":"gpt-oss-120b","selected_sources":[],"current_chat_id":null}'' > /config/config.json && chmod 666 /config/config.json']
-        volumeMounts:
-        - name: config-volume
-          mountPath: /config
       containers:
-      - name: backend
-        image: rag-agent-chatbot/backend:latest
+      - name: signra
+        image: signra:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
@@ -69,44 +59,31 @@ spec:
             secretKeyRef:
               name: postgres-credentials
               key: password
-        - name: MILVUS_ADDRESS
-          value: "tcp://milvus.milvus-system.svc.cluster.local:19530"
-        - name: MODELS
-          value: "gpt-oss-120b"
-        - name: CONFIG_PATH
-          value: "/config/config.json"
         - name: AUTH_ALLOWED_EMAILS
           valueFrom:
             secretKeyRef:
               name: auth-credentials
               key: allowed-emails
-        - name: JWT_SECRET
+        - name: JWT_PRIVATE_KEY
           valueFrom:
             secretKeyRef:
               name: auth-credentials
-              key: jwt-secret
-        - name: JWKS_URL
-          value: "http://signra.rag-agent-dev.svc.cluster.local:8000/.well-known/jwks.json"
-        volumeMounts:
-        - name: tmp-volume
-          mountPath: /tmp
-        - name: config-volume
-          mountPath: /config
+              key: jwt-private-key
         resources:
           requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
             cpu: "500m"
             memory: "512Mi"
-          limits:
-            cpu: "2000m"
-            memory: "2Gi"
         startupProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 10
-          periodSeconds: 10
+          initialDelaySeconds: 5
+          periodSeconds: 5
           timeoutSeconds: 5
-          failureThreshold: 30
+          failureThreshold: 12
         livenessProbe:
           httpGet:
             path: /health
@@ -121,8 +98,3 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
-      volumes:
-      - name: tmp-volume
-        emptyDir: {}
-      - name: config-volume
-        emptyDir: {}

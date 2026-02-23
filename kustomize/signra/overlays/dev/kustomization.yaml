@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: signra-dev
+
+namespace: rag-agent-dev
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+labels:
+- includeSelectors: false
+  pairs:
+    environment: dev
+
+replicas:
+  - name: signra
+    count: 1

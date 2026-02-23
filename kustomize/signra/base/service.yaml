@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: signra
+  labels:
+    app: signra
+spec:
+  selector:
+    app: signra
+  ports:
+  - port: 8000
+    targetPort: 8000
+    name: http
+  type: LoadBalancer

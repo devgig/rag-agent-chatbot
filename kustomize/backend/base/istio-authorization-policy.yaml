@@ -1,0 +1,20 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: backend-require-jwt
+spec:
+  targetRefs:
+    - kind: Gateway
+      group: gateway.networking.k8s.io
+      name: backend-waypoint
+  action: ALLOW
+  rules:
+    # Unauthenticated access to public endpoints
+    - to:
+        - operation:
+            paths:
+              - /health
+    # Authenticated access to everything else
+    - from:
+        - source:
+            requestPrincipals: ["*"]

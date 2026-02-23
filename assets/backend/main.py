@@ -34,18 +34,10 @@ from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, Backgroun
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent import ChatAgent
-from auth import (
-    create_jwt_token,
-    generate_qr_code_base64,
-    generate_totp_secret,
-    get_current_user,
-    load_allowed_emails,
-    verify_totp_code,
-    verify_websocket_token,
-)
+from auth import get_current_user, verify_websocket_token
 from config import ConfigManager
 from logger import logger, log_request, log_response, log_error
-from models import ChatIdRequest, ChatRenameRequest, LoginRequest, LoginResponse, SelectedModelRequest, TOTPVerifyRequest, TokenResponse
+from models import ChatIdRequest, ChatRenameRequest, SelectedModelRequest
 from postgres_storage import PostgreSQLConversationStorage
 from utils import process_and_ingest_files_background
 from vector_store import create_vector_store_with_config
@@ -95,10 +87,6 @@ async def lifespan(app: FastAPI):
         )
         logger.info("ChatAgent initialized successfully.")
 
-        # Sync auth allowlist from environment
-        allowed_emails = load_allowed_emails()
-        if allowed_emails:
-            await postgres_storage.sync_allowed_users(allowed_emails)
     except Exception as e:
         logger.error(f"Failed to initialize PostgreSQL storage: {e}")
         raise
@@ -140,58 +128,6 @@ app.add_middleware(
 async def health_check():
     """Health check endpoint for Kubernetes probes."""
     return {"status": "healthy"}
-
-
-# --- Auth endpoints (unprotected) ---
-
-@app.post("/auth/login", response_model=LoginResponse)
-async def auth_login(request: LoginRequest):
-    """Step 1: Check email against allowlist and initiate TOTP setup or prompt."""
-    email = request.email.strip().lower()
-    user = await postgres_storage.get_auth_user(email)
-
-    if not user or not user["is_allowed"]:
-        raise HTTPException(status_code=403, detail="Email not authorized")
-
-    if user["is_totp_setup"]:
-        return LoginResponse(status="code_required", requires_setup=False, message="Enter your authenticator code")
-
-    # First-time setup: generate TOTP secret and QR code
-    secret = generate_totp_secret()
-    await postgres_storage.create_auth_user_totp(email, secret)
-    qr_b64 = generate_qr_code_base64(email, secret)
-
-    return LoginResponse(
-        status="setup_required",
-        requires_setup=True,
-        qr_code=qr_b64,
-        message="Scan the QR code with your authenticator app, then enter the 6-digit code",
-    )
-
-
-@app.post("/auth/verify", response_model=TokenResponse)
-async def auth_verify(request: TOTPVerifyRequest):
-    """Step 2: Verify TOTP code and issue JWT."""
-    email = request.email.strip().lower()
-    user = await postgres_storage.get_auth_user(email)
-
-    if not user or not user["is_allowed"] or not user["totp_secret"]:
-        raise HTTPException(status_code=403, detail="Email not authorized or TOTP not set up")
-
-    if not verify_totp_code(user["totp_secret"], request.code):
-        raise HTTPException(status_code=401, detail="Invalid code")
-
-    if not user["is_totp_setup"]:
-        await postgres_storage.mark_totp_setup_complete(email)
-
-    token = create_jwt_token(email)
-    return TokenResponse(status="success", token=token, email=email)
-
-
-@app.get("/auth/me")
-async def auth_me(current_user: str = Depends(get_current_user)):
-    """Check token validity. Returns the authenticated user's email."""
-    return {"email": current_user}
 
 
 # --- WebSocket (token-protected) ---

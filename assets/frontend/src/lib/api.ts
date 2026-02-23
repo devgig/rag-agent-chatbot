@@ -87,6 +87,27 @@ export function getWebSocketUrl(path: string, token?: string | null): string {
 }
 
 /**
+ * Get the auth service (signra) base URL
+ */
+export function getAuthUrl(path: string): string {
+  const authUrl = import.meta.env.VITE_AUTH_URL;
+  if (authUrl) {
+    return `${authUrl}${path.startsWith('/') ? path : `/${path}`}`;
+  }
+  // Derive from hostname: replace 'sparkchat' with 'signra'
+  if (typeof window !== 'undefined') {
+    const { protocol, hostname } = window.location;
+    if (hostname.includes('bytecourier')) {
+      const authHostname = hostname.replace(/^sparkchat\./, 'signra.').replace(/^frontend\./, 'signra.');
+      return `${protocol}//${authHostname}${path.startsWith('/') ? path : `/${path}`}`;
+    }
+    // Local dev: same host, port 8001
+    return `${protocol}//${hostname}:8001${path.startsWith('/') ? path : `/${path}`}`;
+  }
+  return `http://localhost:8001${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+/**
  * Create auth headers for authenticated requests
  */
 export function getAuthHeaders(token: string | null): Record<string, string> {

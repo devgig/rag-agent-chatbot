@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rag-agent-dev
+  labels:
+    name: rag-agent-dev
+    environment: dev
+    istio.io/dataplane-mode: ambient

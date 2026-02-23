@@ -273,20 +273,6 @@ class PostgreSQLConversationStorage:
             """)
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_document_sources_created_at ON document_sources(created_at)")
 
-            # Auth users table (allowlist + TOTP secrets)
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS auth_users (
-                    id SERIAL PRIMARY KEY,
-                    email VARCHAR(255) UNIQUE NOT NULL,
-                    totp_secret VARCHAR(64),
-                    is_totp_setup BOOLEAN DEFAULT FALSE,
-                    is_allowed BOOLEAN DEFAULT TRUE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            await conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_users_email ON auth_users(email)")
-
             await conn.execute("""
                 CREATE OR REPLACE FUNCTION update_updated_at_column()
                 RETURNS TRIGGER AS $$
@@ -644,69 +630,3 @@ class PostgreSQLConversationStorage:
             self._db_operations += 1
             return result
 
-    # --- Auth user methods ---
-
-    async def get_auth_user(self, email: str) -> Optional[Dict]:
-        """Get an allowed user by email."""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT id, email, totp_secret, is_totp_setup, is_allowed "
-                "FROM auth_users WHERE email = $1",
-                email.lower()
-            )
-            self._db_operations += 1
-            return dict(row) if row else None
-
-    async def create_auth_user_totp(self, email: str, totp_secret: str) -> None:
-        """Set TOTP secret for a user (first-time enrollment)."""
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE auth_users SET totp_secret = $1, updated_at = CURRENT_TIMESTAMP "
-                "WHERE email = $2",
-                totp_secret, email.lower()
-            )
-            self._db_operations += 1
-
-    async def mark_totp_setup_complete(self, email: str) -> None:
-        """Mark TOTP enrollment as complete after first successful verify."""
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE auth_users SET is_totp_setup = TRUE, updated_at = CURRENT_TIMESTAMP "
-                "WHERE email = $1",
-                email.lower()
-            )
-            self._db_operations += 1
-
-    async def add_allowed_user(self, email: str) -> None:
-        """Add or re-enable an email in the allowlist."""
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO auth_users (email, is_allowed) VALUES ($1, TRUE) "
-                "ON CONFLICT (email) DO UPDATE SET is_allowed = TRUE, updated_at = CURRENT_TIMESTAMP",
-                email.lower()
-            )
-            self._db_operations += 1
-
-    async def sync_allowed_users(self, emails: list[str]) -> None:
-        """Sync the allowlist: enable listed emails, disable removed ones."""
-        if not emails:
-            return
-        lower_emails = [e.lower() for e in emails]
-        async with self.pool.acquire() as conn:
-            async with conn.transaction():
-                # Upsert all allowed emails
-                for email in lower_emails:
-                    await conn.execute(
-                        "INSERT INTO auth_users (email, is_allowed) VALUES ($1, TRUE) "
-                        "ON CONFLICT (email) DO UPDATE SET is_allowed = TRUE, updated_at = CURRENT_TIMESTAMP",
-                        email
-                    )
-                # Disable users no longer in the list (also clear TOTP so they re-enroll if re-added)
-                await conn.execute(
-                    "UPDATE auth_users SET is_allowed = FALSE, totp_secret = NULL, "
-                    "is_totp_setup = FALSE, updated_at = CURRENT_TIMESTAMP "
-                    "WHERE email != ALL($1::varchar[])",
-                    lower_emails
-                )
-        self._db_operations += len(lower_emails) + 1
-        logger.info(f"Synced auth allowlist: {len(lower_emails)} user(s) enabled")

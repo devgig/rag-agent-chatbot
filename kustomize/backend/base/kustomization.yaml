@@ -15,6 +15,9 @@ resources:
   - istio-waypoint.yaml
   - istio-destination-rule.yaml
   - istio-virtual-service.yaml
+  # Istio Ambient Mesh security
+  - istio-request-authentication.yaml
+  - istio-authorization-policy.yaml
   # KEDA autoscaling
   - keda-scaledobject.yaml
 

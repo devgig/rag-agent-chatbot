@@ -32,6 +32,7 @@ COPY . .
 # Build arguments for environment variables (optional)
 ARG VITE_BACKEND_URL
 ARG VITE_BACKEND_WS_URL
+ARG VITE_AUTH_URL
 
 # Build the application
 RUN npm run build

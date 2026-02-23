@@ -1,45 +1,118 @@
-"""TOTP-based authentication with JWT tokens for Spark Chat."""
+"""Thin JWT verification client — validates tokens using signra's JWKS."""
 
-import os
-import io
 import base64
-from datetime import datetime, timedelta, timezone
+import os
+import threading
+import time
 from typing import Optional
 
 import jwt
-import pyotp
-import qrcode
-from fastapi import Depends, HTTPException, status
+import requests
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
+from cryptography.hazmat.backends import default_backend
+from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from logger import logger
 
-# --- Configuration ---
-JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-production")
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_MINUTES = int(os.getenv("JWT_EXPIRATION_MINUTES", "30"))
-TOTP_ISSUER = os.getenv("TOTP_ISSUER", "Spark Chat")
+JWT_ISSUER = "spark-chat"
+JWT_ALGORITHM = "RS256"
+JWKS_URL = os.getenv(
+    "JWKS_URL",
+    "http://signra.rag-agent-dev.svc.cluster.local:8000/.well-known/jwks.json",
+)
+JWKS_REFRESH_INTERVAL = int(os.getenv("JWKS_REFRESH_INTERVAL", "300"))
 
 security = HTTPBearer()
 
-
-# --- JWT ---
-def create_jwt_token(email: str) -> str:
-    payload = {
-        "sub": email,
-        "iat": datetime.now(timezone.utc),
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=JWT_EXPIRATION_MINUTES),
-    }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+# --- JWKS cache ---
+_public_key = None
+_jwks_lock = threading.Lock()
+_last_fetch: float = 0
 
 
-def decode_jwt_token(token: str) -> dict:
+def _b64url_decode(data: str) -> bytes:
+    """Base64url-decode (add padding as needed)."""
+    padding = 4 - len(data) % 4
+    if padding != 4:
+        data += "=" * padding
+    return base64.urlsafe_b64decode(data)
+
+
+def _fetch_jwks() -> None:
+    """Fetch JWKS from signra and cache the RSA public key."""
+    global _public_key, _last_fetch
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        resp = requests.get(JWKS_URL, timeout=10)
+        resp.raise_for_status()
+        jwks = resp.json()
+
+        keys = jwks.get("keys", [])
+        if not keys:
+            logger.warning("JWKS response has no keys")
+            return
+
+        # Use the first RSA key
+        key_data = keys[0]
+        n = int.from_bytes(_b64url_decode(key_data["n"]), byteorder="big")
+        e = int.from_bytes(_b64url_decode(key_data["e"]), byteorder="big")
+
+        pub_numbers = RSAPublicNumbers(e, n)
+        _public_key = pub_numbers.public_key(default_backend())
+        _last_fetch = time.time()
+        logger.info("JWKS fetched successfully from %s (kid=%s)", JWKS_URL, key_data.get("kid"))
+    except Exception as exc:
+        logger.error("Failed to fetch JWKS from %s: %s", JWKS_URL, exc)
+
+
+def _ensure_public_key() -> None:
+    """Ensure we have a cached public key, refreshing if stale."""
+    global _public_key, _last_fetch
+    now = time.time()
+    if _public_key is not None and (now - _last_fetch) < JWKS_REFRESH_INTERVAL:
+        return
+    with _jwks_lock:
+        # Double-check after acquiring lock
+        if _public_key is not None and (time.time() - _last_fetch) < JWKS_REFRESH_INTERVAL:
+            return
+        _fetch_jwks()
+
+
+# Attempt initial fetch at import time (best-effort)
+try:
+    _fetch_jwks()
+except Exception:
+    logger.warning("Initial JWKS fetch failed — will retry on first request")
+
+
+# --- JWT verification ---
+def decode_jwt_token(token: str) -> dict:
+    _ensure_public_key()
+    if _public_key is None:
+        raise HTTPException(status_code=500, detail="JWT verification not configured — JWKS unavailable")
+    try:
+        return jwt.decode(
+            token,
+            _public_key,
+            algorithms=[JWT_ALGORITHM],
+            issuer=JWT_ISSUER,
+        )
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        # On invalid token, try refreshing JWKS once (key rotation)
+        global _last_fetch
+        _last_fetch = 0
+        _ensure_public_key()
+        try:
+            return jwt.decode(
+                token,
+                _public_key,
+                algorithms=[JWT_ALGORITHM],
+                issuer=JWT_ISSUER,
+            )
+        except jwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="Invalid token")
 
 
 # --- FastAPI dependency for REST endpoints ---
@@ -54,43 +127,16 @@ async def get_current_user(
 # --- WebSocket auth ---
 def verify_websocket_token(token: str) -> Optional[str]:
     """Validate JWT from WebSocket query param. Returns email or None."""
+    _ensure_public_key()
+    if _public_key is None:
+        return None
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(
+            token,
+            _public_key,
+            algorithms=[JWT_ALGORITHM],
+            issuer=JWT_ISSUER,
+        )
         return payload["sub"]
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
-
-
-# --- TOTP ---
-def generate_totp_secret() -> str:
-    return pyotp.random_base32()
-
-
-def generate_qr_code_base64(email: str, secret: str) -> str:
-    """Generate a QR code PNG as base64 for authenticator app enrollment."""
-    totp = pyotp.TOTP(secret)
-    uri = totp.provisioning_uri(name=email, issuer_name=TOTP_ISSUER)
-
-    img = qrcode.make(uri)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode("utf-8")
-
-
-def verify_totp_code(secret: str, code: str) -> bool:
-    """Verify a 6-digit TOTP code. Allows 1 window of clock drift."""
-    totp = pyotp.TOTP(secret)
-    return totp.verify(code, valid_window=1)
-
-
-# --- Allowlist loader ---
-def load_allowed_emails() -> list[str]:
-    """Read colon-delimited emails from AUTH_ALLOWED_EMAILS env var."""
-    raw = os.getenv("AUTH_ALLOWED_EMAILS", "")
-    if not raw.strip():
-        logger.warning("AUTH_ALLOWED_EMAILS is empty — no users can log in")
-        return []
-    emails = [e.strip().lower() for e in raw.split(":") if e.strip()]
-    logger.info(f"Loaded {len(emails)} allowed email(s) from AUTH_ALLOWED_EMAILS")
-    return emails

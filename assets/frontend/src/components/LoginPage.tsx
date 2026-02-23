@@ -1,6 +1,6 @@
 import type React from "react";
 import { useState } from "react";
-import { getApiUrl } from "@/lib/api";
+import { getAuthUrl } from "@/lib/api";
 import styles from "@/styles/Login.module.css";
 
 type LoginStep = "email" | "setup" | "verify";
@@ -24,7 +24,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setLoading(true);
 
     try {
-      const res = await fetch(getApiUrl("/auth/login"), {
+      const res = await fetch(getAuthUrl("/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
@@ -56,7 +56,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setLoading(true);
 
     try {
-      const res = await fetch(getApiUrl("/auth/verify"), {
+      const res = await fetch(getAuthUrl("/auth/verify"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), code }),

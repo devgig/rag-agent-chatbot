@@ -21,7 +21,7 @@ import LoginPage from '@/components/LoginPage';
 import Sidebar from '@/components/Sidebar';
 import ThemeToggle from '@/components/ThemeToggle';
 import styles from '@/styles/Home.module.css';
-import { getApiUrl } from '@/lib/api';
+import { getApiUrl, getAuthUrl } from '@/lib/api';
 import { getToken, setAuth, clearAuth, isTokenExpired } from '@/lib/auth';
 
 export default function App() {
@@ -51,7 +51,7 @@ export default function App() {
         return;
       }
       try {
-        const res = await fetch(getApiUrl("/auth/me"), {
+        const res = await fetch(getAuthUrl("/auth/me"), {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
