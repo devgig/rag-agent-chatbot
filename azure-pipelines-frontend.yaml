@@ -103,6 +103,7 @@ stages:
           command: buildAndPush
           dockerfile: $(dockerfilePath)
           buildContext: '$(Build.SourcesDirectory)/assets/frontend'
+          arguments: '--platform linux/arm64'
           tags: |
             $(tag)
             latest

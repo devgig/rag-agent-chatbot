@@ -48,6 +48,7 @@ stages:
           command: buildAndPush
           dockerfile: $(dockerfilePath)
           buildContext: '$(Build.SourcesDirectory)/assets/embedding'
+          arguments: '--platform linux/arm64'
           tags: |
             $(tag)
             latest
