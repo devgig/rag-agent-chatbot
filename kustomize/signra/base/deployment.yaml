@@ -77,24 +77,30 @@ spec:
             cpu: "500m"
             memory: "512Mi"
         startupProbe:
-          httpGet:
-            path: /health
-            port: 8000
+          exec:
+            command:
+            - /app/.venv/bin/python
+            - -c
+            - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"
           initialDelaySeconds: 5
           periodSeconds: 5
           timeoutSeconds: 5
           failureThreshold: 12
         livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
+          exec:
+            command:
+            - /app/.venv/bin/python
+            - -c
+            - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"
           periodSeconds: 60
-          timeoutSeconds: 5
+          timeoutSeconds: 10
           failureThreshold: 5
         readinessProbe:
-          httpGet:
-            path: /health
-            port: 8000
+          exec:
+            command:
+            - /app/.venv/bin/python
+            - -c
+            - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"
           periodSeconds: 10
-          timeoutSeconds: 5
+          timeoutSeconds: 10
           failureThreshold: 3

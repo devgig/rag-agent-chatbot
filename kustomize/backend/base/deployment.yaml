@@ -75,16 +75,6 @@ spec:
           value: "gpt-oss-120b"
         - name: CONFIG_PATH
           value: "/config/config.json"
-        - name: AUTH_ALLOWED_EMAILS
-          valueFrom:
-            secretKeyRef:
-              name: auth-credentials
-              key: allowed-emails
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: auth-credentials
-              key: jwt-secret
         - name: JWKS_URL
           value: "http://signra.rag-agent-dev.svc.cluster.local:8000/.well-known/jwks.json"
         volumeMounts:
@@ -100,26 +90,32 @@ spec:
             cpu: "2000m"
             memory: "2Gi"
         startupProbe:
-          httpGet:
-            path: /health
-            port: 8000
+          exec:
+            command:
+            - /app/.venv/bin/python
+            - -c
+            - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"
           initialDelaySeconds: 10
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 30
         livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
+          exec:
+            command:
+            - /app/.venv/bin/python
+            - -c
+            - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"
           periodSeconds: 60
-          timeoutSeconds: 5
+          timeoutSeconds: 10
           failureThreshold: 5
         readinessProbe:
-          httpGet:
-            path: /health
-            port: 8000
+          exec:
+            command:
+            - /app/.venv/bin/python
+            - -c
+            - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"
           periodSeconds: 10
-          timeoutSeconds: 5
+          timeoutSeconds: 10
           failureThreshold: 3
       volumes:
       - name: tmp-volume

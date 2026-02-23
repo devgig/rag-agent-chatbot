@@ -9,7 +9,6 @@ resources:
   - service.yaml
   - postgres-external-secret.yaml
   - acr-external-secret.yaml
-  - auth-external-secret.yaml
   - httproute.yaml
   # Istio Ambient Mesh L7 resources
   - istio-waypoint.yaml

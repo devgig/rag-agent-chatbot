@@ -78,11 +78,7 @@ def _ensure_public_key() -> None:
         _fetch_jwks()
 
 
-# Attempt initial fetch at import time (best-effort)
-try:
-    _fetch_jwks()
-except Exception:
-    logger.warning("Initial JWKS fetch failed — will retry on first request")
+# JWKS is fetched lazily on first authenticated request via _ensure_public_key()
 
 
 # --- JWT verification ---
