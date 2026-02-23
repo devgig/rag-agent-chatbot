@@ -32,6 +32,7 @@ from typing import List, Optional, Dict
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from agent import ChatAgent
 from auth import get_current_user, verify_websocket_token
@@ -122,6 +123,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+Instrumentator().instrument(app).expose(app)
 
 
 @app.get("/health")

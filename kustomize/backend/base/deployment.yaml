@@ -23,6 +23,9 @@ spec:
       annotations:
         # Graceful shutdown for WebSocket connections
         cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
     spec:
       affinity:
         nodeAffinity:

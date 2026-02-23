@@ -37,6 +37,9 @@ spec:
         component: embedding-service
       annotations:
         ambient.istio.io/redirection: disabled  # Exempt from mesh; fixes istio-cni iptables failure on storage nodes
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
     spec:
       imagePullSecrets:
       - name: acr-secret

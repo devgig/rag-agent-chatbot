@@ -8,7 +8,8 @@ RUN pip install --no-cache-dir \
     sentence-transformers==2.3.1 \
     fastapi==0.109.0 \
     uvicorn==0.27.0 \
-    pydantic==2.5.3
+    pydantic==2.5.3 \
+    prometheus-fastapi-instrumentator==7.0.2
 
 # Production stage
 FROM python:3.12-slim AS runner
