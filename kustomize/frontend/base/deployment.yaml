@@ -13,6 +13,8 @@ spec:
     metadata:
       labels:
         app: rag-agent-frontend
+      annotations:
+        ambient.istio.io/redirection: disabled
     spec:
       affinity:
         nodeAffinity:

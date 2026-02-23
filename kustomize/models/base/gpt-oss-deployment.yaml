@@ -61,6 +61,8 @@ spec:
         - containerPort: 8000
           name: http
         env:
+        - name: HF_HUB_OFFLINE
+          value: "1"
         - name: HF_TOKEN
           valueFrom:
             secretKeyRef:
