@@ -41,14 +41,24 @@ stages:
       - checkout: self
 
       - task: Docker@2
-        displayName: Build and push an image to ACR
+        displayName: Build ARM64 image
         inputs:
           containerRegistry: '$(containerRegistry)'
           repository: '$(imageRepository)'
-          command: buildAndPush
+          command: build
           dockerfile: $(dockerfilePath)
           buildContext: '$(Build.SourcesDirectory)/assets/embedding'
           arguments: '--platform linux/arm64'
+          tags: |
+            $(tag)
+            latest
+
+      - task: Docker@2
+        displayName: Push image to ACR
+        inputs:
+          containerRegistry: '$(containerRegistry)'
+          repository: '$(imageRepository)'
+          command: push
           tags: |
             $(tag)
             latest
