@@ -41,8 +41,8 @@ Store the Client ID in Azure Key Vault:
 ```bash
 az keyvault secret set \
   --vault-name <your-vault-name> \
-  --name google-client-id \
-  --value "<your-google-client-id>"
+  --name rag-agent-chatbot-google-client-id \
+  --value "768933825530-bpua5lakgtgehn182pgklttk5sfgfm9k.apps.googleusercontent.com"
 ```
 
 This is pulled into Kubernetes via the `auth-external-secret.yaml` as part of the `auth-credentials` secret.
@@ -51,27 +51,23 @@ This is pulled into Kubernetes via the `auth-external-secret.yaml` as part of th
 
 | Secret Key | Azure KV Key | Purpose |
 |---|---|---|
-| `google-client-id` | `google-client-id` | Google OAuth Client ID |
+| `google-client-id` | `rag-agent-chatbot-google-client-id` | Google OAuth Client ID |
 
 The deployment reads it as:
 
 | Environment Variable | Secret Key | Purpose |
 |---|---|---|
-| `GOOGLE_CLIENT_ID` | `auth-credentials/google-client-id` | Passed to `google.oauth2.id_token.verify_oauth2_token()` |
+| `GOOGLE_CLIENT_ID` | `auth-credentials/google-client-id` | Passed to `google.oauth2.id_token.verify_oauth2_token()` (sourced from KV key `rag-agent-chatbot-google-client-id`) |
 
 ## Frontend Configuration
 
-The frontend needs the Google Client ID at build time:
-
-```bash
-export VITE_GOOGLE_CLIENT_ID="<your-google-client-id>"
-```
-
-Or add to `.env`:
+The frontend reads the Google Client ID from `assets/frontend/.env` (committed to the repo):
 
 ```
-VITE_GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
+VITE_GOOGLE_CLIENT_ID=768933825530-bpua5lakgtgehn182pgklttk5sfgfm9k.apps.googleusercontent.com
 ```
+
+You can override it locally with `assets/frontend/.env.local` (gitignored).
 
 The GIS library is loaded via a script tag in `index.html`:
 
@@ -85,12 +81,12 @@ Set the following environment variables:
 
 ```bash
 # Backend (signra)
-export GOOGLE_CLIENT_ID="<your-google-client-id>"
-export AUTH_ALLOWED_EMAILS="your@gmail.com"
+export GOOGLE_CLIENT_ID="768933825530-bpua5lakgtgehn182pgklttk5sfgfm9k.apps.googleusercontent.com"
+export AUTH_ALLOWED_EMAILS="geoff.niehaus@bytecourier.com"
 export JWT_PRIVATE_KEY="$(cat path/to/private-key.pem)"
 
 # Frontend
-export VITE_GOOGLE_CLIENT_ID="<your-google-client-id>"
+export VITE_GOOGLE_CLIENT_ID="768933825530-bpua5lakgtgehn182pgklttk5sfgfm9k.apps.googleusercontent.com"
 ```
 
 For local dev, make sure `http://localhost:3000` is in your Google OAuth authorized origins.

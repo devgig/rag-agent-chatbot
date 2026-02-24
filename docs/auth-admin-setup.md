@@ -32,7 +32,7 @@ A strong random string used to sign JWT tokens. Generate one with:
 openssl rand -base64 32
 ```
 
-### `google-client-id`
+### `rag-agent-chatbot-google-client-id`
 
 The Google OAuth 2.0 Client ID for the GIS credential flow. See [Google Auth Setup](google-auth-setup.md) for how to create this.
 
@@ -45,7 +45,7 @@ The `auth-external-secret.yaml` manifest pulls secrets into a Kubernetes secret 
 | `allowed-emails` | `rag-agent-auth-users` | Colon-delimited email allowlist |
 | `jwt-secret` | `rag-agent-jwt-secret` | JWT signing key |
 | `jwt-private-key` | `rag-agent-jwt-private-key` | RSA private key for JWT signing |
-| `google-client-id` | `google-client-id` | Google OAuth Client ID |
+| `google-client-id` | `rag-agent-chatbot-google-client-id` | Google OAuth Client ID |
 
 The backend deployment reads these as environment variables:
 
@@ -53,7 +53,7 @@ The backend deployment reads these as environment variables:
 |---|---|---|
 | `AUTH_ALLOWED_EMAILS` | `auth-credentials/allowed-emails` | Authorized emails |
 | `JWT_PRIVATE_KEY` | `auth-credentials/jwt-private-key` | RSA key for JWT signing |
-| `GOOGLE_CLIENT_ID` | `auth-credentials/google-client-id` | Google token verification |
+| `GOOGLE_CLIENT_ID` | `auth-credentials/google-client-id` | Google token verification (sourced from KV key `rag-agent-chatbot-google-client-id`) |
 
 ### Optional Environment Variables
 
@@ -91,9 +91,9 @@ If a user loses access to their authenticator app:
 Set the following environment variables for the backend:
 
 ```bash
-export AUTH_ALLOWED_EMAILS="your@gmail.com"
+export AUTH_ALLOWED_EMAILS="geoff.niehaus@bytecourier.com"
 export JWT_PRIVATE_KEY="$(cat path/to/private-key.pem)"
-export GOOGLE_CLIENT_ID="<your-google-client-id>"
+export GOOGLE_CLIENT_ID="768933825530-bpua5lakgtgehn182pgklttk5sfgfm9k.apps.googleusercontent.com"
 ```
 
 Then start the backend normally. The allowlist sync runs on startup.
