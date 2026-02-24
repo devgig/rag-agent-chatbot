@@ -13,20 +13,10 @@ spec:
     metadata:
       labels:
         app: rag-agent-frontend
+        istio.io/dataplane-mode: none
       annotations:
         ambient.istio.io/redirection: disabled
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: kubernetes.io/hostname
-                operator: NotIn
-                values:
-                - storage01
-                - storage02
-                - storage03
       imagePullSecrets:
       - name: acr-secret
       containers:

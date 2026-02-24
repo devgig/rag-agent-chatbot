@@ -20,22 +20,13 @@ spec:
     metadata:
       labels:
         app: signra
+        istio.io/dataplane-mode: none
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"
         prometheus.io/path: "/metrics"
+        ambient.istio.io/redirection: disabled
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: kubernetes.io/hostname
-                operator: NotIn
-                values:
-                - storage01
-                - storage02
-                - storage03
       imagePullSecrets:
       - name: acr-secret
       containers:
