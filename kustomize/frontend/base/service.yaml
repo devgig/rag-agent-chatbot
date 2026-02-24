@@ -13,8 +13,4 @@ spec:
   - port: 3000
     targetPort: 3000
     name: http
-  type: LoadBalancer
-  sessionAffinity: ClientIP
-  sessionAffinityConfig:
-    clientIP:
-      timeoutSeconds: 3600
+  type: ClusterIP
