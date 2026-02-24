@@ -1,16 +1,30 @@
 """Auth Pydantic models for signra."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from typing import Optional
 
 
 class LoginRequest(BaseModel):
-    google_token: str
+    google_token: Optional[str] = None
+    email: Optional[str] = None
+
+    @model_validator(mode="after")
+    def exactly_one_credential(self):
+        if bool(self.google_token) == bool(self.email):
+            raise ValueError("Provide exactly one of google_token or email")
+        return self
 
 
 class TOTPVerifyRequest(BaseModel):
-    google_token: str
+    google_token: Optional[str] = None
+    email: Optional[str] = None
     code: str
+
+    @model_validator(mode="after")
+    def exactly_one_credential(self):
+        if bool(self.google_token) == bool(self.email):
+            raise ValueError("Provide exactly one of google_token or email")
+        return self
 
 
 class LoginResponse(BaseModel):

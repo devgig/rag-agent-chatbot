@@ -31,6 +31,7 @@ declare global {
 }
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+const isLocalNetwork = window.location.hostname.endsWith(".bytecourier.local");
 
 interface LoginPageProps {
   onLoginSuccess: (token: string, email: string) => void;
@@ -40,6 +41,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [step, setStep] = useState<LoginStep>("google");
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [email, setEmail] = useState("");
+  const [emailInput, setEmailInput] = useState("");
   const [code, setCode] = useState("");
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +85,40 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     [],
   );
 
+  const handleEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailInput.trim()) return;
+    setError(null);
+    setLoading(true);
+
+    try {
+      const res = await fetch(getAuthUrl("/auth/login"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailInput.trim() }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.detail || "Email not authorized");
+        return;
+      }
+
+      setEmail(data.email);
+
+      if (data.requires_setup) {
+        setQrCode(data.qr_code);
+        setStep("setup");
+      } else {
+        setStep("verify");
+      }
+    } catch {
+      setError("Unable to connect to server");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (step !== "google" || !googleButtonRef.current) return;
 
@@ -117,15 +153,20 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
   const handleCodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (code.length !== 6 || !googleToken) return;
+    if (code.length !== 6) return;
+    if (!isLocalNetwork && !googleToken) return;
     setError(null);
     setLoading(true);
+
+    const body = isLocalNetwork
+      ? { email, code }
+      : { google_token: googleToken, code };
 
     try {
       const res = await fetch(getAuthUrl("/auth/verify"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ google_token: googleToken, code }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
 
@@ -146,6 +187,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setStep("google");
     setGoogleToken(null);
     setEmail("");
+    setEmailInput("");
     setCode("");
     setQrCode(null);
     setError(null);
@@ -158,12 +200,44 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
         {step === "google" && (
           <>
-            <p className={styles.subtitle}>Sign in with your Google account</p>
-            <div className={styles.googleButton} ref={googleButtonRef} />
-            {loading && (
-              <p className={styles.subtitle}>Verifying your account...</p>
+            {isLocalNetwork ? (
+              <>
+                <p className={styles.subtitle}>Sign in with your email</p>
+                <form onSubmit={handleEmailSubmit} className={styles.form}>
+                  <div className={styles.inputGroup}>
+                    <label className={styles.label}>Email address</label>
+                    <input
+                      type="email"
+                      className={styles.input}
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      placeholder="you@example.com"
+                      autoFocus
+                      autoComplete="email"
+                    />
+                  </div>
+                  {error && <div className={styles.error}>{error}</div>}
+                  <button
+                    type="submit"
+                    className={styles.submitButton}
+                    disabled={loading || !emailInput.trim()}
+                  >
+                    {loading ? "Verifying..." : "Continue"}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                <p className={styles.subtitle}>
+                  Sign in with your Google account
+                </p>
+                <div className={styles.googleButton} ref={googleButtonRef} />
+                {loading && (
+                  <p className={styles.subtitle}>Verifying your account...</p>
+                )}
+                {error && <div className={styles.error}>{error}</div>}
+              </>
             )}
-            {error && <div className={styles.error}>{error}</div>}
           </>
         )}
 
