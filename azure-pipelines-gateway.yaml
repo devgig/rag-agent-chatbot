@@ -1,0 +1,70 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - kustomize/gateway/**
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - kustomize/gateway/**
+
+resources:
+- repo: self
+
+variables:
+  system.debug: false
+  namespace: 'istio-ingress-dev'
+  poolName: '$(buildAgentPool)'
+
+stages:
+- stage: ValidateAndPublish
+  displayName: Validate and Publish Gateway Manifests
+  pool:
+    name: $(poolName)
+  jobs:
+  - job: Validate
+    displayName: Validate YAML syntax
+    steps:
+      - task: Bash@3
+        displayName: Validate gateway manifests with kustomize
+        inputs:
+          targetType: 'inline'
+          script: |
+            kubectl kustomize kustomize/gateway/overlays/dev > /tmp/gateway-manifests.yaml || {
+              echo "Kustomize build failed"
+              exit 1
+            }
+
+            echo "Kustomize build passed"
+            cat /tmp/gateway-manifests.yaml
+
+  - job: PublishManifest
+    displayName: Publish manifests
+    dependsOn: Validate
+    steps:
+      - task: Bash@3
+        displayName: Generate manifests for dev
+        inputs:
+          targetType: 'inline'
+          script: |
+            mkdir manifests
+            if [ -d "./kustomize/gateway/overlays/dev" ]; then
+              kubectl kustomize ./kustomize/gateway/overlays/dev > ./manifests/gateway-dev-workloads.yaml
+            else
+              echo "dev overlay doesn't exist; skipping"
+            fi
+
+            if [ -d "./kustomize/gateway/overlays/prod" ]; then
+              kubectl kustomize ./kustomize/gateway/overlays/prod > ./manifests/gateway-prod-workloads.yaml
+            else
+              echo "prod overlay doesn't exist; skipping"
+            fi
+
+      - publish: 'manifests'
+        artifact: manifests

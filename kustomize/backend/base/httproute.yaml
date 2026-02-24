@@ -7,7 +7,7 @@ spec:
     - sparkbackend.bytecourier.local
     - sparkbackend.bytecourier.com
   parentRefs:
-    - name: multi-agent-gateway
+    - name: rag-agent-gateway
       namespace: istio-ingress-dev
   rules:
     - matches:

@@ -1,0 +1,53 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: rag-agent-gateway
+  namespace: istio-ingress-dev
+spec:
+  gatewayClassName: istio
+  addresses:
+  - type: IPAddress
+    value: "192.168.71.210"
+  listeners:
+  - name: sparkchat
+    hostname: "sparkchat.bytecourier.local"
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: sparkchat-com
+    hostname: "sparkchat.bytecourier.com"
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: sparkbackend
+    hostname: "sparkbackend.bytecourier.local"
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: sparkbackend-com
+    hostname: "sparkbackend.bytecourier.com"
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: signra
+    hostname: "signra.bytecourier.local"
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: signra-com
+    hostname: "signra.bytecourier.com"
+    port: 80
+    protocol: HTTP
+    allowedRoutes:
+      namespaces:
+        from: All
