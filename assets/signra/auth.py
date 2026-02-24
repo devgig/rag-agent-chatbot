@@ -14,6 +14,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
 
 from logger import logger
 
@@ -22,6 +24,7 @@ JWT_EXPIRATION_MINUTES = int(os.getenv("JWT_EXPIRATION_MINUTES", "30"))
 TOTP_ISSUER = os.getenv("TOTP_ISSUER", "Spark Chat")
 JWT_ISSUER = "spark-chat"
 JWT_ALGORITHM = "RS256"
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 
 security = HTTPBearer()
 
@@ -135,6 +138,22 @@ def verify_websocket_token(token: str) -> Optional[str]:
         return payload["sub"]
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
+
+
+# --- Google Sign-In ---
+def verify_google_token(token: str) -> str:
+    """Verify Google ID token and return the verified email."""
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="Google auth not configured")
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            token, google_requests.Request(), GOOGLE_CLIENT_ID
+        )
+        if not idinfo.get("email_verified"):
+            raise HTTPException(status_code=401, detail="Email not verified by Google")
+        return idinfo["email"].lower()
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid Google token")
 
 
 # --- TOTP ---

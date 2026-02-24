@@ -14,6 +14,7 @@ from auth import (
     get_current_user,
     get_jwks,
     load_allowed_emails,
+    verify_google_token,
     verify_totp_code,
 )
 from db import AuthDB
@@ -107,8 +108,8 @@ async def jwks_endpoint():
 
 @app.post("/auth/login", response_model=LoginResponse)
 async def auth_login(request: LoginRequest):
-    """Step 1: Check email against allowlist and initiate TOTP setup or prompt."""
-    email = request.email.strip().lower()
+    """Step 1: Verify Google token, check allowlist, initiate TOTP setup or prompt."""
+    email = verify_google_token(request.google_token)
     user = await auth_db.get_auth_user(email)
 
     if not user or not user["is_allowed"]:
@@ -118,6 +119,7 @@ async def auth_login(request: LoginRequest):
         return LoginResponse(
             status="code_required",
             requires_setup=False,
+            email=email,
             message="Enter your authenticator code",
         )
 
@@ -129,6 +131,7 @@ async def auth_login(request: LoginRequest):
     return LoginResponse(
         status="setup_required",
         requires_setup=True,
+        email=email,
         qr_code=qr_b64,
         message="Scan the QR code with your authenticator app, then enter the 6-digit code",
     )
@@ -136,8 +139,8 @@ async def auth_login(request: LoginRequest):
 
 @app.post("/auth/verify", response_model=TokenResponse)
 async def auth_verify(request: TOTPVerifyRequest):
-    """Step 2: Verify TOTP code and issue JWT."""
-    email = request.email.strip().lower()
+    """Step 2: Verify Google token + TOTP code and issue JWT."""
+    email = verify_google_token(request.google_token)
     user = await auth_db.get_auth_user(email)
 
     if not user or not user["is_allowed"] or not user["totp_secret"]:

@@ -12,7 +12,7 @@ Install one of the following on your phone:
 ## 2. First-Time Sign In
 
 1. Open Spark Chat in your browser
-2. Enter your email address and click **Continue**
+2. Click **Sign in with Google** and select your authorized Google account
 3. A QR code will appear on screen
 
 ### Scan the QR Code
@@ -41,7 +41,7 @@ Install one of the following on your phone:
 ## 3. Daily Login
 
 1. Open Spark Chat
-2. Enter your email address
+2. Click **Sign in with Google** and select your account
 3. Open your authenticator app and find the **Spark Chat** entry
 4. Type the current 6-digit code shown in the app
 5. Click **Sign In**

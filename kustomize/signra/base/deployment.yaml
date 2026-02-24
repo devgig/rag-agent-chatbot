@@ -64,6 +64,11 @@ spec:
             secretKeyRef:
               name: auth-credentials
               key: jwt-private-key
+        - name: GOOGLE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: auth-credentials
+              key: google-client-id
         resources:
           requests:
             cpu: "200m"

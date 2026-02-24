@@ -158,6 +158,26 @@
   text-decoration: underline;
 }
 
+.googleButton {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.emailDisplay {
+  background: rgba(15, 113, 218, 0.08);
+  color: var(--primary);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 16px;
+}
+
+:global(.dark) .emailDisplay {
+  background: rgba(15, 113, 218, 0.15);
+}
+
 @media (max-width: 480px) {
   .loginCard {
     padding: 24px;

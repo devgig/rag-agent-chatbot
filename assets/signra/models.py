@@ -5,17 +5,18 @@ from typing import Optional
 
 
 class LoginRequest(BaseModel):
-    email: str
+    google_token: str
 
 
 class TOTPVerifyRequest(BaseModel):
-    email: str
+    google_token: str
     code: str
 
 
 class LoginResponse(BaseModel):
     status: str
     requires_setup: bool = False
+    email: str = ""
     qr_code: Optional[str] = None
     message: str = ""
 
