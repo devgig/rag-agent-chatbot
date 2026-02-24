@@ -36,6 +36,12 @@ export function getBackendUrl(): string {
       return `${protocol}//${backendHostname}`;
     }
 
+    // Replace 'sparkchat' with 'sparkbackend' in hostname
+    if (hostname.startsWith('sparkchat.')) {
+      const backendHostname = hostname.replace('sparkchat.', 'sparkbackend.');
+      return `${protocol}//${backendHostname}`;
+    }
+
     // For local development, use same host with port 8000
     return `${protocol}//${hostname}:8000`;
   }
