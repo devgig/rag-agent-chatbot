@@ -79,17 +79,31 @@ export default function Sidebar({
 
         // Get selected sources
         const sourcesResponse = await authenticatedFetch(getApiUrl("/selected_sources"), token, {}, onLogout);
+        let currentSelected: string[] = [];
         if (sourcesResponse.ok) {
           const { sources } = await sourcesResponse.json();
+          currentSelected = sources;
           setSelectedSources(sources);
         }
-
 
         // Get available models
         await fetchAvailableModels();
 
-        // Get sources
-        await fetchSources();
+        // Get sources, then auto-select first if none selected
+        const availResponse = await authenticatedFetch(getApiUrl("/sources"), token, {}, onLogout);
+        if (availResponse.ok) {
+          const { sources: avail } = await availResponse.json();
+          setAvailableSources(avail || []);
+          if (currentSelected.length === 0 && avail && avail.length > 0) {
+            const autoSelected = [avail[0]];
+            setSelectedSources(autoSelected);
+            await authenticatedFetch(getApiUrl("/selected_sources"), token, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(autoSelected),
+            }, onLogout);
+          }
+        }
         
         // Get chats if history section is expanded (which it is by default)
         if (expandedSections.has('history')) {

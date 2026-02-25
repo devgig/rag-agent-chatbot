@@ -43,3 +43,20 @@ spec:
         attempts: 2
         perTryTimeout: 120s
         retryOn: 5xx,reset,connect-failure
+      corsPolicy:
+        allowOrigins:
+          - exact: "http://localhost:3000"
+          - exact: "http://sparkchat.bytecourier.local"
+          - exact: "http://sparkchat.bytecourier.com"
+          - exact: "https://sparkchat.bytecourier.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        allowHeaders:
+          - authorization
+          - content-type
+        allowCredentials: true
+        maxAge: "86400s"
