@@ -587,7 +587,7 @@ wheels = [
 ]
 
 [[package]]
-name = "signra"
+name = "auth"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

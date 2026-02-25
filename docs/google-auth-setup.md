@@ -80,7 +80,7 @@ The GIS library is loaded via a script tag in `index.html`:
 Set the following environment variables:
 
 ```bash
-# Backend (signra)
+# Backend (auth)
 export GOOGLE_CLIENT_ID="768933825530-bpua5lakgtgehn182pgklttk5sfgfm9k.apps.googleusercontent.com"
 export AUTH_ALLOWED_EMAILS="geoff.niehaus@bytecourier.com"
 export JWT_PRIVATE_KEY="$(cat path/to/private-key.pem)"

@@ -1,8 +1,8 @@
-# Signra Authentication Service
+# Auth Service
 
 ## Setup: RSA Key Pair for JWT Signing
 
-Signra uses RS256 (RSA) for signing JWTs. You need to generate an RSA private key and store it in Azure Key Vault.
+Auth uses RS256 (RSA) for signing JWTs. You need to generate an RSA private key and store it in Azure Key Vault.
 
 ### 1. Generate the RSA private key
 
@@ -34,8 +34,8 @@ kubectl annotate externalsecret auth-external-secret -n rag-agent-dev \
   force-sync=$(date +%s) --overwrite
 ```
 
-### 5. Restart signra
+### 5. Restart auth
 
 ```bash
-kubectl rollout restart deployment signra -n rag-agent-dev
+kubectl rollout restart deployment auth -n rag-agent-dev
 ```

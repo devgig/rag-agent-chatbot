@@ -1,4 +1,4 @@
-"""Auth Pydantic models for signra."""
+"""Auth Pydantic models for auth service."""
 
 from pydantic import BaseModel, model_validator
 from typing import Optional

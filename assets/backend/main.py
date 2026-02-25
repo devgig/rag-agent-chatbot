@@ -110,8 +110,9 @@ app = FastAPI(
 
 _default_origins = [
     "http://localhost:3000",
-    "http://frontend.bytecourier.local",
-    "http://frontend.bytecourier.local:3000",
+    "http://sparkchat.bytecourier.local",
+    "http://sparkchat.bytecourier.com",
+    "https://sparkchat.bytecourier.com",
 ]
 _env_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
 CORS_ORIGINS = [o.strip() for o in _env_origins.split(",") if o.strip()] if _env_origins else _default_origins

@@ -30,12 +30,6 @@ export function getBackendUrl(): string {
   if (typeof window !== 'undefined') {
     const { protocol, hostname } = window.location;
 
-    // Replace 'frontend' with 'backend' in hostname
-    if (hostname.startsWith('frontend.')) {
-      const backendHostname = hostname.replace('frontend.', 'backend.');
-      return `${protocol}//${backendHostname}`;
-    }
-
     // Replace 'sparkchat' with 'sparkbackend' in hostname
     if (hostname.startsWith('sparkchat.')) {
       const backendHostname = hostname.replace('sparkchat.', 'sparkbackend.');
@@ -93,18 +87,18 @@ export function getWebSocketUrl(path: string, token?: string | null): string {
 }
 
 /**
- * Get the auth service (signra) base URL
+ * Get the auth service base URL
  */
 export function getAuthUrl(path: string): string {
   const authUrl = import.meta.env.VITE_AUTH_URL;
   if (authUrl) {
     return `${authUrl}${path.startsWith('/') ? path : `/${path}`}`;
   }
-  // Derive from hostname: replace 'sparkchat' with 'signra'
+  // Derive from hostname: replace 'sparkchat' with 'auth'
   if (typeof window !== 'undefined') {
     const { protocol, hostname } = window.location;
     if (hostname.includes('bytecourier')) {
-      const authHostname = hostname.replace(/^sparkchat\./, 'signra.').replace(/^frontend\./, 'signra.');
+      const authHostname = hostname.replace(/^sparkchat\./, 'auth.');
       return `${protocol}//${authHostname}${path.startsWith('/') ? path : `/${path}`}`;
     }
     // Local dev: same host, port 8001

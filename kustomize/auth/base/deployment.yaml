@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: signra
+  name: auth
   labels:
-    app: signra
+    app: auth
     component: auth
 spec:
   replicas: 1
@@ -15,11 +15,11 @@ spec:
       maxUnavailable: 0
   selector:
     matchLabels:
-      app: signra
+      app: auth
   template:
     metadata:
       labels:
-        app: signra
+        app: auth
         istio.io/dataplane-mode: none
       annotations:
         prometheus.io/scrape: "true"
@@ -30,8 +30,8 @@ spec:
       imagePullSecrets:
       - name: acr-secret
       containers:
-      - name: signra
-        image: signra:latest
+      - name: auth
+        image: auth:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000

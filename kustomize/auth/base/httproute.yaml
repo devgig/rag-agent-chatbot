@@ -1,11 +1,11 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: signra-httproute
+  name: auth-httproute
 spec:
   hostnames:
-    - signra.bytecourier.local
-    - signra.bytecourier.com
+    - auth.bytecourier.local
+    - auth.bytecourier.com
   parentRefs:
     - name: rag-agent-gateway
       namespace: istio-ingress-dev
@@ -15,5 +15,5 @@ spec:
             type: PathPrefix
             value: /
       backendRefs:
-        - name: signra
+        - name: auth
           port: 8000

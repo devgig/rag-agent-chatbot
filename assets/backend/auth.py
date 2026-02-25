@@ -1,4 +1,4 @@
-"""Thin JWT verification client — validates tokens using signra's JWKS."""
+"""Thin JWT verification client — validates tokens using auth service's JWKS."""
 
 import base64
 import os
@@ -19,7 +19,7 @@ JWT_ISSUER = "spark-chat"
 JWT_ALGORITHM = "RS256"
 JWKS_URL = os.getenv(
     "JWKS_URL",
-    "http://signra.rag-agent-dev.svc.cluster.local:8000/.well-known/jwks.json",
+    "http://auth.rag-agent-dev.svc.cluster.local:8000/.well-known/jwks.json",
 )
 JWKS_REFRESH_INTERVAL = int(os.getenv("JWKS_REFRESH_INTERVAL", "300"))
 
@@ -40,7 +40,7 @@ def _b64url_decode(data: str) -> bytes:
 
 
 def _fetch_jwks() -> None:
-    """Fetch JWKS from signra and cache the RSA public key."""
+    """Fetch JWKS from auth service and cache the RSA public key."""
     global _public_key, _last_fetch
     try:
         resp = requests.get(JWKS_URL, timeout=10)

@@ -37,15 +37,15 @@ spec:
     allowedRoutes:
       namespaces:
         from: All
-  - name: signra
-    hostname: "signra.bytecourier.local"
+  - name: auth
+    hostname: "auth.bytecourier.local"
     port: 80
     protocol: HTTP
     allowedRoutes:
       namespaces:
         from: All
-  - name: signra-com
-    hostname: "signra.bytecourier.com"
+  - name: auth-com
+    hostname: "auth.bytecourier.com"
     port: 80
     protocol: HTTP
     allowedRoutes:

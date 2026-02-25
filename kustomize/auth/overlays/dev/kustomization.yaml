@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: signra-dev
+  name: auth-dev
 
 namespace: rag-agent-dev
 
@@ -16,5 +16,5 @@ labels:
     environment: dev
 
 replicas:
-  - name: signra
+  - name: auth
     count: 1

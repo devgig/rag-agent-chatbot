@@ -4,8 +4,8 @@ trigger:
       - main
   paths:
     include:
-      - assets/signra/**
-      - kustomize/signra/**
+      - assets/auth/**
+      - kustomize/auth/**
 
 pr:
   branches:
@@ -13,21 +13,21 @@ pr:
       - main
   paths:
     include:
-      - assets/signra/**
-      - kustomize/signra/**
+      - assets/auth/**
+      - kustomize/auth/**
 
 resources:
 - repo: self
 
 variables:
   system.debug: false
-  imageRepository: 'rag-agent-chatbot-signra'
+  imageRepository: 'rag-agent-chatbot-auth'
   containerRegistry: 'acr-bytecourier'
   containerRegistryUrl: 'bytecourier.azurecr.io'
   kubernetesServiceConnection: 'k3s-cluster'
   environment: 'K3s'
-  dockerfilePath: './assets/signra/Dockerfile'
-  manifestPath: 'kustomize/signra/base'
+  dockerfilePath: './assets/auth/Dockerfile'
+  manifestPath: 'kustomize/auth/base'
   tag: '$(Build.SourceVersion)'
   poolName: '$(buildAgentPool)'
   base_path: '$(Build.SourceBranchName)'
@@ -37,12 +37,12 @@ variables:
 
 stages:
 - stage: BuildAndTest
-  displayName: Build and Test Signra
+  displayName: Build and Test Auth
   pool:
     name: $(poolName)
   jobs:
   - job: Build
-    displayName: Build and test signra
+    displayName: Build and test auth
     steps:
       - task: Bash@3
         displayName: Install uv
@@ -56,7 +56,7 @@ stages:
         displayName: Install dependencies
         inputs:
           targetType: 'inline'
-          workingDirectory: '$(Build.SourcesDirectory)/assets/signra'
+          workingDirectory: '$(Build.SourcesDirectory)/assets/auth'
           script: |
             uv sync
 
@@ -64,7 +64,7 @@ stages:
         displayName: Run linting
         inputs:
           targetType: 'inline'
-          workingDirectory: '$(Build.SourcesDirectory)/assets/signra'
+          workingDirectory: '$(Build.SourcesDirectory)/assets/auth'
           script: |
             uv run ruff check . || echo "Ruff not configured"
 
@@ -72,7 +72,7 @@ stages:
         displayName: Run type checking
         inputs:
           targetType: 'inline'
-          workingDirectory: '$(Build.SourcesDirectory)/assets/signra'
+          workingDirectory: '$(Build.SourcesDirectory)/assets/auth'
           script: |
             uv run mypy . || echo "Mypy not configured"
 
@@ -80,7 +80,7 @@ stages:
         displayName: Run tests
         inputs:
           targetType: 'inline'
-          workingDirectory: '$(Build.SourcesDirectory)/assets/signra'
+          workingDirectory: '$(Build.SourcesDirectory)/assets/auth'
           script: |
             uv run pytest || echo "Tests not configured"
 
@@ -110,7 +110,7 @@ stages:
           repository: '$(imageRepository)'
           command: build
           dockerfile: $(dockerfilePath)
-          buildContext: '$(Build.SourcesDirectory)/assets/signra'
+          buildContext: '$(Build.SourcesDirectory)/assets/auth'
           arguments: '--platform linux/arm64'
           tags: |
             $(tag)
@@ -135,7 +135,7 @@ stages:
         inputs:
           targetType: 'inline'
           script: |
-            cd kustomize/signra/base
+            cd kustomize/auth/base
             cat <<EOF >image-patch.yaml
             - op: replace
               path: /spec/template/spec/containers/0/image
@@ -148,14 +148,14 @@ stages:
           targetType: 'inline'
           script: |
             mkdir manifests
-            if [ -d "./kustomize/signra/overlays/dev" ]; then
-              kubectl kustomize ./kustomize/signra/overlays/dev > ./manifests/$(imageRepository)-dev-workloads.yaml
+            if [ -d "./kustomize/auth/overlays/dev" ]; then
+              kubectl kustomize ./kustomize/auth/overlays/dev > ./manifests/$(imageRepository)-dev-workloads.yaml
             else
               echo "dev overlay doesn't exist; skipping"
             fi
 
-            if [ -d "./kustomize/signra/overlays/prod" ]; then
-              kubectl kustomize ./kustomize/signra/overlays/prod > ./manifests/$(imageRepository)-prod-workloads.yaml
+            if [ -d "./kustomize/auth/overlays/prod" ]; then
+              kubectl kustomize ./kustomize/auth/overlays/prod > ./manifests/$(imageRepository)-prod-workloads.yaml
             else
               echo "prod overlay doesn't exist; skipping"
             fi

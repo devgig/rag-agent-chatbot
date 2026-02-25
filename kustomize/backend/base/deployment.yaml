@@ -79,7 +79,7 @@ spec:
         - name: CONFIG_PATH
           value: "/config/config.json"
         - name: JWKS_URL
-          value: "http://signra.rag-agent-dev.svc.cluster.local:8000/.well-known/jwks.json"
+          value: "http://auth.rag-agent-dev.svc.cluster.local:8000/.well-known/jwks.json"
         volumeMounts:
         - name: tmp-volume
           mountPath: /tmp

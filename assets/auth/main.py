@@ -1,4 +1,4 @@
-"""Signra — authentication microservice for Spark Chat."""
+"""Auth — authentication microservice for Spark Chat."""
 
 import os
 from contextlib import asynccontextmanager
@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Signra Auth API",
+    title="Auth API",
     description="Authentication microservice for Spark Chat",
     version="1.0.0",
     lifespan=lifespan,
@@ -68,8 +68,6 @@ app = FastAPI(
 
 _default_origins = [
     "http://localhost:3000",
-    "http://frontend.bytecourier.local",
-    "http://frontend.bytecourier.local:3000",
     "http://sparkchat.bytecourier.local",
     "http://sparkchat.bytecourier.com",
     "https://sparkchat.bytecourier.com",
