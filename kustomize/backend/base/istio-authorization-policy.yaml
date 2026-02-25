@@ -9,6 +9,10 @@ spec:
       name: backend-waypoint
   action: ALLOW
   rules:
+    # Allow CORS preflight (OPTIONS never carries a JWT)
+    - to:
+        - operation:
+            methods: ["OPTIONS"]
     # Unauthenticated access to public endpoints
     - to:
         - operation:
