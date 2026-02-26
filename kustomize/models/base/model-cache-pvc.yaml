@@ -3,7 +3,7 @@
 # Persists downloaded models across pod restarts to avoid re-downloading.
 # Significantly reduces startup time after initial download.
 #
-# Qwen2.5-VL-3B-Instruct: ~7GB download
+# Qwen2.5-VL-7B-Instruct: ~15GB download
 # With PVC: First startup ~5-10min, subsequent startups ~2-3min
 # Without PVC: Every startup ~5-10min
 

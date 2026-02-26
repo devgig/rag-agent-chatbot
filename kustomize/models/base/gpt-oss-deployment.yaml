@@ -1,7 +1,7 @@
 # Single Model Deployment for DGX Spark (1 GPU)
 # ==============================================
-# Qwen2.5-VL-7B-Instruct handles text, images, RAG, and code generation.
-# 7B model for better quality responses on Blackwell GPU (128GB VRAM).
+# Qwen2.5-VL-7B-Instruct-AWQ (4-bit quantized) for text, images, RAG, and code.
+# AWQ quantization: ~3x smaller weights, faster loading, minimal quality loss.
 #
 # Backend connects via: gpt-oss-120b.rag-agent-dev.svc.cluster.local:8000
 
@@ -43,12 +43,13 @@ spec:
         image: nvcr.io/nvidia/vllm:25.11-py3
         command: ["vllm", "serve"]
         args:
-        - "Qwen/Qwen2.5-VL-7B-Instruct"
+        - "Qwen/Qwen2.5-VL-7B-Instruct-AWQ"
         - "--served-model-name=gpt-oss-120b"
         - "--tensor-parallel-size=1"
         - "--gpu-memory-utilization=0.90"
         - "--max-model-len=16384"
-        - "--dtype=bfloat16"
+        - "--quantization=awq"
+        - "--dtype=auto"
         - "--host=0.0.0.0"
         - "--port=8000"
         - "--trust-remote-code"
@@ -62,7 +63,7 @@ spec:
           name: http
         env:
         - name: HF_HUB_OFFLINE
-          value: "1"
+          value: "0"  # Must be 0 for first startup to download AWQ model; set to 1 after cached
         - name: HF_TOKEN
           valueFrom:
             secretKeyRef:
@@ -77,19 +78,25 @@ spec:
             nvidia.com/gpu: 1
             cpu: "8"
             memory: "32Gi"
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 30   # 60s + 30*30s = 960s max startup (model loads in ~450s)
         livenessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 1800
           periodSeconds: 30
-          timeoutSeconds: 10
+          timeoutSeconds: 30
           failureThreshold: 5
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 300
           periodSeconds: 10
           timeoutSeconds: 10
           failureThreshold: 3
