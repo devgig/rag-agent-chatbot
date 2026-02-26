@@ -1,0 +1,48 @@
+# Authorization Policy at Ingress Gateway
+# =========================================
+# Enforces JWT requirement for backend API traffic only.
+# Scoped to sparkbackend.* hosts so frontend and auth traffic pass freely.
+
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: backend-require-jwt
+  namespace: istio-ingress-dev
+spec:
+  targetRefs:
+    - kind: Gateway
+      group: gateway.networking.k8s.io
+      name: rag-agent-gateway
+  action: ALLOW
+  rules:
+    # Allow all non-backend traffic (frontend, auth) without JWT
+    - to:
+        - operation:
+            notHosts:
+              - "sparkbackend.bytecourier.local"
+              - "sparkbackend.bytecourier.com"
+    # Allow CORS preflight to backend (OPTIONS never carries a JWT)
+    - to:
+        - operation:
+            hosts:
+              - "sparkbackend.bytecourier.local"
+              - "sparkbackend.bytecourier.com"
+            methods: ["OPTIONS"]
+    # Allow unauthenticated access to public backend endpoints
+    - to:
+        - operation:
+            hosts:
+              - "sparkbackend.bytecourier.local"
+              - "sparkbackend.bytecourier.com"
+            paths:
+              - /health
+              - /metrics
+    # Authenticated access to all other backend endpoints
+    - from:
+        - source:
+            requestPrincipals: ["*"]
+      to:
+        - operation:
+            hosts:
+              - "sparkbackend.bytecourier.local"
+              - "sparkbackend.bytecourier.com"

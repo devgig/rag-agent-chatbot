@@ -1,0 +1,29 @@
+# JWT Validation at Ingress Gateway
+# ==================================
+# Validates Bearer tokens on incoming requests using the auth service JWKS.
+# Placed on the ingress gateway (not the waypoint) because:
+# - Gateway JWKS cache stays warm (handles all traffic, rarely restarts)
+# - Avoids waypoint cold-cache issue where JWT rejection lacks CORS headers
+#
+# This only validates tokens when present — it does NOT reject requests
+# without tokens. The AuthorizationPolicy enforces token requirements.
+
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: backend-jwt-auth
+  namespace: istio-ingress-dev
+spec:
+  targetRefs:
+    - kind: Gateway
+      group: gateway.networking.k8s.io
+      name: rag-agent-gateway
+  jwtRules:
+    - issuer: "spark-chat"
+      jwksUri: "http://auth.rag-agent-dev.svc.cluster.local:8000/.well-known/jwks.json"
+      fromHeaders:
+        - name: Authorization
+          prefix: "Bearer "
+      fromParams:
+        - token
+      forwardOriginalToken: true

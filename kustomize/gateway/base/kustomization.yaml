@@ -3,3 +3,6 @@ kind: Kustomization
 
 resources:
 - gateway.yaml
+# JWT enforcement at ingress gateway (not waypoint) for reliable CORS
+- istio-request-authentication.yaml
+- istio-authorization-policy.yaml
