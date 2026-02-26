@@ -15,8 +15,11 @@ resources:
   - istio-destination-rule.yaml
   - istio-virtual-service.yaml
   # Istio Ambient Mesh security
-  - istio-request-authentication.yaml
-  - istio-authorization-policy.yaml
+  # JWT enforcement removed from waypoint — backend auth.py handles JWT validation.
+  # Waypoint JWT caused intermittent CORS failures: cold JWKS cache returns 503
+  # without CORS headers, which browsers report as CORS errors.
+  # - istio-request-authentication.yaml
+  # - istio-authorization-policy.yaml
   # KEDA autoscaling
   - keda-scaledobject.yaml
 
