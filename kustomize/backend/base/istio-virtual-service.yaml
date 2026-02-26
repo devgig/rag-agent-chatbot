@@ -1,10 +1,12 @@
-# VirtualService for Backend WebSocket Routes
-# ============================================
-# Configures routing for WebSocket connections with proper timeouts.
+# VirtualService for Backend Routing (Waypoint)
+# ==============================================
+# Configures routing, CORS, and timeouts on the waypoint proxy.
+# JWT enforcement is at the ingress gateway (see kustomize/gateway/base/).
 #
 # Key settings:
 # - timeout omitted on WebSocket route to disable it for long-lived connections
 # - retries: 0 for WebSocket (client handles reconnection)
+# - corsPolicy on HTTP routes for browser cross-origin requests
 
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService

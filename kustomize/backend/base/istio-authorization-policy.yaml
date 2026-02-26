@@ -1,3 +1,7 @@
+# DEPRECATED: JWT enforcement moved to ingress gateway.
+# See kustomize/gateway/base/istio-authorization-policy.yaml
+# Kept for reference only — not included in kustomization.yaml.
+
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:

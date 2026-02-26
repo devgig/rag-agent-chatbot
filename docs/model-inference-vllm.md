@@ -137,6 +137,25 @@ base_url=f"http://{self.current_model}:8000/v1"
 
 No backend changes needed when switching quantization or model variants.
 
+## Security
+
+The model endpoint is **internal-only** with no external exposure:
+
+- **ClusterIP service** — only reachable from within the cluster, no HTTPRoute or ingress
+- **Mesh-exempt** — `ambient.istio.io/redirection: disabled` opts the pod out of the Istio mesh (required to avoid probe timeouts from ztunnel interception on the GPU node)
+- **No authentication** — the model trusts all in-cluster callers; security is enforced upstream
+
+The full request chain:
+
+```
+Internet → Ingress Gateway (JWT validated via Istio RequestAuthentication)
+         → Waypoint (L7 routing, CORS, retries)
+         → Backend (JWT validated again in auth.py)
+         → Model (internal ClusterIP, no auth)
+```
+
+Unauthenticated users are blocked at the ingress gateway before reaching the backend or model.
+
 ## Monitoring
 
 ```bash

@@ -11,6 +11,15 @@ The backend handles:
 - Chat history management via PostgreSQL
 - MCP (Model Context Protocol) tool server integration
 
+## Authentication
+
+JWT authentication is enforced at two layers:
+
+1. **Istio ingress gateway** (primary) — `RequestAuthentication` validates JWTs via the auth service JWKS endpoint before traffic enters the mesh. `AuthorizationPolicy` requires valid tokens for all backend endpoints except `/health` and CORS preflight.
+2. **Backend `auth.py`** (defense-in-depth) — validates JWT on each request, extracts user identity for chat history isolation.
+
+See `kustomize/gateway/base/istio-request-authentication.yaml` and `kustomize/gateway/base/istio-authorization-policy.yaml`.
+
 ## Architecture
 
 ```
