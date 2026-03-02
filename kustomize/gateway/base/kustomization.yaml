@@ -6,3 +6,5 @@ resources:
 # JWT enforcement at ingress gateway (not waypoint) for reliable CORS
 - istio-request-authentication.yaml
 - istio-authorization-policy.yaml
+# CORS at gateway level — ensures headers on error responses (403/401/503)
+- envoy-filter-cors.yaml

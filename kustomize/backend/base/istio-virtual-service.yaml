@@ -1,12 +1,12 @@
 # VirtualService for Backend Routing (Waypoint)
 # ==============================================
-# Configures routing, CORS, and timeouts on the waypoint proxy.
+# Configures routing and timeouts on the waypoint proxy.
 # JWT enforcement is at the ingress gateway (see kustomize/gateway/base/).
+# CORS is handled at the ingress gateway (envoy-filter-cors.yaml) and FastAPI.
 #
 # Key settings:
 # - timeout omitted on WebSocket route to disable it for long-lived connections
 # - retries: 0 for WebSocket (client handles reconnection)
-# - corsPolicy on HTTP routes for browser cross-origin requests
 
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
@@ -45,20 +45,6 @@ spec:
         attempts: 2
         perTryTimeout: 120s
         retryOn: 5xx,reset,connect-failure
-      corsPolicy:
-        allowOrigins:
-          - exact: "http://localhost:3000"
-          - exact: "http://sparkchat.bytecourier.local"
-          - exact: "http://sparkchat.bytecourier.com"
-          - exact: "https://sparkchat.bytecourier.com"
-        allowMethods:
-          - GET
-          - POST
-          - PUT
-          - DELETE
-          - OPTIONS
-        allowHeaders:
-          - authorization
-          - content-type
-        allowCredentials: true
-        maxAge: "86400s"
+      # CORS removed — handled at ingress gateway (envoy-filter-cors.yaml)
+      # and FastAPI CORSMiddleware. Keeping it here would cause duplicate
+      # Access-Control-Allow-Origin headers on successful responses.
