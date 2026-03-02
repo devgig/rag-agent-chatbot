@@ -22,7 +22,7 @@ import Sidebar from '@/components/Sidebar';
 import ThemeToggle from '@/components/ThemeToggle';
 import styles from '@/styles/Home.module.css';
 import { getAuthUrl, apiFetch, setOnUnauthorized } from '@/lib/api';
-import { getToken, setAuth, clearAuth, isTokenExpired } from '@/lib/auth';
+import { getToken, getEmail, setAuth, clearAuth, isTokenExpired, getTokenExpiry } from '@/lib/auth';
 
 export default function App() {
   const [query, setQuery] = useState("");
@@ -82,6 +82,55 @@ export default function App() {
   useEffect(() => {
     setOnUnauthorized(handleLogout);
   }, [handleLogout]);
+
+  // Proactive token refresh — refreshes 2 minutes before expiry
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const scheduleRefresh = () => {
+      const token = getToken();
+      if (!token) return undefined;
+
+      const expiresAt = getTokenExpiry(token);
+      const delay = expiresAt - 2 * 60 * 1000 - Date.now(); // 2 min before exp
+
+      if (delay <= 0) {
+        // Already within the refresh window — refresh now
+        refreshToken();
+        return undefined;
+      }
+
+      return setTimeout(refreshToken, delay);
+    };
+
+    const refreshToken = async () => {
+      const token = getToken();
+      if (!token || isTokenExpired(token)) {
+        handleLogout();
+        return;
+      }
+      try {
+        const res = await fetch(getAuthUrl("/auth/refresh"), {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const email = getEmail();
+          if (email) setAuth(data.token, email);
+          // Schedule next refresh with the new token
+          timerId = scheduleRefresh();
+        } else {
+          handleLogout();
+        }
+      } catch {
+        handleLogout();
+      }
+    };
+
+    let timerId = scheduleRefresh();
+    return () => { if (timerId) clearTimeout(timerId); };
+  }, [isAuthenticated, handleLogout]);
 
   // Load initial chat ID (only when authenticated)
   useEffect(() => {

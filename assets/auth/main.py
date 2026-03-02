@@ -182,6 +182,13 @@ async def auth_me(current_user: str = Depends(get_current_user)):
     return {"email": current_user}
 
 
+@app.post("/auth/refresh", response_model=TokenResponse)
+async def auth_refresh(current_user: str = Depends(get_current_user)):
+    """Issue a fresh JWT for an already-authenticated user."""
+    token = create_jwt_token(current_user)
+    return TokenResponse(status="success", token=token, email=current_user)
+
+
 if __name__ == "__main__":
     import uvicorn
 

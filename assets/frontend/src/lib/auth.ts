@@ -27,3 +27,13 @@ export function isTokenExpired(token: string): boolean {
     return true;
   }
 }
+
+/** Returns the token's expiry time in ms since epoch, or 0 on error. */
+export function getTokenExpiry(token: string): number {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    return payload.exp * 1000;
+  } catch {
+    return 0;
+  }
+}
