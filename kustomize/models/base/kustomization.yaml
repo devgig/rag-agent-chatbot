@@ -37,6 +37,7 @@ metadata:
 namespace: rag-agent-dev
 
 resources:
+  - acr-external-secret.yaml         # ACR pull credentials from Azure Key Vault
   - hf-external-secret.yaml          # HuggingFace token from Azure Key Vault
   - kaito-workspace.yaml              # KAITO resource (reference only, blocked by NodeClaim)
   - kaito-service.yaml                # ClusterIP service (port 8000)
