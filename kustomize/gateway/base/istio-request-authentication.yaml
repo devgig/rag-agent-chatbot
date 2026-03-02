@@ -12,7 +12,7 @@ apiVersion: security.istio.io/v1
 kind: RequestAuthentication
 metadata:
   name: backend-jwt-auth
-  namespace: istio-ingress-dev
+  namespace: istio-ingress
 spec:
   targetRefs:
     - kind: Gateway

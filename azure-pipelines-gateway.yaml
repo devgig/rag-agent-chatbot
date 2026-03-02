@@ -19,7 +19,7 @@ resources:
 
 variables:
   system.debug: false
-  namespace: 'istio-ingress-dev'
+  namespace: 'istio-ingress'
   poolName: '$(buildAgentPool)'
 
 stages:

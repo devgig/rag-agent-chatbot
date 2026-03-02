@@ -7,7 +7,7 @@ apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: backend-require-jwt
-  namespace: istio-ingress-dev
+  namespace: istio-ingress
 spec:
   targetRefs:
     - kind: Gateway
