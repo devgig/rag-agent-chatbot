@@ -177,7 +177,7 @@ apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
   name: qwen-7b-llm
-  namespace: rag-agent-dev
+  namespace: rag-agent
 spec:
   predictor:
     minReplicas: 1          # Always warm for primary chat
@@ -208,7 +208,7 @@ apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
   name: tool-agent-model
-  namespace: rag-agent-dev
+  namespace: rag-agent
 spec:
   predictor:
     minReplicas: 0          # Scale to zero!
@@ -241,7 +241,7 @@ apiVersion: serving.kserve.io/v1alpha1
 kind: ServingRuntime
 metadata:
   name: vllm-modelmesh
-  namespace: rag-agent-dev
+  namespace: rag-agent
 spec:
   supportedModelFormats:
     - name: vllm
@@ -349,7 +349,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: agent-planner
-  namespace: rag-agent-dev
+  namespace: rag-agent
   labels:
     app: agent-planner
     agent-role: planner
@@ -369,9 +369,9 @@ spec:
             - containerPort: 8000
           env:
             - name: LLM_ENDPOINT
-              value: "http://gpt-oss-120b.rag-agent-dev.svc.cluster.local:8000"
+              value: "http://gpt-oss-120b.rag-agent.svc.cluster.local:8000"
             - name: PEER_AGENTS
-              value: "http://agent-executor.rag-agent-dev.svc.cluster.local:8000,http://agent-reviewer.rag-agent-dev.svc.cluster.local:8000"
+              value: "http://agent-executor.rag-agent.svc.cluster.local:8000,http://agent-reviewer.rag-agent.svc.cluster.local:8000"
           resources:
             requests:
               cpu: 500m
@@ -397,7 +397,7 @@ from langchain_openai import ChatOpenAI
 
 # All agents share the same GPU-backed LLM endpoint
 llm = ChatOpenAI(
-    base_url="http://gpt-oss-120b.rag-agent-dev.svc.cluster.local:8000/v1",
+    base_url="http://gpt-oss-120b.rag-agent.svc.cluster.local:8000/v1",
     model="Qwen/Qwen2.5-VL-7B-Instruct",
 )
 

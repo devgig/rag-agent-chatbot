@@ -211,7 +211,7 @@ spec:
     path: kustomize/overlays/dev
   destination:
     server: https://kubernetes.default.svc
-    namespace: rag-agent-dev
+    namespace: rag-agent
   syncPolicy:
     automated:
       prune: true

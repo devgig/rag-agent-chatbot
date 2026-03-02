@@ -9,7 +9,7 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: backend-waypoint
-  namespace: rag-agent-dev
+  namespace: rag-agent
   labels:
     istio.io/waypoint-for: service
 spec:

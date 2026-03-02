@@ -83,8 +83,8 @@ The backend deployment includes an ExternalSecret resource that pulls the passwo
 Verify the ExternalSecret is syncing correctly:
 
 ```bash
-kubectl get externalsecret -n rag-agent-dev postgres-external-secret
-kubectl get secret -n rag-agent-dev postgres-credentials
+kubectl get externalsecret -n rag-agent postgres-external-secret
+kubectl get secret -n rag-agent postgres-credentials
 ```
 
 ## Connection Details
@@ -116,16 +116,16 @@ kubectl run -it --rm psql-test --image=postgres:15-alpine --restart=Never -- \
 
 ```bash
 # Check ExternalSecret
-kubectl describe externalsecret -n rag-agent-dev postgres-external-secret
+kubectl describe externalsecret -n rag-agent postgres-external-secret
 
 # Check if secret was created
-kubectl get secret -n rag-agent-dev postgres-credentials -o yaml
+kubectl get secret -n rag-agent postgres-credentials -o yaml
 ```
 
 ### Check Backend Logs
 
 ```bash
-kubectl logs -n rag-agent-dev -l app=rag-agent-backend --tail=50
+kubectl logs -n rag-agent -l app=rag-agent-backend --tail=50
 ```
 
 ## Security Notes

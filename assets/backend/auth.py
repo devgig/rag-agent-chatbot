@@ -19,7 +19,7 @@ JWT_ISSUER = "spark-chat"
 JWT_ALGORITHM = "RS256"
 JWKS_URL = os.getenv(
     "JWKS_URL",
-    "http://auth.rag-agent-dev.svc.cluster.local:8000/.well-known/jwks.json",
+    "http://auth.rag-agent.svc.cluster.local:8000/.well-known/jwks.json",
 )
 JWKS_REFRESH_INTERVAL = int(os.getenv("JWKS_REFRESH_INTERVAL", "300"))
 

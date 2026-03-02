@@ -8,7 +8,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: qwen-chat-template
-  namespace: rag-agent-dev
+  namespace: rag-agent
   labels:
     app: gpt-oss-120b
     component: model-inference

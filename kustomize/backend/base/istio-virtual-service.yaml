@@ -12,7 +12,7 @@ apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
   name: rag-agent-backend-vs
-  namespace: rag-agent-dev
+  namespace: rag-agent
 spec:
   hosts:
     - rag-agent-backend

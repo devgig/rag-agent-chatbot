@@ -33,9 +33,9 @@ spec:
           name: http
         env:
         - name: BACKEND_URL
-          value: "http://rag-agent-backend.rag-agent-dev.svc.cluster.local:8000"
+          value: "http://rag-agent-backend.rag-agent.svc.cluster.local:8000"
         - name: BACKEND_WS_URL
-          value: "ws://rag-agent-backend.rag-agent-dev.svc.cluster.local:8000"
+          value: "ws://rag-agent-backend.rag-agent.svc.cluster.local:8000"
         resources:
           requests:
             cpu: "200m"

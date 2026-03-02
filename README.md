@@ -191,5 +191,5 @@ Upload a document using the "Upload Documents" button in the sidebar under "Cont
 
 | Symptom | Cause | Fix |
 |---------|--------|-----|
-| `ImagePullBackOff` | ACR ExternalSecret not synced | Check `kubectl get externalsecret -n rag-agent-dev` and verify Key Vault secrets exist |
-| Pod not ready | Backend dependencies (PostgreSQL, Milvus) unreachable | Check pod logs with `kubectl logs -l app=rag-agent-backend -n rag-agent-dev` |
+| `ImagePullBackOff` | ACR ExternalSecret not synced | Check `kubectl get externalsecret -n rag-agent` and verify Key Vault secrets exist |
+| Pod not ready | Backend dependencies (PostgreSQL, Milvus) unreachable | Check pod logs with `kubectl logs -l app=rag-agent-backend -n rag-agent` |

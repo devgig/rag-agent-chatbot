@@ -35,7 +35,7 @@ variables:
   base_path: '$(Build.SourceBranchName)'
   source_branch_name: '$(Build.SourceBranchName)'
   imagePullSecret: 'acr-secret'
-  namespace: 'rag-agent-dev'
+  namespace: 'rag-agent'
 
 stages:
 - stage: BuildAndTest

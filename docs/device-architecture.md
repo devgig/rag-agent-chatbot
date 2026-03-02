@@ -128,10 +128,10 @@ graph LR
 
 | Component | Namespace | Service DNS | Port |
 |-----------|-----------|-------------|------|
-| Frontend | rag-agent-dev | rag-agent-frontend.rag-agent-dev.svc.cluster.local | 3000 |
-| Backend | rag-agent-dev | rag-agent-backend.rag-agent-dev.svc.cluster.local | 8000 |
-| GPT-OSS-120B | rag-agent-dev | gpt-oss-120b.rag-agent-dev.svc.cluster.local | 8000 |
-| Qwen3 Embedding | rag-agent-dev | qwen3-embedding.rag-agent-dev.svc.cluster.local | 8000 |
+| Frontend | rag-agent | rag-agent-frontend.rag-agent.svc.cluster.local | 3000 |
+| Backend | rag-agent | rag-agent-backend.rag-agent.svc.cluster.local | 8000 |
+| GPT-OSS-120B | rag-agent | gpt-oss-120b.rag-agent.svc.cluster.local | 8000 |
+| Qwen3 Embedding | rag-agent | qwen3-embedding.rag-agent.svc.cluster.local | 8000 |
 | PostgreSQL | postgres-system | postgresql.postgres-system.svc.cluster.local | 5432 |
 | Milvus | milvus-system | milvus.milvus-system.svc.cluster.local | 19530 |
 

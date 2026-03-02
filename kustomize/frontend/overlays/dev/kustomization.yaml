@@ -4,7 +4,7 @@ kind: Kustomization
 metadata:
   name: rag-agent-frontend-dev
 
-namespace: rag-agent-dev
+namespace: rag-agent
 
 resources:
   - namespace.yaml
@@ -27,7 +27,7 @@ patches:
     patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/env/0/value
-        value: "http://rag-agent-backend.rag-agent-dev.svc.cluster.local:8000"
+        value: "http://rag-agent-backend.rag-agent.svc.cluster.local:8000"
       - op: replace
         path: /spec/template/spec/containers/0/env/1/value
-        value: "ws://rag-agent-backend.rag-agent-dev.svc.cluster.local:8000"
+        value: "ws://rag-agent-backend.rag-agent.svc.cluster.local:8000"

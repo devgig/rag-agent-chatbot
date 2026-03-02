@@ -104,7 +104,7 @@ EOF
 - Single replica for frontend and backend
 - Lower resource limits
 - Debug logging enabled
-- Namespace: `rag-agent-dev`
+- Namespace: `rag-agent`
 - Name prefix: `dev-`
 
 ### Production (prod)
@@ -124,7 +124,7 @@ The base manifests reference secrets that need to be created:
 kubectl create secret generic postgres-credentials \
   --from-literal=username=chatbot_user \
   --from-literal=password=YOUR_SECURE_PASSWORD \
-  -n rag-agent-dev
+  -n rag-agent
 ```
 
 Or use the secretGenerator in the overlay's `kustomization.yaml` (already configured).
@@ -156,26 +156,26 @@ kubectl delete -k ./kustomize/overlays/prod
 
 ### Check pod status
 ```bash
-kubectl get pods -n rag-agent-dev
-kubectl describe pod <pod-name> -n rag-agent-dev
+kubectl get pods -n rag-agent
+kubectl describe pod <pod-name> -n rag-agent
 ```
 
 ### View logs
 ```bash
-kubectl logs <pod-name> -n rag-agent-dev
-kubectl logs <pod-name> -n rag-agent-dev --previous  # Previous container instance
+kubectl logs <pod-name> -n rag-agent
+kubectl logs <pod-name> -n rag-agent --previous  # Previous container instance
 ```
 
 ### Check services
 ```bash
-kubectl get svc -n rag-agent-dev
+kubectl get svc -n rag-agent
 ```
 
 ### Port forwarding for local testing
 ```bash
 # Frontend
-kubectl port-forward svc/dev-rag-agent-frontend 3000:3000 -n rag-agent-dev
+kubectl port-forward svc/dev-rag-agent-frontend 3000:3000 -n rag-agent
 
 # Backend
-kubectl port-forward svc/dev-rag-agent-backend 8000:8000 -n rag-agent-dev
+kubectl port-forward svc/dev-rag-agent-backend 8000:8000 -n rag-agent
 ```

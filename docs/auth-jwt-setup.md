@@ -30,12 +30,12 @@ rm jwt-private-key.pem
 The ExternalSecret `auth-external-secret` will pull the key into the `auth-credentials` Kubernetes secret as `jwt-private-key`. To force a refresh:
 
 ```bash
-kubectl annotate externalsecret auth-external-secret -n rag-agent-dev \
+kubectl annotate externalsecret auth-external-secret -n rag-agent \
   force-sync=$(date +%s) --overwrite
 ```
 
 ### 5. Restart auth
 
 ```bash
-kubectl rollout restart deployment auth -n rag-agent-dev
+kubectl rollout restart deployment auth -n rag-agent
 ```

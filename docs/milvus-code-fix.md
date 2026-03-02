@@ -69,7 +69,7 @@ kubectl apply -k kustomize/backend/overlays/dev
 Check backend logs to ensure Milvus connection succeeds:
 
 ```bash
-kubectl logs -n rag-agent-dev -l app=rag-agent-backend --tail=50 | grep -i milvus
+kubectl logs -n rag-agent -l app=rag-agent-backend --tail=50 | grep -i milvus
 ```
 
 You should see logs like:

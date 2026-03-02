@@ -11,7 +11,7 @@ apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
   name: rag-agent-backend-scaler
-  namespace: rag-agent-dev
+  namespace: rag-agent
 spec:
   scaleTargetRef:
     name: rag-agent-backend

@@ -26,7 +26,7 @@ variables:
   containerRegistryUrl: 'bytecourier.azurecr.io'
   dockerfilePath: './assets/embedding/Dockerfile'
   tag: '$(Build.SourceVersion)'
-  namespace: 'rag-agent-dev'
+  namespace: 'rag-agent'
   poolName: '$(buildAgentPool)'
 
 stages:

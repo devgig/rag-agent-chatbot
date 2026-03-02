@@ -12,7 +12,7 @@ apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: rag-agent-backend-ws
-  namespace: rag-agent-dev
+  namespace: rag-agent
 spec:
   host: rag-agent-backend
   trafficPolicy:

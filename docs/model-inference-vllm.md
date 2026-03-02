@@ -105,11 +105,11 @@ Automatically deployed when changes are pushed to `kustomize/models/**`:
 kubectl apply -k kustomize/models/overlays/dev
 
 # Check status
-kubectl get pods -n rag-agent-dev -l app=gpt-oss-120b
-kubectl logs -n rag-agent-dev -l app=gpt-oss-120b -f
+kubectl get pods -n rag-agent -l app=gpt-oss-120b
+kubectl logs -n rag-agent -l app=gpt-oss-120b -f
 
 # Test API endpoint
-kubectl exec -it -n rag-agent-dev deployment/rag-agent-backend -- \
+kubectl exec -it -n rag-agent deployment/rag-agent-backend -- \
   curl http://gpt-oss-120b:8000/v1/models
 ```
 
@@ -132,7 +132,7 @@ Backend connects using the served model name as hostname:
 ```python
 # assets/backend/agent.py
 base_url=f"http://{self.current_model}:8000/v1"
-# Resolves to: http://gpt-oss-120b.rag-agent-dev.svc.cluster.local:8000
+# Resolves to: http://gpt-oss-120b.rag-agent.svc.cluster.local:8000
 ```
 
 No backend changes needed when switching quantization or model variants.
@@ -160,16 +160,16 @@ Unauthenticated users are blocked at the ingress gateway before reaching the bac
 
 ```bash
 # Pod status
-kubectl get pods -n rag-agent-dev -l app=gpt-oss-120b
+kubectl get pods -n rag-agent -l app=gpt-oss-120b
 
 # Logs
-kubectl logs -n rag-agent-dev -l app=gpt-oss-120b --tail=100
+kubectl logs -n rag-agent -l app=gpt-oss-120b --tail=100
 
 # Service endpoints
-kubectl get endpoints gpt-oss-120b -n rag-agent-dev
+kubectl get endpoints gpt-oss-120b -n rag-agent
 
 # vLLM metrics (Prometheus-compatible)
-kubectl exec -it -n rag-agent-dev deployment/rag-agent-backend -- \
+kubectl exec -it -n rag-agent deployment/rag-agent-backend -- \
   curl http://gpt-oss-120b:8000/metrics
 ```
 
@@ -189,10 +189,10 @@ args:
 After switching models, delete and recreate the PVC to clear the old cache:
 
 ```bash
-kubectl scale deployment gpt-oss-120b -n rag-agent-dev --replicas=0
-kubectl delete pvc model-cache-pvc -n rag-agent-dev
+kubectl scale deployment gpt-oss-120b -n rag-agent --replicas=0
+kubectl delete pvc model-cache-pvc -n rag-agent
 kubectl apply -f kustomize/models/base/model-cache-pvc.yaml
-kubectl scale deployment gpt-oss-120b -n rag-agent-dev --replicas=1
+kubectl scale deployment gpt-oss-120b -n rag-agent --replicas=1
 ```
 
 ## GPU Configuration
