@@ -22,4 +22,6 @@ frontend/.env.local
 frontend/node_modules/
 frontend/.next/
 frontend/build/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
 node_modules/
