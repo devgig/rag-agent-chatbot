@@ -15,7 +15,7 @@
 # limitations under the License.
 */
 
-import { getToken } from './auth';
+import { getToken, isTokenExpired } from './auth';
 
 let _onUnauthorized: (() => void) | null = null;
 
@@ -37,10 +37,16 @@ export async function apiFetch(
   options: RequestInit = {},
 ): Promise<Response> {
   const token = getToken();
-  const headers = new Headers(options.headers);
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
+
+  // Reject expired tokens locally — avoids sending them to Istio which
+  // returns 403 without CORS headers, masking the real auth failure.
+  if (!token || isTokenExpired(token)) {
+    if (_onUnauthorized) _onUnauthorized();
+    return new Response(null, { status: 401, statusText: "Token expired" });
   }
+
+  const headers = new Headers(options.headers);
+  headers.set("Authorization", `Bearer ${token}`);
 
   const res = await fetch(getApiUrl(path), { ...options, headers });
 

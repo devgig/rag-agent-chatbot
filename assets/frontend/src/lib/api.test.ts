@@ -1,21 +1,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { apiFetch, setOnUnauthorized, triggerUnauthorized } from './api';
 
-// Mock the auth module — getToken is read at call time
+// Mock the auth module — getToken and isTokenExpired are read at call time
 vi.mock('./auth', () => ({
   getToken: vi.fn(() => null),
+  isTokenExpired: vi.fn(() => false),
 }));
 
-import { getToken } from './auth';
+import { getToken, isTokenExpired } from './auth';
 const mockedGetToken = vi.mocked(getToken);
+const mockedIsTokenExpired = vi.mocked(isTokenExpired);
+
+// Helper: set up a valid token (not expired)
+function mockValidToken(token = 'test-jwt-token') {
+  mockedGetToken.mockReturnValue(token);
+  mockedIsTokenExpired.mockReturnValue(false);
+}
 
 describe('apiFetch', () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
-    // Reset the global 401 handler between tests
     setOnUnauthorized(() => {});
     mockedGetToken.mockReturnValue(null);
+    mockedIsTokenExpired.mockReturnValue(false);
   });
 
   afterEach(() => {
@@ -23,8 +31,8 @@ describe('apiFetch', () => {
     vi.restoreAllMocks();
   });
 
-  it('attaches Authorization header when token exists', async () => {
-    mockedGetToken.mockReturnValue('test-jwt-token');
+  it('attaches Authorization header when token exists and is valid', async () => {
+    mockValidToken('test-jwt-token');
 
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response('{}', { status: 200 }),
@@ -38,40 +46,56 @@ describe('apiFetch', () => {
     expect(headers.get('Authorization')).toBe('Bearer test-jwt-token');
   });
 
-  it('omits Authorization header when no token', async () => {
+  it('returns 401 locally when no token — does NOT call fetch', async () => {
     mockedGetToken.mockReturnValue(null);
+    const logoutSpy = vi.fn();
+    setOnUnauthorized(logoutSpy);
 
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      new Response('{}', { status: 200 }),
-    );
+    globalThis.fetch = vi.fn();
 
-    await apiFetch('/sources');
+    const res = await apiFetch('/sources');
 
-    const [, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    const headers = new Headers(init.headers);
-    expect(headers.get('Authorization')).toBeNull();
+    expect(res.status).toBe(401);
+    expect(logoutSpy).toHaveBeenCalledOnce();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 locally when token is expired — does NOT call fetch', async () => {
+    mockedGetToken.mockReturnValue('expired-token');
+    mockedIsTokenExpired.mockReturnValue(true);
+    const logoutSpy = vi.fn();
+    setOnUnauthorized(logoutSpy);
+
+    globalThis.fetch = vi.fn();
+
+    const res = await apiFetch('/protected');
+
+    expect(res.status).toBe(401);
+    expect(logoutSpy).toHaveBeenCalledOnce();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('reads token at call time, not at import time (no stale closures)', async () => {
-    // First call — no token
+    // First call — no token → local 401
     mockedGetToken.mockReturnValue(null);
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response('{}', { status: 200 }),
     );
-    await apiFetch('/first');
-
-    const [, init1] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(new Headers(init1.headers).get('Authorization')).toBeNull();
+    const res1 = await apiFetch('/first');
+    expect(res1.status).toBe(401);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
 
     // Second call — token now available (simulates login completing)
-    mockedGetToken.mockReturnValue('fresh-token');
+    mockValidToken('fresh-token');
     await apiFetch('/second');
 
-    const [, init2] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[1];
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    const [, init2] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(new Headers(init2.headers).get('Authorization')).toBe('Bearer fresh-token');
   });
 
-  it('calls onUnauthorized callback on 401 response', async () => {
+  it('calls onUnauthorized callback on 401 response from server', async () => {
+    mockValidToken();
     const logoutSpy = vi.fn();
     setOnUnauthorized(logoutSpy);
 
@@ -85,6 +109,7 @@ describe('apiFetch', () => {
   });
 
   it('does NOT call onUnauthorized on non-401 responses', async () => {
+    mockValidToken();
     const logoutSpy = vi.fn();
     setOnUnauthorized(logoutSpy);
 
@@ -98,7 +123,7 @@ describe('apiFetch', () => {
   });
 
   it('passes through request options (method, body, extra headers)', async () => {
-    mockedGetToken.mockReturnValue('tok');
+    mockValidToken('tok');
 
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response('{}', { status: 200 }),
@@ -119,6 +144,7 @@ describe('apiFetch', () => {
   });
 
   it('constructs full URL from path', async () => {
+    mockValidToken();
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response('{}', { status: 200 }),
     );
@@ -142,10 +168,6 @@ describe('triggerUnauthorized', () => {
   });
 
   it('does nothing when no handler registered', () => {
-    // Reset to null by setting a handler then re-importing...
-    // Actually, triggerUnauthorized guards with `if (_onUnauthorized)`.
-    // We can't easily reset to null since setOnUnauthorized only accepts () => void.
-    // But we can verify it doesn't throw when called after setting a no-op.
     setOnUnauthorized(() => {});
     expect(() => triggerUnauthorized()).not.toThrow();
   });
@@ -153,6 +175,7 @@ describe('triggerUnauthorized', () => {
 
 describe('setOnUnauthorized', () => {
   it('replaces previously registered handler', async () => {
+    mockValidToken();
     const first = vi.fn();
     const second = vi.fn();
 
