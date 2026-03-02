@@ -16,7 +16,7 @@
 */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import styles from '@/styles/Sidebar.module.css';
-import { getApiUrl, authenticatedFetch } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 
 interface Model {
   id: string;
@@ -33,7 +33,6 @@ interface SidebarProps {
   refreshTrigger?: number;
   currentChatId: string | null;
   onChatChange: (chatId: string) => Promise<void>;
-  token: string | null;
   onLogout: () => void;
 }
 
@@ -44,7 +43,6 @@ export default function Sidebar({
   refreshTrigger = 0,
   currentChatId,
   onChatChange,
-  token,
   onLogout
 }: SidebarProps) {
   const [isVisible, setIsVisible] = useState(false);
@@ -69,16 +67,16 @@ export default function Sidebar({
     const loadInitialConfig = async () => {
       try {
         setIsLoading(true);
-        
+
         // Get selected model
-        const modelResponse = await authenticatedFetch(getApiUrl("/selected_model"), token, {}, onLogout);
+        const modelResponse = await apiFetch("/selected_model");
         if (modelResponse.ok) {
           const { model } = await modelResponse.json();
           setSelectedModel(model);
         }
 
         // Get selected sources
-        const sourcesResponse = await authenticatedFetch(getApiUrl("/selected_sources"), token, {}, onLogout);
+        const sourcesResponse = await apiFetch("/selected_sources");
         let currentSelected: string[] = [];
         if (sourcesResponse.ok) {
           const { sources } = await sourcesResponse.json();
@@ -90,21 +88,21 @@ export default function Sidebar({
         await fetchAvailableModels();
 
         // Get sources, then auto-select first if none selected
-        const availResponse = await authenticatedFetch(getApiUrl("/sources"), token, {}, onLogout);
+        const availResponse = await apiFetch("/sources");
         if (availResponse.ok) {
           const { sources: avail } = await availResponse.json();
           setAvailableSources(avail || []);
           if (currentSelected.length === 0 && avail && avail.length > 0) {
             const autoSelected = [avail[0]];
             setSelectedSources(autoSelected);
-            await authenticatedFetch(getApiUrl("/selected_sources"), token, {
+            await apiFetch("/selected_sources", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(autoSelected),
-            }, onLogout);
+            });
           }
         }
-        
+
         // Get chats if history section is expanded (which it is by default)
         if (expandedSections.has('history')) {
           await fetchChats();
@@ -115,7 +113,7 @@ export default function Sidebar({
         setIsLoading(false);
       }
     };
-    
+
     loadInitialConfig();
   }, []);
 
@@ -123,14 +121,14 @@ export default function Sidebar({
   const fetchAvailableModels = async () => {
     try {
       setIsLoadingModels(true);
-      const response = await authenticatedFetch(getApiUrl("/available_models"), token, {}, onLogout);
+      const response = await apiFetch("/available_models");
 
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`Error fetching available models: ${response.status} - ${errorText}`);
         return;
       }
-      
+
       const data = await response.json();
       const models = data.models.map((modelId: string) => ({
         id: modelId,
@@ -149,7 +147,7 @@ export default function Sidebar({
     try {
       setIsLoadingSources(true);
       console.log("Fetching sources...");
-      const response = await authenticatedFetch(getApiUrl("/sources"), token, {}, onLogout);
+      const response = await apiFetch("/sources");
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -157,7 +155,7 @@ export default function Sidebar({
         setAvailableSources([]);
         return;
       }
-      
+
       const data = await response.json();
       console.log("Sources fetched:", data.sources);
       setAvailableSources(data.sources || []);
@@ -187,7 +185,7 @@ export default function Sidebar({
   // Add function to fetch chat metadata
   const fetchChatMetadata = useCallback(async (chatId: string) => {
     try {
-      const response = await authenticatedFetch(getApiUrl(`/chat/${chatId}/metadata`), token, {}, onLogout);
+      const response = await apiFetch(`/chat/${chatId}/metadata`);
       if (response.ok) {
         const metadata = await response.json();
         setChatMetadata(prev => ({
@@ -205,7 +203,7 @@ export default function Sidebar({
     try {
       console.log("fetchChats: Starting to fetch chats...");
       setIsLoadingChats(true);
-      const response = await authenticatedFetch(getApiUrl("/chats"), token, {}, onLogout);
+      const response = await apiFetch("/chats");
       if (response.ok) {
         const data = await response.json();
         console.log("fetchChats: Received chats:", data.chats);
@@ -311,11 +309,11 @@ export default function Sidebar({
     setSelectedSources(newSelectedSources);
 
     try {
-      const response = await authenticatedFetch(getApiUrl("/selected_sources"), token, {
+      const response = await apiFetch("/selected_sources", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newSelectedSources)
-      }, onLogout);
+      });
 
       if (!response.ok) {
         console.error("Failed to update selected sources");
@@ -341,9 +339,9 @@ export default function Sidebar({
     }
 
     try {
-      const response = await authenticatedFetch(getApiUrl(`/sources/${encodeURIComponent(source)}`), token, {
+      const response = await apiFetch(`/sources/${encodeURIComponent(source)}`, {
         method: "DELETE"
-      }, onLogout);
+      });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -387,11 +385,11 @@ export default function Sidebar({
     const newName = prompt("Enter new chat name:", currentName);
     if (newName && newName.trim() && newName !== currentName) {
       try {
-        const response = await authenticatedFetch(getApiUrl("/chat/rename"), token, {
+        const response = await apiFetch("/chat/rename", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat_id: chatId, new_name: newName.trim() })
-        }, onLogout);
+        });
 
         if (!response.ok) {
           console.error("Failed to rename chat");
@@ -409,9 +407,9 @@ export default function Sidebar({
   const handleDeleteChat = async (chatId: string) => {
     try {
       // Delete the chat
-      const response = await authenticatedFetch(getApiUrl(`/chat/${chatId}`), token, {
+      const response = await apiFetch(`/chat/${chatId}`, {
         method: "DELETE"
-      }, onLogout);
+      });
 
       if (!response.ok) {
         console.error("Failed to delete chat");
@@ -424,7 +422,7 @@ export default function Sidebar({
       // If we deleted the current chat
       if (currentChatId === chatId) {
         // Get updated list of chats
-        const chatsResponse = await authenticatedFetch(getApiUrl("/chats"), token, {}, onLogout);
+        const chatsResponse = await apiFetch("/chats");
         const { chats: remainingChats } = await chatsResponse.json();
 
         if (remainingChats.length > 0) {
@@ -445,9 +443,9 @@ export default function Sidebar({
       console.log("handleNewChat: Starting new chat creation...");
       
       // Create new chat using backend endpoint
-      const response = await authenticatedFetch(getApiUrl("/chat/new"), token, {
+      const response = await apiFetch("/chat/new", {
         method: "POST"
-      }, onLogout);
+      });
       
       if (!response.ok) {
         console.error("Failed to create new chat");
@@ -497,9 +495,9 @@ export default function Sidebar({
     }
 
     try {
-      const response = await authenticatedFetch(getApiUrl("/chats/clear"), token, {
+      const response = await apiFetch("/chats/clear", {
         method: "DELETE"
-      }, onLogout);
+      });
 
       if (!response.ok) {
         console.error("Failed to clear all chats");
@@ -534,11 +532,11 @@ export default function Sidebar({
     try {
       console.log("Updating selected model to:", newModel);
       
-      const response = await authenticatedFetch(getApiUrl("/selected_model"), token, {
+      const response = await apiFetch("/selected_model", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: newModel })
-      }, onLogout);
+      });
       
       if (!response.ok) {
         console.error("Failed to update selected model");

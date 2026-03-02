@@ -14,14 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 */
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import QuerySection from '@/components/QuerySection';
 import DocumentIngestion from '@/components/DocumentIngestion';
 import LoginPage from '@/components/LoginPage';
 import Sidebar from '@/components/Sidebar';
 import ThemeToggle from '@/components/ThemeToggle';
 import styles from '@/styles/Home.module.css';
-import { getApiUrl, getAuthUrl } from '@/lib/api';
+import { getAuthUrl, apiFetch, setOnUnauthorized } from '@/lib/api';
 import { getToken, setAuth, clearAuth, isTokenExpired } from '@/lib/auth';
 
 export default function App() {
@@ -38,7 +38,6 @@ export default function App() {
 
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authToken, setAuthToken] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
   // Check for existing token on mount
@@ -55,7 +54,6 @@ export default function App() {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
-          setAuthToken(token);
           setIsAuthenticated(true);
         } else {
           clearAuth();
@@ -70,56 +68,50 @@ export default function App() {
 
   const handleLoginSuccess = (token: string, email: string) => {
     setAuth(token, email);
-    setAuthToken(token);
     setIsAuthenticated(true);
   };
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     clearAuth();
-    setAuthToken(null);
     setIsAuthenticated(false);
     setCurrentChatId(null);
     setResponse("[]");
-  };
+  }, []);
+
+  // Register global 401 handler
+  useEffect(() => {
+    setOnUnauthorized(handleLogout);
+  }, [handleLogout]);
 
   // Load initial chat ID (only when authenticated)
   useEffect(() => {
-    if (!isAuthenticated || !authToken) return;
+    if (!isAuthenticated) return;
     const fetchCurrentChatId = async () => {
       try {
-        const response = await fetch(getApiUrl("/chat_id"), {
-          headers: { Authorization: `Bearer ${authToken}` },
-        });
-        if (response.ok) {
-          const { chat_id } = await response.json();
+        const res = await apiFetch("/chat_id");
+        if (res.ok) {
+          const { chat_id } = await res.json();
           setCurrentChatId(chat_id);
-        } else if (response.status === 401) {
-          handleLogout();
         }
       } catch (error) {
         console.error("Error fetching current chat ID:", error);
       }
     };
     fetchCurrentChatId();
-  }, [isAuthenticated, authToken]);
+  }, [isAuthenticated]);
 
   // Handle chat changes
   const handleChatChange = async (newChatId: string) => {
     try {
-      const response = await fetch(getApiUrl("/chat_id"), {
+      const res = await apiFetch("/chat_id", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chat_id: newChatId })
       });
 
-      if (response.ok) {
+      if (res.ok) {
         setCurrentChatId(newChatId);
         setResponse("[]");
-      } else if (response.status === 401) {
-        handleLogout();
       }
     } catch (error) {
       console.error("Error updating chat ID:", error);
@@ -163,7 +155,6 @@ export default function App() {
           refreshTrigger={refreshTrigger}
           currentChatId={currentChatId}
           onChatChange={handleChatChange}
-          token={authToken}
           onLogout={handleLogout}
         />
 
@@ -178,8 +169,6 @@ export default function App() {
             abortControllerRef={abortControllerRef}
             setShowIngestion={setShowIngestion}
             currentChatId={currentChatId}
-            token={authToken}
-            onLogout={handleLogout}
           />
         </div>
 
@@ -201,7 +190,6 @@ export default function App() {
                 setIngestMessage={setIngestMessage}
                 setIsIngesting={setIsIngesting}
                 onSuccessfulIngestion={handleSuccessfulIngestion}
-                token={authToken}
               />
             </div>
           </>

@@ -15,6 +15,42 @@
 # limitations under the License.
 */
 
+import { getToken } from './auth';
+
+let _onUnauthorized: (() => void) | null = null;
+
+export function setOnUnauthorized(cb: () => void): void {
+  _onUnauthorized = cb;
+}
+
+export function triggerUnauthorized(): void {
+  if (_onUnauthorized) _onUnauthorized();
+}
+
+/**
+ * Fetch wrapper for backend API calls.
+ * Reads JWT from localStorage at call time (never stale).
+ * Attaches Authorization header and handles 401 automatically.
+ */
+export async function apiFetch(
+  path: string,
+  options: RequestInit = {},
+): Promise<Response> {
+  const token = getToken();
+  const headers = new Headers(options.headers);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const res = await fetch(getApiUrl(path), { ...options, headers });
+
+  if (res.status === 401 && _onUnauthorized) {
+    _onUnauthorized();
+  }
+
+  return res;
+}
+
 /**
  * Get the backend API base URL
  * Connects directly to backend (no proxy needed - CORS is configured)
@@ -107,38 +143,3 @@ export function getAuthUrl(path: string): string {
   return `http://localhost:8001${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-/**
- * Create auth headers for authenticated requests
- */
-export function getAuthHeaders(token: string | null): Record<string, string> {
-  if (!token) return {};
-  return { Authorization: `Bearer ${token}` };
-}
-
-/**
- * Fetch wrapper that includes auth headers and handles 401 responses.
- * @param url - Request URL
- * @param token - JWT token
- * @param options - Fetch options
- * @param onUnauthorized - Callback when 401 is received (e.g., trigger logout)
- * @returns Fetch Response
- */
-export async function authenticatedFetch(
-  url: string,
-  token: string | null,
-  options: RequestInit = {},
-  onUnauthorized?: () => void,
-): Promise<Response> {
-  const headers = new Headers(options.headers);
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-
-  const res = await fetch(url, { ...options, headers });
-
-  if (res.status === 401 && onUnauthorized) {
-    onUnauthorized();
-  }
-
-  return res;
-}
