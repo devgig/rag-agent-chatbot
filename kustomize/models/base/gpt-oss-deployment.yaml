@@ -28,8 +28,9 @@ spec:
       labels:
         workspace: gpt-oss-120b
         app: gpt-oss-120b
+        istio.io/dataplane-mode: none      # Skips istio-cni iptables setup — fixes probe timeouts
       annotations:
-        ambient.istio.io/redirection: disabled  # Model pods don't need mesh; fixes probe timeouts from ztunnel interception
+        ambient.istio.io/redirection: disabled  # Also disables ztunnel redirection
     spec:
       nodeSelector:
         nvidia.com/gpu.present: "true"
