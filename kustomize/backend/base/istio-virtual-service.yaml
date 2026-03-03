@@ -1,12 +1,15 @@
-# VirtualService for Backend Routing (Waypoint)
-# ==============================================
-# Configures routing, CORS, and timeouts on the waypoint proxy.
-# JWT enforcement is at the ingress gateway (see kustomize/gateway/base/).
+# VirtualService for Backend Routing (Ingress Gateway + Waypoint)
+# ===============================================================
+# Bound to both the ingress gateway and mesh (waypoint) so retries,
+# timeouts, and CORS apply at every L7 hop.
 #
 # Key settings:
 # - timeout omitted on WebSocket route to disable it for long-lived connections
 # - retries: 0 for WebSocket (client handles reconnection)
+# - retries on HTTP routes catch transient 503s at the ingress gateway
 # - corsPolicy on HTTP routes for browser cross-origin requests
+#
+# Replaces the backend HTTPRoute — all ingress routing is here.
 
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
@@ -16,6 +19,11 @@ metadata:
 spec:
   hosts:
     - rag-agent-backend
+    - sparkbackend.bytecourier.local
+    - sparkbackend.bytecourier.com
+  gateways:
+    - mesh                                # waypoint proxy
+    - istio-ingress/rag-agent-gateway     # ingress gateway
   http:
     # WebSocket routes - no timeout, no retries
     - match:
