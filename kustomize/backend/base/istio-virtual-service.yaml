@@ -50,7 +50,7 @@ spec:
               number: 8000
       timeout: 300s  # 5 min timeout for LLM requests
       retries:
-        attempts: 2
+        attempts: 3
         perTryTimeout: 120s
         retryOn: 5xx,reset,connect-failure
       corsPolicy:
