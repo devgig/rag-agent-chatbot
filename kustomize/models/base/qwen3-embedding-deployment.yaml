@@ -43,6 +43,7 @@ spec:
     spec:
       imagePullSecrets:
       - name: acr-secret
+      dnsPolicy: Default  # Bypass CoreDNS; iptables-nft broken on Rockchip storage nodes (kernel 6.1.0-1025)
       nodeSelector:
         node-type: storage  # Deploy on storage nodes (CPU-only)
       containers:
