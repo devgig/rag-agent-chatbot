@@ -35,8 +35,9 @@ spec:
       labels:
         app: qwen3-embedding
         component: embedding-service
+        istio.io/dataplane-mode: none      # Skips istio-cni iptables setup on storage nodes
       annotations:
-        ambient.istio.io/redirection: disabled  # Exempt from mesh; fixes istio-cni iptables failure on storage nodes
+        ambient.istio.io/redirection: disabled  # Also disables ztunnel redirection
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"
         prometheus.io/path: "/metrics"
