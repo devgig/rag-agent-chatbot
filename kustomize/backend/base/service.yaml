@@ -4,7 +4,6 @@ metadata:
   name: rag-agent-backend
   labels:
     app: rag-agent-backend
-    istio.io/use-waypoint: backend-waypoint  # Route through L7 waypoint
 spec:
   selector:
     app: rag-agent-backend
