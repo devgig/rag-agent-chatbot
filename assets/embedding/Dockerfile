@@ -34,6 +34,8 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 USER appuser
 
 ENV HF_HOME=/app/.cache_hf
+ENV TRANSFORMERS_OFFLINE=1
+ENV HF_HUB_OFFLINE=1
 
 EXPOSE 8000
 
