@@ -10,12 +10,6 @@ resources:
   - postgres-external-secret.yaml
   - acr-external-secret.yaml
   - httproute.yaml
-  # Waypoint proxy removed — HBONE cold-connection bug causes persistent 503s
-  # on initial page load (see https://github.com/istio/istio/issues/XXXXX).
-  # CORS: EnvoyFilter + FastAPI middleware. Retries: frontend apiFetch.
-  # - istio-waypoint.yaml
-  # - istio-destination-rule.yaml
-  # - istio-virtual-service.yaml
   # KEDA autoscaling
   - keda-scaledobject.yaml
 
