@@ -9,7 +9,7 @@ resources:
   - service.yaml
   - postgres-external-secret.yaml
   - acr-external-secret.yaml
-  # HTTPRoute replaced by VirtualService (retries + CORS at ingress gateway level)
+  - httproute.yaml
   # Istio Ambient Mesh L7 resources
   - istio-waypoint.yaml
   - istio-destination-rule.yaml
