@@ -23,20 +23,6 @@ spec:
     allowedRoutes:
       namespaces:
         from: All
-  - name: sparkbackend
-    hostname: "sparkbackend.bytecourier.local"
-    port: 80
-    protocol: HTTP
-    allowedRoutes:
-      namespaces:
-        from: All
-  - name: sparkbackend-com
-    hostname: "sparkbackend.bytecourier.com"
-    port: 80
-    protocol: HTTP
-    allowedRoutes:
-      namespaces:
-        from: All
   - name: auth
     hostname: "auth.bytecourier.local"
     port: 80

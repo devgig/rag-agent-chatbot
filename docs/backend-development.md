@@ -15,7 +15,7 @@ The backend handles:
 
 JWT authentication is enforced at two layers:
 
-1. **Istio ingress gateway** (primary) — `RequestAuthentication` validates JWTs via the auth service JWKS endpoint before traffic enters the mesh. `AuthorizationPolicy` requires valid tokens for all backend endpoints except `/health` and CORS preflight.
+1. **Istio ingress gateway** (primary) — `RequestAuthentication` validates JWTs via the auth service JWKS endpoint before traffic enters the mesh. `AuthorizationPolicy` requires valid tokens for all `/api/backend-svc` paths except `/api/backend-svc/health` and `/api/backend-svc/metrics`. The backend is served behind the frontend's hostname (`sparkchat.bytecourier.*`) at the `/api/backend-svc` path prefix, which the HTTPRoute's URLRewrite strips before forwarding to the backend service — making frontend and backend same-origin and eliminating CORS in production.
 2. **Backend `auth.py`** (defense-in-depth) — validates JWT on each request, extracts user identity for chat history isolation.
 
 See `kustomize/gateway/base/istio-request-authentication.yaml` and `kustomize/gateway/base/istio-authorization-policy.yaml`.
@@ -48,7 +48,7 @@ FastAPI App (main.py)
 - **Batched Embeddings**: Embedding requests are batched (32 per request) to reduce HTTP round-trips during document ingestion
 - **Persistent Milvus Connections**: Single connection reused across flush, delete, and query operations
 - **Input Validation**: File upload size limits (configurable via `MAX_UPLOAD_SIZE_MB`) and sanitized Milvus filter expressions
-- **Configurable CORS**: Origins configurable via `CORS_ALLOWED_ORIGINS` environment variable
+- **Same-Origin in Production**: Backend routed behind `/api/backend-svc` on the frontend hostname, eliminating CORS. `CORS_ALLOWED_ORIGINS` remains for local development only
 
 ## Local Development
 

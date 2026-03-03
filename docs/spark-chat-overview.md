@@ -23,7 +23,9 @@ This project is designed to be customizable, serving as a framework that develop
 
   - **LRU Caching**: Bounded in-memory caches with TTL expiration prevent memory leaks on long-running servers
 
-  - **Configurable CORS & File Limits**: Environment-driven CORS origins and upload size limits for production deployments
+  - **Same-Origin API Routing**: Backend served behind `/api/backend-svc` on the frontend hostname via Istio Gateway URLRewrite, eliminating CORS entirely in production
+
+  - **Configurable File Limits**: Environment-driven upload size limits for production deployments
 
 ## System Overview
 <img src="assets/system-diagram.png" alt="System Diagram" style="max-width:600px;border-radius:5px;justify-content:center">

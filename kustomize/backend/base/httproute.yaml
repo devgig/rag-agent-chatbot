@@ -4,8 +4,8 @@ metadata:
   name: rag-agent-backend-httproute
 spec:
   hostnames:
-    - sparkbackend.bytecourier.local
-    - sparkbackend.bytecourier.com
+    - sparkchat.bytecourier.local
+    - sparkchat.bytecourier.com
   parentRefs:
     - name: rag-agent-gateway
       namespace: istio-ingress
@@ -13,7 +13,13 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: /
+            value: /api/backend-svc
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
       backendRefs:
         - name: rag-agent-backend
           port: 8000

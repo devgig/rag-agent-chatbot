@@ -59,7 +59,7 @@ export async function apiFetch(
 
 /**
  * Get the backend API base URL
- * Connects directly to backend (no proxy needed - CORS is configured)
+ * Same-origin path prefix on bytecourier hosts; direct connection for local dev
  */
 export function getBackendUrl(): string {
   // Use configured backend URL if available (set at build time)
@@ -72,10 +72,9 @@ export function getBackendUrl(): string {
   if (typeof window !== 'undefined') {
     const { protocol, hostname } = window.location;
 
-    // Replace 'sparkchat' with 'sparkbackend' in hostname
-    if (hostname.startsWith('sparkchat.')) {
-      const backendHostname = hostname.replace('sparkchat.', 'sparkbackend.');
-      return `${protocol}//${backendHostname}`;
+    // Same-origin path prefix on bytecourier hosts
+    if (hostname.includes('bytecourier')) {
+      return `${protocol}//${hostname}/api/backend-svc`;
     }
 
     // For local development, use same host with port 8000
