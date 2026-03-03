@@ -132,21 +132,21 @@ export default function App() {
     return () => { if (timerId) clearTimeout(timerId); };
   }, [isAuthenticated, handleLogout]);
 
-  // Load initial chat ID (only when authenticated)
+  // Always start a fresh chat on page load
   useEffect(() => {
     if (!isAuthenticated) return;
-    const fetchCurrentChatId = async () => {
+    const createFreshChat = async () => {
       try {
-        const res = await apiFetch("/chat_id");
+        const res = await apiFetch("/chat/new", { method: "POST" });
         if (res.ok) {
           const { chat_id } = await res.json();
           setCurrentChatId(chat_id);
         }
       } catch (error) {
-        console.error("Error fetching current chat ID:", error);
+        console.error("Error creating new chat:", error);
       }
     };
-    fetchCurrentChatId();
+    createFreshChat();
   }, [isAuthenticated]);
 
   // Handle chat changes
