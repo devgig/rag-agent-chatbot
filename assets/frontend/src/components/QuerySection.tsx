@@ -202,9 +202,9 @@ export default function QuerySection({
   const hasAssistantContent = useRef(false);
   const fadeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Batch token updates to reduce re-renders during streaming
+  // Batch token updates per animation frame to reduce re-renders during streaming
   const pendingTokens = useRef<string>("");
-  const tokenFlushTimeout = useRef<NodeJS.Timeout | null>(null);
+  const rafId = useRef<number | null>(null);
 
   // WebSocket reconnection state
   const reconnectAttempts = useRef(0);
@@ -270,8 +270,9 @@ export default function QuerySection({
           switch (type) {
             case "history": {
               if (Array.isArray(msg.messages)) {
-                if (tokenFlushTimeout.current) {
-                  clearTimeout(tokenFlushTimeout.current);
+                if (rafId.current) {
+                  cancelAnimationFrame(rafId.current);
+                  rafId.current = null;
                 }
                 if (pendingTokens.current) {
                   const tokensToFlush = pendingTokens.current;
@@ -313,31 +314,30 @@ export default function QuerySection({
 
               pendingTokens.current += text;
 
-              if (tokenFlushTimeout.current) {
-                clearTimeout(tokenFlushTimeout.current);
-              }
+              if (!rafId.current) {
+                rafId.current = requestAnimationFrame(() => {
+                  rafId.current = null;
+                  const tokensToFlush = pendingTokens.current;
+                  pendingTokens.current = "";
 
-              tokenFlushTimeout.current = setTimeout(() => {
-                const tokensToFlush = pendingTokens.current;
-                pendingTokens.current = "";
-
-                if (tokensToFlush) {
-                  setResponse(prev => {
-                    try {
-                      const messages = JSON.parse(prev);
-                      const last = messages[messages.length - 1];
-                      if (last && last.type === "AssistantMessage") {
-                        last.content = String(last.content || "") + tokensToFlush;
-                      } else {
-                        messages.push({ type: "AssistantMessage", content: tokensToFlush });
+                  if (tokensToFlush) {
+                    setResponse(prev => {
+                      try {
+                        const messages = JSON.parse(prev);
+                        const last = messages[messages.length - 1];
+                        if (last && last.type === "AssistantMessage") {
+                          last.content = String(last.content || "") + tokensToFlush;
+                        } else {
+                          messages.push({ type: "AssistantMessage", content: tokensToFlush });
+                        }
+                        return JSON.stringify(messages);
+                      } catch {
+                        return String(prev || "") + tokensToFlush;
                       }
-                      return JSON.stringify(messages);
-                    } catch {
-                      return String(prev || "") + tokensToFlush;
-                    }
-                  });
-                }
-              }, 50);
+                    });
+                  }
+                });
+              }
               break;
             }
             case "node_start": {
@@ -415,9 +415,9 @@ export default function QuerySection({
         clearTimeout(reconnectTimeout.current);
         reconnectTimeout.current = null;
       }
-      if (tokenFlushTimeout.current) {
-        clearTimeout(tokenFlushTimeout.current);
-        tokenFlushTimeout.current = null;
+      if (rafId.current) {
+        cancelAnimationFrame(rafId.current);
+        rafId.current = null;
       }
       pendingTokens.current = "";
       reconnectAttempts.current = 0;
