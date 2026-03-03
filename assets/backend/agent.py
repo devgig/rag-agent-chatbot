@@ -310,12 +310,22 @@ class ChatAgent:
             temperature=0,
             top_p=1,
             stream=True,
+            stream_options={"include_usage": True},
             **tool_params
         )
 
-        llm_output_buffer, tool_calls_buffer = await self._stream_response(stream, self.stream_callback)
+        llm_output_buffer, tool_calls_buffer, usage = await self._stream_response(stream, self.stream_callback)
+
+        if usage:
+            self._usage_accumulator["prompt_tokens"] += getattr(usage, "prompt_tokens", 0)
+            self._usage_accumulator["completion_tokens"] += getattr(usage, "completion_tokens", 0)
+            self._usage_accumulator["total_tokens"] += getattr(usage, "total_tokens", 0)
+
         tool_calls = self._format_tool_calls(tool_calls_buffer)
         raw_output = "".join(llm_output_buffer)
+
+        if not tool_calls and self._usage_accumulator.get("total_tokens", 0) > 0:
+            await self.stream_callback({"type": "usage", "data": dict(self._usage_accumulator)})
         
         logger.debug({
             "message": "Tool call generation results",
@@ -396,21 +406,28 @@ class ChatAgent:
             )
         return tool_calls
 
-    async def _stream_response(self, stream, stream_callback: StreamCallback) -> tuple[List[str], Dict[int, Dict[str, str]]]:
+    async def _stream_response(self, stream, stream_callback: StreamCallback) -> tuple[List[str], Dict[int, Dict[str, str]], Any]:
         """Process streaming LLM response and extract content and tool calls.
-        
+
         Args:
             stream: Async stream from LLM
             stream_callback: Callback for streaming events
-            
+
         Returns:
-            Tuple of (content_buffer, tool_calls_buffer)
+            Tuple of (content_buffer, tool_calls_buffer, usage)
         """
         llm_output_buffer = []
         tool_calls_buffer = {}
         saw_tool_finish = False
+        usage = None
 
         async for chunk in stream:
+            if hasattr(chunk, "usage") and chunk.usage is not None:
+                usage = chunk.usage
+
+            if saw_tool_finish:
+                continue
+
             for choice in getattr(chunk, "choices", []) or []:
                 delta = getattr(choice, "delta", None)
                 if not delta:
@@ -440,11 +457,8 @@ class ChatAgent:
                 if finish_reason == "tool_calls":
                     saw_tool_finish = True
                     break
-                    
-            if saw_tool_finish:
-                break
 
-        return llm_output_buffer, tool_calls_buffer
+        return llm_output_buffer, tool_calls_buffer, usage
 
     async def query(self, query_text: str, chat_id: str) -> AsyncIterator[Dict[str, Any]]:
         """Process user query and stream response tokens.
@@ -498,6 +512,7 @@ class ChatAgent:
             })
 
             self.last_state = None
+            self._usage_accumulator = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             token_q: asyncio.Queue[Any] = asyncio.Queue()
             self.stream_callback = lambda event: self._queue_writer(event, token_q)
             runner = asyncio.create_task(self._run_graph(initial_state, config, chat_id, token_q))

@@ -196,6 +196,7 @@ export default function QuerySection({
   const [graphStatus, setGraphStatus] = useState("");
   const [isPinnedToolOutputVisible, setPinnedToolOutputVisible] = useState(false);
   const [isToolContentVisible, setIsToolContentVisible] = useState(false);
+  const [tokenUsage, setTokenUsage] = useState<{prompt_tokens: number, completion_tokens: number, total_tokens: number} | null>(null);
   const [fadeIn, setFadeIn] = useState(false);
   const firstTokenReceived = useRef(false);
   const hasAssistantContent = useRef(false);
@@ -347,6 +348,12 @@ export default function QuerySection({
             }
             case "tool_start": {
               setGraphStatus("Thinking...");
+              break;
+            }
+            case "usage": {
+              if (msg.data) {
+                setTokenUsage(msg.data);
+              }
               break;
             }
             case "error": {
@@ -530,6 +537,7 @@ export default function QuerySection({
 
     setQuery("");
     setIsStreaming(true);
+    setTokenUsage(null);
     firstTokenReceived.current = false;
     hasAssistantContent.current = false;
 
@@ -705,6 +713,12 @@ export default function QuerySection({
                 <span></span>
               </div>
             </div>
+          </div>
+        )}
+
+        {tokenUsage && !isStreaming && (
+          <div className={styles.tokenUsage}>
+            {tokenUsage.total_tokens} tokens ({tokenUsage.prompt_tokens} prompt + {tokenUsage.completion_tokens} completion)
           </div>
         )}
 

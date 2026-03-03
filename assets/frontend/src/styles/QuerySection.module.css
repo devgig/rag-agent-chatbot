@@ -970,3 +970,17 @@
   color: #fbbf24;
 }
 
+.tokenUsage {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #9ca3af;
+  text-align: center;
+  padding: 4px 0;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+:global(.dark) .tokenUsage {
+  color: #6b7280;
+}
+
