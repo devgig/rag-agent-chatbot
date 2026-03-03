@@ -554,15 +554,10 @@ class ChatAgent:
         finally:
             try:
                 if self.last_state and self.last_state.get("messages"):
-                    final_msg = self.last_state["messages"][-1]
                     try:
                         logger.debug(f'Saving messages to conversation store for chat: {chat_id}')
                         await self.conversation_store.save_messages(chat_id, self.last_state["messages"])
                     except Exception as save_err:
                         logger.warning({"message": "Failed to persist conversation", "chat_id": chat_id, "error": str(save_err)})
-
-                    content = getattr(final_msg, "content", None)
-                    if content:
-                        await token_q.put(content)
             finally:
                 await token_q.put(SENTINEL)
