@@ -716,12 +716,6 @@ export default function QuerySection({
           </div>
         )}
 
-        {tokenUsage && !isStreaming && (
-          <div className={styles.tokenUsage}>
-            {tokenUsage.total_tokens} tokens ({tokenUsage.prompt_tokens} prompt + {tokenUsage.completion_tokens} completion)
-          </div>
-        )}
-
         {connectionError && (
           <div className={`${styles.messageWrapper} ${styles.assistantMessageWrapper}`}>
             <div className={`${styles.message} ${styles.assistantMessage}`} style={{ color: '#ef4444', fontSize: '0.875rem' }}>
@@ -732,6 +726,11 @@ export default function QuerySection({
         <div ref={messagesEndRef} />
       </div>
 
+      {tokenUsage && !isStreaming && !showWelcome && (
+        <div className={styles.tokenUsage}>
+          {tokenUsage.total_tokens} tokens ({tokenUsage.prompt_tokens} prompt + {tokenUsage.completion_tokens} completion)
+        </div>
+      )}
       {!showWelcome && inputForm}
     </div>
   );
