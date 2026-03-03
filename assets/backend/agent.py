@@ -480,16 +480,10 @@ class ChatAgent:
         config = {"configurable": {"thread_id": chat_id}}
 
         try:
-            existing_messages = await self.conversation_store.get_messages(chat_id, limit=1)
-            
-            messages_to_process = [SystemMessage(content=self.system_prompt)]
-
-            if existing_messages:
-                for msg in existing_messages:
-                    if not isinstance(msg, SystemMessage):
-                        messages_to_process.append(msg)
-
-            messages_to_process.append(HumanMessage(content=query_text))
+            messages_to_process = [
+                SystemMessage(content=self.system_prompt),
+                HumanMessage(content=query_text),
+            ]
 
             initial_state = {
                 "iterations": 0,
