@@ -30,6 +30,7 @@ import requests
 
 
 EMBEDDING_BATCH_SIZE = 32
+RELEVANCE_SCORE_THRESHOLD = float(os.getenv("RELEVANCE_SCORE_THRESHOLD", "0.4"))
 
 
 class CustomEmbeddings:
@@ -281,37 +282,54 @@ class VectorStore:
 
     def get_documents(self, query: str, k: int = 8, sources: List[str] = None) -> List[Document]:
         """
-        Get relevant documents using the retriever's invoke method.
+        Get relevant documents filtered by similarity score threshold.
+
+        Uses similarity_search_with_relevance_scores to get normalized [0, 1]
+        scores (1 = most relevant) and drops chunks below RELEVANCE_SCORE_THRESHOLD.
         """
         try:
-            search_kwargs = {"k": k}
-            
+            kwargs = {}
+
             if sources:
                 if len(sources) == 1:
                     filter_expr = f'source == "{_sanitize_milvus_string(sources[0])}"'
                 else:
                     source_conditions = [f'source == "{_sanitize_milvus_string(s)}"' for s in sources]
                     filter_expr = " || ".join(source_conditions)
-                
-                search_kwargs["expr"] = filter_expr
+
+                kwargs["expr"] = filter_expr
                 logger.debug({
                     "message": "Retrieving with filter",
                     "filter": filter_expr
                 })
-            
-            retriever = self._store.as_retriever(
-                search_type="similarity",
-                search_kwargs=search_kwargs
+
+            results_with_scores = self._store.similarity_search_with_relevance_scores(
+                query, k=k, **kwargs
             )
-            
-            docs = retriever.invoke(query)
-            logger.debug({
-                "message": "Retrieved documents",
-                "query": query,
-                "document_count": len(docs)
+
+            for doc, score in results_with_scores:
+                logger.debug({
+                    "message": "Candidate document",
+                    "source": doc.metadata.get("source", "unknown"),
+                    "relevance_score": round(score, 4),
+                    "preview": doc.page_content[:80]
+                })
+
+            filtered = [
+                (doc, score)
+                for doc, score in results_with_scores
+                if score >= RELEVANCE_SCORE_THRESHOLD
+            ]
+
+            logger.info({
+                "message": "Document retrieval complete",
+                "query": query[:80],
+                "total_candidates": len(results_with_scores),
+                "above_threshold": len(filtered),
+                "threshold": RELEVANCE_SCORE_THRESHOLD
             })
-            
-            return docs
+
+            return [doc for doc, score in filtered]
         except Exception as e:
             logger.error({
                 "message": "Error retrieving documents",

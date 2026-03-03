@@ -147,7 +147,8 @@ When a user asks a question, here's what happens:
    │
    ├─── Get selected sources from config
    ├─── Embed query → Qwen3-Embedding
-   ├─── Vector search → Milvus (top-k=8)
+   ├─── Vector search → Milvus (top-k=8 candidates)
+   ├─── Filter by relevance score threshold (drop low-similarity chunks)
    └─── Format results with source attribution
    │
    ▼
@@ -163,7 +164,10 @@ When a user asks a question, here's what happens:
 8. Stream Response → WebSocket → Frontend
    │
    ▼
-9. Save to PostgreSQL
+9. Send Token Usage (prompt + completion totals) → Frontend
+   │
+   ▼
+10. Save to PostgreSQL
 ```
 
 ### Retrieval Details
@@ -175,18 +179,23 @@ def get_documents(self, query: str, k: int = 8, sources: List[str] = None):
     if sources:
         filter_expr = ' || '.join([f'source == "{s}"' for s in sources])
 
-    # Similarity search
-    retriever = self._store.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": k, "expr": filter_expr}
+    # Similarity search with relevance scoring
+    results_with_scores = self._store.similarity_search_with_relevance_scores(
+        query, k=k, expr=filter_expr
     )
-    return retriever.invoke(query)
+
+    # Drop chunks below the relevance threshold
+    filtered = [(doc, score) for doc, score in results_with_scores
+                if score >= RELEVANCE_SCORE_THRESHOLD]
+
+    return [doc for doc, score in filtered]
 ```
 
 **Key parameters:**
-- `k=8`: Returns top 8 most similar chunks
+- `k=8`: Retrieves up to 8 candidate chunks from Milvus
+- `RELEVANCE_SCORE_THRESHOLD` (env: `RELEVANCE_SCORE_THRESHOLD`, default `0.4`): Normalized [0, 1] score cutoff — chunks scoring below this are discarded before reaching the LLM
 - `sources`: Optional filter for specific documents
-- `search_type="similarity"`: L2/cosine distance in vector space
+- Scores are logged per-chunk at DEBUG level for threshold tuning
 
 ---
 
@@ -303,6 +312,7 @@ async for event in agent.query(query_text, chat_id):
 | `tool_start` | Tool invocation begins |
 | `tool_end` | Tool invocation completes |
 | `token` | Streamed LLM token |
+| `usage` | Token usage stats (prompt, completion, total) |
 | `history` | Full conversation history |
 | `error` | Error notification |
 
@@ -365,6 +375,7 @@ fields = [
 | `POSTGRES_HOST` | PostgreSQL hostname | `localhost` |
 | `POSTGRES_DB` | Database name | `chatbot` |
 | `MODELS` | Available LLM models | (comma-separated list) |
+| `RELEVANCE_SCORE_THRESHOLD` | Min relevance score [0-1] for retrieved chunks | `0.4` |
 | `CONFIG_PATH` | Runtime config file | `./config.json` |
 
 ### Runtime Config (config.json)
@@ -408,8 +419,9 @@ fields = [
 
 1. **Embedding latency**: Qwen3-Embedding runs locally, ~50-100ms per query
 2. **Vector search**: Milvus IVF_FLAT index, <10ms for top-k retrieval
-3. **Streaming**: Token-by-token delivery minimizes perceived latency
+3. **Streaming**: Token-by-token delivery with `requestAnimationFrame`-based throttle for smooth rendering
 4. **Background ingestion**: Large uploads don't block the UI
+5. **Usage tracking**: Token usage (prompt/completion/total) accumulated across tool-call iterations and reported after each response
 
 ---
 
@@ -436,9 +448,15 @@ class CustomEmbeddings:
 
 ### Adjusting retrieval parameters
 
+```bash
+# Tune the relevance score threshold (0.0 = accept everything, 1.0 = exact match only)
+# Check DEBUG logs for per-chunk scores to find the right value for your data
+export RELEVANCE_SCORE_THRESHOLD=0.5
+```
+
 ```python
-# vector_store.py
-def get_documents(self, query: str, k: int = 10):  # Increase k for more context
+# vector_store.py - increase candidate pool
+def get_documents(self, query: str, k: int = 10):  # More candidates before threshold filter
 ```
 
 ### Adding metadata filters
