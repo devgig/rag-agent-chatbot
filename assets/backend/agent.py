@@ -292,9 +292,16 @@ class ChatAgent:
 
         tool_params = {}
         if has_tools:
+            iterations = state.get("iterations", 0)
+            # Force search_documents on first iteration so the model
+            # can never skip retrieval and answer from its own knowledge.
+            if iterations == 0 and self.tools_by_name.get("search_documents"):
+                tool_choice = {"type": "function", "function": {"name": "search_documents"}}
+            else:
+                tool_choice = "auto"
             tool_params = {
                 "tools": self.openai_tools,
-                "tool_choice": "auto"
+                "tool_choice": tool_choice
             }
         
         stream = await self.model_client.chat.completions.create(
