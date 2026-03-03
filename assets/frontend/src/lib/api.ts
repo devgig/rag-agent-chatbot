@@ -48,13 +48,26 @@ export async function apiFetch(
   const headers = new Headers(options.headers);
   headers.set("Authorization", `Bearer ${token}`);
 
-  const res = await fetch(getApiUrl(path), { ...options, headers });
+  const url = getApiUrl(path);
+  const fetchOpts = { ...options, headers };
 
-  if (res.status === 401 && _onUnauthorized) {
+  // Retry transient failures (503, network errors) up to 3 times
+  let res: Response;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      res = await fetch(url, fetchOpts);
+      if (res.status !== 503) break;
+    } catch (err) {
+      if (attempt === 2) throw err;
+    }
+    await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+  }
+
+  if (res!.status === 401 && _onUnauthorized) {
     _onUnauthorized();
   }
 
-  return res;
+  return res!;
 }
 
 /**
