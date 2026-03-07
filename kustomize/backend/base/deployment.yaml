@@ -43,7 +43,14 @@ spec:
       initContainers:
       - name: create-config
         image: busybox
-        command: ['sh', '-c', 'echo ''{"sources":[],"models":["gpt-oss-120b"],"selected_model":"gpt-oss-120b","selected_sources":[],"current_chat_id":null}'' > /config/config.json && chmod 666 /config/config.json']
+        command: ['sh', '-c', 'echo ''{"sources":[],"models":["gpt-oss-120b"],"selected_model":"gpt-oss-120b","selected_sources":[],"current_chat_id":null}'' > /config/config.json']
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
         volumeMounts:
         - name: config-volume
           mountPath: /config
@@ -51,6 +58,13 @@ spec:
       - name: backend
         image: rag-agent-chatbot/backend:latest
         imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
         ports:
         - containerPort: 8000
           name: http

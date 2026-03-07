@@ -32,6 +32,7 @@ from typing import List, Optional, Dict
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.websockets import WebSocketState
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from agent import ChatAgent
@@ -52,6 +53,9 @@ MILVUS_ADDRESS = os.getenv("MILVUS_ADDRESS", "tcp://milvus.milvus-system.svc.clu
 CONFIG_PATH = os.getenv("CONFIG_PATH", "./config.json")
 MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
 MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+MAX_TOTAL_UPLOAD_BYTES = int(os.getenv("MAX_TOTAL_UPLOAD_MB", "200")) * 1024 * 1024
+MAX_WS_MESSAGE_BYTES = int(os.getenv("MAX_WS_MESSAGE_BYTES", str(64 * 1024)))  # 64KB
+ALLOWED_UPLOAD_EXTENSIONS = {'.pdf', '.txt', '.docx', '.doc', '.md', '.rtf', '.csv', '.json', '.html'}
 
 config_manager = ConfigManager(CONFIG_PATH)
 
@@ -121,8 +125,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 Instrumentator().instrument(app).expose(app)
@@ -167,6 +171,9 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
         
         while True:
             data = await websocket.receive_text()
+            if len(data.encode("utf-8")) > MAX_WS_MESSAGE_BYTES:
+                await websocket.send_json({"type": "error", "content": "Message too large"})
+                continue
             client_message = json.loads(data)
             new_message = client_message.get("message")
 
@@ -175,7 +182,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
                     await websocket.send_json(event)
             except Exception as query_error:
                 logger.error(f"Error in agent.query: {str(query_error)}", exc_info=True)
-                await websocket.send_json({"type": "error", "content": f"Error processing request: {str(query_error)}"})
+                await websocket.send_json({"type": "error", "content": "An error occurred processing your request"})
         
             final_messages = await postgres_storage.get_messages(chat_id)
             final_history = [postgres_storage._message_to_dict(msg) for msg in final_messages[1:]]
@@ -208,12 +215,25 @@ async def ingest_files(files: Optional[List[UploadFile]] = File(None), backgroun
         task_id = str(uuid.uuid4())
 
         file_info = []
+        total_size = 0
         for file in files:
+            ext = os.path.splitext(file.filename or "")[1].lower()
+            if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File type '{ext}' not allowed. Allowed: {', '.join(sorted(ALLOWED_UPLOAD_EXTENSIONS))}"
+                )
             content = await file.read()
             if len(content) > MAX_UPLOAD_SIZE_BYTES:
                 raise HTTPException(
                     status_code=413,
                     detail=f"File '{file.filename}' exceeds maximum size of {MAX_UPLOAD_SIZE_MB}MB"
+                )
+            total_size += len(content)
+            if total_size > MAX_TOTAL_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail="Total upload size exceeds limit"
                 )
             file_info.append({
                 "filename": file.filename,
@@ -246,7 +266,7 @@ async def ingest_files(files: Optional[List[UploadFile]] = File(None), backgroun
         log_error(e, "/ingest")
         raise HTTPException(
             status_code=500,
-            detail=f"Error queuing files for ingestion: {str(e)}"
+            detail="An internal error occurred"
         )
 
 
@@ -273,7 +293,8 @@ async def get_sources(current_user: str = Depends(get_current_user)):
         sources = await postgres_storage.get_source_names()
         return {"sources": sources}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting sources: {str(e)}")
+        logger.error(f"Unhandled error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @app.delete("/sources/{source_name}")
@@ -315,7 +336,8 @@ async def delete_source(source_name: str, current_user: str = Depends(get_curren
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting source: {str(e)}")
+        logger.error(f"Unhandled error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @app.get("/selected_sources")
@@ -325,7 +347,8 @@ async def get_selected_sources(current_user: str = Depends(get_current_user)):
         config = config_manager.read_config()
         return {"sources": config.selected_sources}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting selected sources: {str(e)}")
+        logger.error(f"Unhandled error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @app.post("/selected_sources")
@@ -339,7 +362,8 @@ async def update_selected_sources(selected_sources: List[str], current_user: str
         config_manager.updated_selected_sources(selected_sources)
         return {"status": "success", "message": "Selected sources updated successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating selected sources: {str(e)}")
+        logger.error(f"Unhandled error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @app.get("/selected_model")
@@ -349,7 +373,8 @@ async def get_selected_model(current_user: str = Depends(get_current_user)):
         model = config_manager.get_selected_model()
         return {"model": model}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting selected model: {str(e)}")
+        logger.error(f"Unhandled error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @app.post("/selected_model")
@@ -364,7 +389,8 @@ async def update_selected_model(request: SelectedModelRequest, current_user: str
         config_manager.updated_selected_model(request.model)
         return {"status": "success", "message": "Selected model updated successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating selected model: {str(e)}")
+        logger.error(f"Unhandled error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @app.get("/available_models")
@@ -374,7 +400,8 @@ async def get_available_models(current_user: str = Depends(get_current_user)):
         models = config_manager.get_available_models()
         return {"models": models}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting available models: {str(e)}")
+        logger.error(f"Unhandled error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @app.get("/chats")
@@ -384,7 +411,8 @@ async def list_chats(current_user: str = Depends(get_current_user)):
         chat_ids = await postgres_storage.list_conversations()
         return {"chats": chat_ids}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing chats: {str(e)}")
+        logger.error(f"Unhandled error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @app.get("/chat_id")
@@ -412,9 +440,10 @@ async def get_chat_id(current_user: str = Depends(get_current_user)):
             "chat_id": new_chat_id
         }
     except Exception as e:
+        logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Error getting chat ID: {str(e)}"
+            detail="An internal error occurred"
         )
 
 
@@ -433,9 +462,10 @@ async def update_chat_id(request: ChatIdRequest, current_user: str = Depends(get
             "chat_id": request.chat_id
         }
     except Exception as e:
+        logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Error updating chat ID: {str(e)}"
+            detail="An internal error occurred"
         )
 
 
@@ -453,9 +483,10 @@ async def get_chat_metadata(chat_id: str, current_user: str = Depends(get_curren
         metadata = await postgres_storage.get_chat_metadata(chat_id)
         return metadata
     except Exception as e:
+        logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Error getting chat metadata: {str(e)}"
+            detail="An internal error occurred"
         )
 
 
@@ -473,9 +504,10 @@ async def rename_chat(request: ChatRenameRequest, current_user: str = Depends(ge
             "message": f"Chat {request.chat_id} renamed to {request.new_name}"
         }
     except Exception as e:
+        logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Error renaming chat: {str(e)}"
+            detail="An internal error occurred"
         )
 
 
@@ -495,9 +527,10 @@ async def create_new_chat(current_user: str = Depends(get_current_user)):
             "chat_id": new_chat_id
         }
     except Exception as e:
+        logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Error creating new chat: {str(e)}"
+            detail="An internal error occurred"
         )
 
 
@@ -522,9 +555,10 @@ async def delete_chat(chat_id: str, current_user: str = Depends(get_current_user
                 detail=f"Chat {chat_id} not found"
             )
     except Exception as e:
+        logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Error deleting chat: {str(e)}"
+            detail="An internal error occurred"
         )
 
 
@@ -552,9 +586,10 @@ async def clear_all_chats(current_user: str = Depends(get_current_user)):
             "cleared_count": cleared_count
         }
     except Exception as e:
+        logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Error clearing all chats: {str(e)}"
+            detail="An internal error occurred"
         )
 
 
@@ -572,7 +607,8 @@ async def delete_collection(collection_name: str, current_user: str = Depends(ge
         else:
             raise HTTPException(status_code=404, detail=f"Collection '{collection_name}' not found or could not be deleted")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting collection: {str(e)}")
+        logger.error(f"Unhandled error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 if __name__ == "__main__":

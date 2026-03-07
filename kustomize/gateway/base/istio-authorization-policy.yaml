@@ -21,12 +21,11 @@ spec:
         - operation:
             notPaths:
               - /api/backend-svc*
-    # Allow unauthenticated access to public backend endpoints
+    # Allow unauthenticated access to health check only
     - to:
         - operation:
             paths:
               - /api/backend-svc/health
-              - /api/backend-svc/metrics
     # Authenticated access to all other backend endpoints
     - from:
         - source:

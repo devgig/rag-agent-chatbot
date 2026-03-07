@@ -24,10 +24,13 @@ spec:
         image: rag-agent-chatbot/frontend:latest
         imagePullPolicy: IfNotPresent
         securityContext:
+          runAsNonRoot: true
+          runAsUser: 101  # nginx user
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           capabilities:
-            add:
-              - NET_RAW
-              - NET_ADMIN
+            drop:
+              - ALL
         ports:
         - containerPort: 3000
           name: http
@@ -36,6 +39,13 @@ spec:
           value: "http://rag-agent-backend.rag-agent.svc.cluster.local:8000"
         - name: BACKEND_WS_URL
           value: "ws://rag-agent-backend.rag-agent.svc.cluster.local:8000"
+        volumeMounts:
+        - name: tmp-volume
+          mountPath: /tmp
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: nginx-run
+          mountPath: /var/run
         resources:
           requests:
             cpu: "200m"
@@ -59,3 +69,10 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 5
           failureThreshold: 3
+      volumes:
+      - name: tmp-volume
+        emptyDir: {}
+      - name: nginx-cache
+        emptyDir: {}
+      - name: nginx-run
+        emptyDir: {}

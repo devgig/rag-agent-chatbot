@@ -63,21 +63,24 @@ async def process_and_ingest_files_background(
         
         for info in file_info:
             try:
-                file_name = info["filename"]
+                file_name = os.path.basename(info["filename"])
                 content = info["content"]
-                
+
                 file_path = os.path.join(permanent_dir, file_name)
+                real_path = os.path.realpath(file_path)
+                if not real_path.startswith(os.path.realpath(permanent_dir)):
+                    raise ValueError(f"Invalid filename: {info['filename']}")
+
                 with open(file_path, "wb") as f:
                     f.write(content)
-                
+
                 file_paths.append(file_path)
                 file_names.append(file_name)
-                
+
                 logger.debug({
                     "message": "Saved file",
                     "task_id": task_id,
-                    "filename": file_name,
-                    "path": file_path
+                    "filename": file_name
                 })
             except Exception as e:
                 logger.error({
