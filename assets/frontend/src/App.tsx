@@ -17,12 +17,24 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import QuerySection from '@/components/QuerySection';
 import DocumentIngestion from '@/components/DocumentIngestion';
-import LoginPage from '@/components/LoginPage';
 import Sidebar from '@/components/Sidebar';
 import ThemeToggle from '@/components/ThemeToggle';
 import styles from '@/styles/Home.module.css';
 import { getAuthUrl, apiFetch, setOnUnauthorized } from '@/lib/api';
 import { getToken, getEmail, setAuth, clearAuth, isTokenExpired, getTokenExpiry } from '@/lib/auth';
+
+function redirectToAuthService() {
+  const { protocol, hostname } = window.location;
+  let authHost: string;
+  if (hostname.includes('bytecourier')) {
+    authHost = hostname.replace(/^sparkchat\./, 'auth.');
+  } else {
+    // Local dev
+    authHost = `${hostname}:3001`;
+  }
+  const redirectUri = encodeURIComponent(window.location.origin);
+  window.location.href = `${protocol}//${authHost}?redirect_uri=${redirectUri}`;
+}
 
 export default function App() {
   const [query, setQuery] = useState("");
@@ -39,6 +51,20 @@ export default function App() {
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+
+  // Check for token in URL fragment (returned from auth service)
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.includes('token=')) {
+      const params = new URLSearchParams(hash.substring(1));
+      const token = params.get('token');
+      const email = params.get('email');
+      if (token && email) {
+        setAuth(token, decodeURIComponent(email));
+        window.location.hash = '';
+      }
+    }
+  }, []);
 
   // Check for existing token on mount
   useEffect(() => {
@@ -65,11 +91,6 @@ export default function App() {
     };
     checkAuth();
   }, []);
-
-  const handleLoginSuccess = (token: string, email: string) => {
-    setAuth(token, email);
-    setIsAuthenticated(true);
-  };
 
   const handleLogout = useCallback(() => {
     clearAuth();
@@ -185,13 +206,10 @@ export default function App() {
     return null; // Avoid flash while checking token
   }
 
+  // Redirect to auth service if not authenticated
   if (!isAuthenticated) {
-    return (
-      <>
-        <ThemeToggle />
-        <LoginPage onLoginSuccess={handleLoginSuccess} />
-      </>
-    );
+    redirectToAuthService();
+    return null;
   }
 
   return (

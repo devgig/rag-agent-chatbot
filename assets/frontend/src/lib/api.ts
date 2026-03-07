@@ -128,23 +128,24 @@ export function getWebSocketUrl(path: string, token?: string | null): string {
 }
 
 /**
- * Get the auth service base URL
+ * Get the auth service base URL.
+ * Auth service is at auth.bytecourier.* with /api/svc path prefix.
  */
 export function getAuthUrl(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
   const authUrl = import.meta.env.VITE_AUTH_URL;
   if (authUrl) {
-    return `${authUrl}${path.startsWith('/') ? path : `/${path}`}`;
+    return `${authUrl}${normalized}`;
   }
-  // Derive from hostname: replace 'sparkchat' with 'auth'
   if (typeof window !== 'undefined') {
     const { protocol, hostname } = window.location;
     if (hostname.includes('bytecourier')) {
       const authHostname = hostname.replace(/^sparkchat\./, 'auth.');
-      return `${protocol}//${authHostname}${path.startsWith('/') ? path : `/${path}`}`;
+      return `${protocol}//${authHostname}/api/svc${normalized}`;
     }
-    // Local dev: same host, port 8001
-    return `${protocol}//${hostname}:8001${path.startsWith('/') ? path : `/${path}`}`;
+    // Local dev: auth service on port 8001
+    return `${protocol}//${hostname}:8001${normalized}`;
   }
-  return `http://localhost:8001${path.startsWith('/') ? path : `/${path}`}`;
+  return `http://localhost:8001${normalized}`;
 }
 
