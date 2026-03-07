@@ -98,33 +98,25 @@ export function getApiUrl(path: string): string {
 }
 
 /**
- * Get WebSocket URL for real-time communication
+ * Get WebSocket URL for real-time communication.
+ * Token is NOT included in the URL — it is sent as the first message
+ * after connection to avoid logging JWT in server/proxy access logs.
  * @param path - WebSocket path (e.g., '/ws/chat/123')
- * @returns WebSocket URL
+ * @returns WebSocket URL (without token)
  */
-export function getWebSocketUrl(path: string, token?: string | null): string {
-  // Ensure path starts with /
+export function getWebSocketUrl(path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
 
-  // Use configured backend WebSocket URL if available
   const backendWsUrl = import.meta.env.VITE_BACKEND_WS_URL;
-  let base: string;
   if (backendWsUrl) {
-    base = `${backendWsUrl}${normalizedPath}`;
-  } else {
-    const backendUrl = getBackendUrl();
-    const wsUrl = backendUrl
-      .replace('https://', 'wss://')
-      .replace('http://', 'ws://');
-    base = `${wsUrl}${normalizedPath}`;
+    return `${backendWsUrl}${normalizedPath}`;
   }
 
-  // Append token as query param if provided
-  if (token) {
-    const separator = base.includes('?') ? '&' : '?';
-    return `${base}${separator}token=${encodeURIComponent(token)}`;
-  }
-  return base;
+  const backendUrl = getBackendUrl();
+  const wsUrl = backendUrl
+    .replace('https://', 'wss://')
+    .replace('http://', 'ws://');
+  return `${wsUrl}${normalizedPath}`;
 }
 
 /**

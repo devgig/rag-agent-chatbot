@@ -248,12 +248,20 @@ export default function QuerySection({
           wsRef.current = null;
         }
 
-        // Include chatId as query param for Istio consistent hashing (session affinity)
-        const wsUrl = getWebSocketUrl(`/ws/chat/${currentChatId}?chatId=${currentChatId}`, getToken());
+        // Token is sent as first message after connection (not in URL)
+        const wsUrl = getWebSocketUrl(`/ws/chat/${currentChatId}?chatId=${currentChatId}`);
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
           if (isEffectActive && ws) {
+            // First-message auth: send JWT before any chat messages
+            const token = getToken();
+            if (!token) {
+              ws.close();
+              triggerUnauthorized();
+              return;
+            }
+            ws.send(JSON.stringify({ type: "auth", token }));
             wsRef.current = ws;
             reconnectAttempts.current = 0;
             setConnectionError(null);
@@ -268,6 +276,8 @@ export default function QuerySection({
           const text = msg.data ?? msg.token ?? "";
 
           switch (type) {
+            case "auth_ok":
+              break;
             case "history": {
               if (Array.isArray(msg.messages)) {
                 if (rafId.current) {
@@ -378,6 +388,12 @@ export default function QuerySection({
           if (event.code === 4001) {
             setConnectionError("Authentication failed. Please log in again.");
             triggerUnauthorized();
+            return;
+          }
+
+          // Connection limit reached — don't reconnect
+          if (event.code === 4029) {
+            setConnectionError("Too many active connections. Close other tabs and refresh.");
             return;
           }
 

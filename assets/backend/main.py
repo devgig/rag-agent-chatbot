@@ -24,11 +24,13 @@ This module provides the main HTTP API endpoints and WebSocket connections for:
 - Vector store operations
 """
 
+import asyncio
 import json
 import os
 import uuid
+from collections import defaultdict
 from contextlib import asynccontextmanager
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Set
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,7 +57,12 @@ MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
 MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 MAX_TOTAL_UPLOAD_BYTES = int(os.getenv("MAX_TOTAL_UPLOAD_MB", "200")) * 1024 * 1024
 MAX_WS_MESSAGE_BYTES = int(os.getenv("MAX_WS_MESSAGE_BYTES", str(64 * 1024)))  # 64KB
+MAX_WS_CONNECTIONS_PER_USER = int(os.getenv("MAX_WS_CONNECTIONS_PER_USER", "5"))
+WS_AUTH_TIMEOUT = int(os.getenv("WS_AUTH_TIMEOUT", "10"))  # seconds
 ALLOWED_UPLOAD_EXTENSIONS = {'.pdf', '.txt', '.docx', '.doc', '.md', '.rtf', '.csv', '.json', '.html'}
+
+# WebSocket connection tracking
+_ws_connections: Dict[str, Set[str]] = defaultdict(set)  # email -> set of connection IDs
 
 config_manager = ConfigManager(CONFIG_PATH)
 
@@ -138,37 +145,74 @@ async def health_check():
     return {"status": "healthy"}
 
 
-# --- WebSocket (token-protected) ---
+# --- WebSocket (first-message auth) ---
+
+def _validate_ws_origin(websocket: WebSocket) -> bool:
+    """Validate WebSocket Origin header against allowed origins."""
+    origin = websocket.headers.get("origin", "")
+    if not origin:
+        return True  # Allow missing origin (non-browser clients)
+    return any(origin == o for o in CORS_ORIGINS)
+
 
 @app.websocket("/ws/chat/{chat_id}")
 async def websocket_endpoint(websocket: WebSocket, chat_id: str):
     """WebSocket endpoint for real-time chat communication.
-    
-    Args:
-        websocket: WebSocket connection
-        chat_id: Unique chat identifier
-    """
-    logger.debug(f"WebSocket connection attempt for chat_id: {chat_id}")
 
-    # Validate JWT from query param
-    token = websocket.query_params.get("token")
-    if not token:
-        await websocket.close(code=4001, reason="Missing authentication token")
+    Uses first-message authentication: client connects, sends
+    {"type": "auth", "token": "<jwt>"} as the first message,
+    and receives {"type": "auth_ok"} on success.
+    """
+    # Validate origin header
+    if not _validate_ws_origin(websocket):
+        await websocket.close(code=4003, reason="Origin not allowed")
         return
-    user_email = verify_websocket_token(token)
-    if not user_email:
-        await websocket.close(code=4001, reason="Invalid or expired token")
-        return
+
+    conn_id = str(uuid.uuid4())
+    user_email: Optional[str] = None
 
     try:
         await websocket.accept()
-        logger.debug(f"WebSocket connection accepted for chat_id: {chat_id}")
-        
+
+        # Wait for auth message with timeout
+        try:
+            data = await asyncio.wait_for(
+                websocket.receive_text(),
+                timeout=WS_AUTH_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            await websocket.close(code=4001, reason="Authentication timeout")
+            return
+
+        try:
+            auth_msg = json.loads(data)
+        except json.JSONDecodeError:
+            await websocket.close(code=4001, reason="Invalid auth message")
+            return
+
+        if auth_msg.get("type") != "auth" or not auth_msg.get("token"):
+            await websocket.close(code=4001, reason="Expected auth message")
+            return
+
+        user_email = verify_websocket_token(auth_msg["token"])
+        if not user_email:
+            await websocket.close(code=4001, reason="Invalid or expired token")
+            return
+
+        # Enforce per-user connection limit
+        if len(_ws_connections[user_email]) >= MAX_WS_CONNECTIONS_PER_USER:
+            await websocket.close(code=4029, reason="Too many connections")
+            return
+
+        _ws_connections[user_email].add(conn_id)
+
+        await websocket.send_json({"type": "auth_ok"})
+        logger.debug(f"WebSocket authenticated for chat_id: {chat_id}")
+
         history_messages = await postgres_storage.get_messages(chat_id)
-        # Skip the first message (system prompt) using slicing instead of enumerate
         history = [postgres_storage._message_to_dict(msg) for msg in history_messages[1:]]
         await websocket.send_json({"type": "history", "messages": history})
-        
+
         while True:
             data = await websocket.receive_text()
             if len(data.encode("utf-8")) > MAX_WS_MESSAGE_BYTES:
@@ -183,15 +227,18 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
             except Exception as query_error:
                 logger.error(f"Error in agent.query: {str(query_error)}", exc_info=True)
                 await websocket.send_json({"type": "error", "content": "An error occurred processing your request"})
-        
+
             final_messages = await postgres_storage.get_messages(chat_id)
             final_history = [postgres_storage._message_to_dict(msg) for msg in final_messages[1:]]
             await websocket.send_json({"type": "history", "messages": final_history})
-            
+
     except WebSocketDisconnect:
         logger.debug(f"Client disconnected from chat {chat_id}")
     except Exception as e:
         logger.error(f"WebSocket error for chat {chat_id}: {str(e)}", exc_info=True)
+    finally:
+        if user_email:
+            _ws_connections[user_email].discard(conn_id)
 
 
 

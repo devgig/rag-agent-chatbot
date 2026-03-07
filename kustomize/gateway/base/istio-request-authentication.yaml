@@ -24,6 +24,4 @@ spec:
       fromHeaders:
         - name: Authorization
           prefix: "Bearer "
-      fromParams:
-        - token
       forwardOriginalToken: true
