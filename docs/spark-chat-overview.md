@@ -28,7 +28,7 @@ This project is designed to be customizable, serving as a framework that develop
   - **Configurable File Limits**: Environment-driven upload size limits for production deployments
 
 ## System Overview
-<img src="assets/system-diagram.png" alt="System Diagram" style="max-width:600px;border-radius:5px;justify-content:center">
+<img src="../assets/system-diagram.png" alt="System Diagram" style="max-width:600px;border-radius:5px;justify-content:center">
 
 ## Default Models
 | Model                | Quantization | Model Type | VRAM        |
@@ -44,12 +44,17 @@ This project is designed to be customizable, serving as a framework that develop
 ---
 
 ## Quick Start
-#### 1. Clone the repository and change directories to the rag-agent chatbot directory.
 
-#### 2. Deploy with Azure DevOps
-Push to the `main` branch to trigger the CI/CD pipeline, which builds the container images, pushes them to ACR, and deploys to Kubernetes via Kustomize.
+#### 1. Clone the repository
+```bash
+git clone <repository-url>
+cd rag-agent-chatbot
+```
 
-#### 4. Try it out
+#### 2. Deploy to Kubernetes
+Build container images, push to your registry, and apply Kustomize manifests. See the [README](../README.md) for detailed deployment instructions.
+
+#### 3. Try it out
 Upload a document using the "Upload Documents" button in the sidebar under "Context", select it in the "Select Sources" section, then ask questions about its content.
 
 ## Customizations
@@ -66,5 +71,5 @@ Upload a document using the "Upload Documents" button in the sidebar under "Cont
 
 ### Adding MCP servers and tools
 
-1. Add MCP servers under [backend/tools/mcp_servers](backend/tools/mcp_servers/) following existing examples.
-2. Register new servers in the server configs in [backend/client.py](backend/client.py).
+1. Add MCP servers under [assets/backend/tools/mcp_servers](../assets/backend/tools/mcp_servers/) following existing examples.
+2. Register new servers in the server configs in [assets/backend/client.py](../assets/backend/client.py).

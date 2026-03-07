@@ -1,6 +1,6 @@
 # Build and Deploy a RAG Agent Chatbot
 
-> Deploy a rag-agent chatbot system and chat with agents on your Spark
+> Deploy a RAG agent chatbot system and chat with agents on your Spark
 
 ## Table of Contents
 
@@ -10,16 +10,14 @@
   - [Document Ingestion Flow](#document-ingestion-flow)
   - [RAG Query Flow](#rag-query-flow)
   - [Component Details](#component-details)
-- [Instructions](#instructions)
+- [Getting Started](#getting-started)
 - [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Overview
 
-## Basic idea
-
-This playbook shows you how to use DGX Spark to prototype, build, and deploy a fully local RAG chatbot system.
+This project shows you how to use DGX Spark to prototype, build, and deploy a fully local RAG chatbot system.
 With 128GB of unified memory, DGX Spark can run LLMs locally with sufficient headroom for document retrieval workloads.
 
 At the core is a supervisor agent powered by gpt-oss-120B, orchestrating document retrieval through MCP (Model Context Protocol) tool servers.
@@ -36,7 +34,7 @@ flowchart TB
         UI[Web UI<br/>Port 3000]
     end
 
-    subgraph Backend["Backend (FastAPI + CORS)"]
+    subgraph Backend["Backend (FastAPI)"]
         API[REST API<br/>Port 8000]
         WSHandler[WebSocket Handler]
         Agent[LangGraph Agent]
@@ -151,23 +149,21 @@ sequenceDiagram
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | **Frontend** | React, Vite, Tailwind, nginx | Static web UI served by nginx |
-| **Backend** | FastAPI, LangGraph, CORS | API server, agent orchestration, WebSocket handler |
+| **Backend** | FastAPI, LangGraph | API server, agent orchestration, WebSocket handler |
 | **Vector Store** | Milvus | Document embeddings, similarity search |
 | **Conversations** | PostgreSQL | Chat history, document sources |
 | **Supervisor LLM** | vLLM (gpt-oss-120b) | Main reasoning, tool selection |
-| **Vision Model** | vLLM (Qwen2.5-VL) | Image understanding |
 | **Embeddings** | vLLM (Qwen3-Embedding) | Document vectorization |
 | **MCP Servers** | Python (stdio) | Tool implementations |
 
-## Prerequisites
+## Getting Started
 
-- Access to the Azure DevOps project and K3s cluster
-- Azure Container Registry (ACR) credentials stored in Azure Key Vault
+### Prerequisites
+
+- Kubernetes cluster (K3s or similar)
 - PostgreSQL and Milvus services running in the cluster
-
-## Deployment
-
-This project deploys via Azure DevOps CI/CD pipelines to a Kubernetes (K3s) cluster.
+- Container registry for storing built images
+- JWT-based auth service providing JWKS endpoint
 
 ### Step 1. Clone the repository
 
@@ -176,14 +172,25 @@ git clone <repository-url>
 cd rag-agent-chatbot
 ```
 
-### Step 2. Deploy
+### Step 2. Configure
 
-Push to the `main` branch to trigger the CI/CD pipelines. The pipelines will:
-1. Build and test the backend and frontend
-2. Build container images and push to Azure Container Registry
-3. Generate Kustomize manifests and deploy to the K3s cluster
+Set up your environment-specific Kustomize overlays. See [Kubernetes Deployment](docs/kubernetes-deployment.md) for details.
 
-### Step 3. Try it out
+### Step 3. Deploy
+
+Build container images for the backend and frontend, push to your container registry, and apply the Kustomize manifests:
+
+```bash
+# Build and push images
+docker build -t <registry>/rag-agent-chatbot-backend:latest assets/backend
+docker build -t <registry>/rag-agent-chatbot-frontend:latest assets/frontend
+
+# Deploy
+kubectl apply -k kustomize/backend/overlays/dev
+kubectl apply -k kustomize/frontend/overlays/dev
+```
+
+### Step 4. Try it out
 
 Upload a document using the "Upload Documents" button in the sidebar under "Context", select it in the "Select Sources" section, then ask questions about its content.
 
@@ -191,5 +198,6 @@ Upload a document using the "Upload Documents" button in the sidebar under "Cont
 
 | Symptom | Cause | Fix |
 |---------|--------|-----|
-| `ImagePullBackOff` | ACR ExternalSecret not synced | Check `kubectl get externalsecret -n rag-agent` and verify Key Vault secrets exist |
+| `ImagePullBackOff` | Container registry credentials not configured | Check image pull secrets in the namespace |
 | Pod not ready | Backend dependencies (PostgreSQL, Milvus) unreachable | Check pod logs with `kubectl logs -l app=rag-agent-backend -n rag-agent` |
+| WebSocket errors | Auth token expired or missing | Check browser console for 401 responses |

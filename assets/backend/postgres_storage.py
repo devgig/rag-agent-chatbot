@@ -100,7 +100,7 @@ class PostgreSQLConversationStorage:
         port: int = 5432,
         database: str = 'chatbot',
         user: str = 'chatbot_user',
-        password: str = 'chatbot_password',
+        password: str = '',
         pool_size: int = 10,
         cache_ttl: int = 300
     ):

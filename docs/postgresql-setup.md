@@ -1,10 +1,12 @@
 # PostgreSQL Setup Guide
 
-This project uses an existing PostgreSQL installation deployed via Helm chart in the `postgres-system` namespace.
+This project uses PostgreSQL for storing chat conversations and document source metadata.
 
-## Helm Chart Configuration
+## Deployment Options
 
-The PostgreSQL instance is deployed using the Bitnami Helm chart:
+### Option 1: Helm Chart (Kubernetes)
+
+Deploy using the Bitnami Helm chart:
 
 ```yaml
 helmCharts:
@@ -16,34 +18,36 @@ helmCharts:
     valuesFile: values.yaml
 ```
 
-## Database Setup
+### Option 2: Docker (Local Development)
 
-After the PostgreSQL Helm chart is deployed, you need to create the database and user for the rag-agent chatbot application.
+```bash
+docker run -d --name postgres \
+  -e POSTGRES_DB=chatbot \
+  -e POSTGRES_USER=chatbot_user \
+  -e POSTGRES_PASSWORD=your-secure-password-here \
+  -p 5432:5432 postgres:15
+```
+
+## Database Setup
 
 ### 1. Connect to PostgreSQL
 
-Connect to the PostgreSQL pod:
-
 ```bash
-kubectl exec -it -n postgres-system postgresql-0 -- bash
+# Kubernetes
+kubectl exec -it -n postgres-system postgresql-0 -- psql -U postgres
+
+# Docker / Local
+psql -U postgres -h localhost
 ```
 
 ### 2. Create Database and User
-
-Connect to PostgreSQL as the postgres superuser:
-
-```bash
-psql -U postgres
-```
-
-Run the following SQL commands:
 
 ```sql
 -- Create the chatbot database
 CREATE DATABASE chatbot;
 
 -- Create the chatbot user
-CREATE USER chatbot_user WITH PASSWORD 'your-secure-password-here';
+CREATE USER chatbot_user WITH PASSWORD '<your-secure-password>';
 
 -- Grant privileges to the user
 GRANT ALL PRIVILEGES ON DATABASE chatbot TO chatbot_user;
@@ -53,73 +57,38 @@ GRANT ALL PRIVILEGES ON DATABASE chatbot TO chatbot_user;
 
 -- Grant schema privileges
 GRANT ALL ON SCHEMA public TO chatbot_user;
-
--- Exit psql
-\q
 ```
 
-### 3. Store Credentials in Azure Key Vault
+### 3. Configure Credentials
 
-The application uses External Secrets Operator to retrieve PostgreSQL credentials from Azure Key Vault.
+Store credentials securely using your preferred secrets management solution (e.g., Kubernetes Secrets, External Secrets Operator, environment variables).
 
-Create the password secret in Azure Key Vault:
+The backend expects these environment variables:
 
-```bash
-az keyvault secret set \
-  --vault-name <your-keyvault-name> \
-  --name rag-agent-postgresql-password \
-  --value "your-secure-password-here"
-```
+| Variable | Description |
+|----------|-------------|
+| `POSTGRES_HOST` | PostgreSQL hostname |
+| `POSTGRES_DB` | Database name (`chatbot`) |
+| `POSTGRES_USER` | Database user (`chatbot_user`) |
+| `POSTGRES_PASSWORD` | Database password |
 
-### 4. Verify External Secret
-
-The backend deployment includes an ExternalSecret resource that pulls the password from Azure Key Vault:
-
-- **Secret Name**: `postgres-credentials`
-- **Key Vault Secret**: `rag-agent-postgresql-password`
-- **Database**: `chatbot`
-- **Username**: `chatbot_user`
-
-Verify the ExternalSecret is syncing correctly:
-
-```bash
-kubectl get externalsecret -n rag-agent postgres-external-secret
-kubectl get secret -n rag-agent postgres-credentials
-```
-
-## Connection Details
-
-The backend application connects to PostgreSQL using:
-
-- **Host**: `postgresql.postgres-system.svc.cluster.local`
-- **Database**: `chatbot` (from secret)
-- **Username**: `chatbot_user` (from secret)
-- **Password**: Retrieved from Azure Key Vault via ExternalSecret
-- **Port**: 5432 (default)
+See `kustomize/backend/base/deployment.yaml` for the Kubernetes deployment configuration.
 
 ## Database Schema
 
-The application will automatically create the necessary database schema on first run. Ensure the `chatbot_user` has sufficient privileges to create tables and indexes.
+The application automatically creates the necessary tables and indexes on first run. Ensure the database user has sufficient privileges to create tables.
 
 ## Troubleshooting
 
 ### Test Database Connection
 
-From within a pod in the cluster:
-
 ```bash
+# From within the cluster
 kubectl run -it --rm psql-test --image=postgres:15-alpine --restart=Never -- \
-  psql -h postgresql.postgres-system.svc.cluster.local -U chatbot_user -d chatbot
-```
+  psql -h <postgres-host> -U chatbot_user -d chatbot
 
-### Check External Secret Status
-
-```bash
-# Check ExternalSecret
-kubectl describe externalsecret -n rag-agent postgres-external-secret
-
-# Check if secret was created
-kubectl get secret -n rag-agent postgres-credentials -o yaml
+# Local
+psql -h localhost -U chatbot_user -d chatbot
 ```
 
 ### Check Backend Logs
@@ -133,5 +102,4 @@ kubectl logs -n rag-agent -l app=rag-agent-backend --tail=50
 - Never commit database passwords to version control
 - Use strong, randomly generated passwords
 - Rotate passwords regularly
-- Ensure the ClusterSecretStore is properly configured to access Azure Key Vault
-- Limit database user privileges to only what's necessary for the application
+- Limit database user privileges to only what's necessary

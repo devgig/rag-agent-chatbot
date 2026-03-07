@@ -15,10 +15,10 @@ The backend handles:
 
 JWT authentication is enforced at two layers:
 
-1. **Istio ingress gateway** (primary) — `RequestAuthentication` validates JWTs via the auth service JWKS endpoint before traffic enters the mesh. `AuthorizationPolicy` requires valid tokens for all `/api/backend-svc` paths except `/api/backend-svc/health` and `/api/backend-svc/metrics`. The backend is served behind the frontend's hostname (`sparkchat.bytecourier.*`) at the `/api/backend-svc` path prefix, which the HTTPRoute's URLRewrite strips before forwarding to the backend service — making frontend and backend same-origin and eliminating CORS in production.
+1. **Istio ingress gateway** (primary) — `RequestAuthentication` validates JWTs via the auth service JWKS endpoint before traffic enters the mesh. `AuthorizationPolicy` requires valid tokens for all `/api/backend-svc` paths except health and metrics. The backend is served behind the frontend's hostname at the `/api/backend-svc` path prefix, which the HTTPRoute's URLRewrite strips before forwarding to the backend service — making frontend and backend same-origin and eliminating CORS in production.
 2. **Backend `auth.py`** (defense-in-depth) — validates JWT on each request, extracts user identity for chat history isolation.
 
-See `kustomize/gateway/base/istio-request-authentication.yaml` and `kustomize/gateway/base/istio-authorization-policy.yaml`.
+See `kustomize/gateway/base/istio-request-authentication.yaml` and `kustomize/gateway/base/istio-authorization-policy.yaml`. The auth service itself is maintained in a [separate repository](https://github.com/your-org/auth-service).
 
 ## Architecture
 
@@ -123,7 +123,7 @@ docker run -d --name milvus \
 | `POSTGRES_PORT` | PostgreSQL port | `5432` |
 | `POSTGRES_DB` | Database name | `chatbot` |
 | `POSTGRES_USER` | Database user | `chatbot_user` |
-| `POSTGRES_PASSWORD` | Database password | `chatbot_password` |
+| `POSTGRES_PASSWORD` | Database password | (required) |
 | `MILVUS_ADDRESS` | Milvus connection URI | `tcp://milvus:19530` |
 | `MODELS` | Comma-separated model names | (required) |
 | `CONFIG_PATH` | Runtime config file path | `./config.json` |
