@@ -1,20 +1,32 @@
 const TOKEN_KEY = "spark_chat_token";
 const EMAIL_KEY = "spark_chat_email";
 
+// In-memory primary storage — not accessible via devtools Storage tab
+let _memToken: string | null = null;
+let _memEmail: string | null = null;
+
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return _memToken ?? sessionStorage.getItem(TOKEN_KEY);
 }
 
 export function getEmail(): string | null {
-  return localStorage.getItem(EMAIL_KEY);
+  return _memEmail ?? sessionStorage.getItem(EMAIL_KEY);
 }
 
 export function setAuth(token: string, email: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(EMAIL_KEY, email);
+  _memToken = token;
+  _memEmail = email;
+  // sessionStorage survives page refresh but clears on tab close
+  sessionStorage.setItem(TOKEN_KEY, token);
+  sessionStorage.setItem(EMAIL_KEY, email);
 }
 
 export function clearAuth(): void {
+  _memToken = null;
+  _memEmail = null;
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(EMAIL_KEY);
+  // Clean up any legacy localStorage entries
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(EMAIL_KEY);
 }
