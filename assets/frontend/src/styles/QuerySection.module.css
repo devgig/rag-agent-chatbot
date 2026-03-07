@@ -664,8 +664,6 @@
   cursor: not-allowed;
 }
 
-}
-
 /* Adding styles for tool calling interface */
 .toolCallingWrapper {
   display: flex;
