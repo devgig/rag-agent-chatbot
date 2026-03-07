@@ -707,10 +707,21 @@ export default function QuerySection({
             }}
           >
             <div className={`${styles.message} ${styles.assistantMessage}`}>
-              <div className={styles.typingIndicator} role="status" aria-label="Assistant is typing">
-                <span></span>
-                <span></span>
-                <span></span>
+              <div className={styles.typingIndicator} role="status" aria-label="Assistant is thinking">
+                <svg className={styles.starburstSpinner} viewBox="0 0 128 128" width="28" height="28">
+                  <defs>
+                    <linearGradient id="starburst-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#f59e0b"/>
+                      <stop offset="100%" stopColor="#ef4444"/>
+                    </linearGradient>
+                  </defs>
+                  <g transform="translate(64,64)">
+                    <polygon className={styles.starburstOuter} points="0,-52 8,-18 40,-36 18,-8 52,0 18,8 40,36 8,18 0,52 -8,18 -40,36 -18,8 -52,0 -18,-8 -40,-36 -8,-18" fill="url(#starburst-grad)"/>
+                    <circle cx="0" cy="0" r="14" fill="#fbbf24" className={styles.starburstMiddle}/>
+                    <circle cx="0" cy="0" r="8" fill="#fef3c7" className={styles.starburstCore}/>
+                  </g>
+                </svg>
+                <span className={styles.thinkingText}>Thinking</span>
               </div>
             </div>
           </div>

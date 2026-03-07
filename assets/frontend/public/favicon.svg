@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="60" fill="#1e1e2e"/>
+  <g transform="translate(64,64)">
+    <!-- 12-point starburst -->
+    <polygon points="0,-52 8,-18 40,-36 18,-8 52,0 18,8 40,36 8,18 0,52 -8,18 -40,36 -18,8 -52,0 -18,-8 -40,-36 -8,-18" fill="url(#g)"/>
+    <!-- Inner glow -->
+    <circle cx="0" cy="0" r="14" fill="#fbbf24" opacity="0.9"/>
+    <circle cx="0" cy="0" r="8" fill="#fef3c7"/>
+  </g>
+</svg>

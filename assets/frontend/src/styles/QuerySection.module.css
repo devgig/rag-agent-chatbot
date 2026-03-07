@@ -512,8 +512,9 @@
 
 .typingIndicator {
   display: flex;
-  gap: 4px;
-  padding: 12px 16px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
   background-color: white;
   border-radius: 12px;
   margin-right: auto;
@@ -530,30 +531,52 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.typingIndicator span {
-  height: 8px;
-  width: 8px;
-  margin: 0 2px;
-  background-color: #999;
-  border-radius: 50%;
-  display: inline-block;
-  animation: bounce 1.4s infinite ease-in-out both;
+.starburstSpinner {
+  animation: starburstSpin 2.5s linear infinite;
 }
 
-.typingIndicator span:nth-child(1) {
-  animation-delay: -0.32s;
+.starburstOuter {
+  transform-origin: center;
+  animation: starburstPulse 1.8s ease-in-out infinite;
 }
 
-.typingIndicator span:nth-child(2) {
-  animation-delay: -0.16s;
+.starburstMiddle {
+  animation: starburstGlow 1.8s ease-in-out infinite;
 }
 
-@keyframes bounce {
-  0%, 80%, 100% { 
-    transform: scale(0);
-  } 40% { 
-    transform: scale(1.0);
-  }
+.starburstCore {
+  animation: starburstGlow 1.8s ease-in-out infinite 0.2s;
+}
+
+.thinkingText {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #9ca3af;
+  animation: thinkingFade 1.8s ease-in-out infinite;
+}
+
+:global(.dark) .thinkingText {
+  color: #6b7280;
+}
+
+@keyframes starburstSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes starburstPulse {
+  0%, 100% { opacity: 0.7; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes starburstGlow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes thinkingFade {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
 }
 
 @media (max-width: 768px) {
@@ -641,24 +664,6 @@
   cursor: not-allowed;
 }
 
-.dot {
-  width: 8px;
-  height: 8px;
-  background-color: #0F71DA;
-  border-radius: 50%;
-  animation: bounce 1.4s infinite ease-in-out;
-}
-
-:global(.dark) .dot {
-  background-color: #0F71DA;
-}
-
-.dot:nth-child(1) { animation-delay: -0.32s; }
-.dot:nth-child(2) { animation-delay: -0.16s; }
-
-@keyframes bounce {
-  0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1); }
 }
 
 /* Adding styles for tool calling interface */
