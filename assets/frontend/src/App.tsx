@@ -29,8 +29,8 @@ function redirectToAuthService() {
   if (hostname.includes('bytecourier')) {
     authHost = hostname.replace(/^sparkchat\./, 'auth.');
   } else {
-    // Local dev
-    authHost = `${hostname}:3001`;
+    // Local dev: use auth.bytecourier.local
+    authHost = 'auth.bytecourier.local';
   }
   const redirectUri = encodeURIComponent(window.location.origin);
   window.location.href = `${protocol}//${authHost}?redirect_uri=${redirectUri}`;

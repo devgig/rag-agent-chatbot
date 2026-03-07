@@ -143,9 +143,9 @@ export function getAuthUrl(path: string): string {
       const authHostname = hostname.replace(/^sparkchat\./, 'auth.');
       return `${protocol}//${authHostname}/api/svc${normalized}`;
     }
-    // Local dev: auth service on port 8001
-    return `${protocol}//${hostname}:8001${normalized}`;
+    // Local dev: use auth.bytecourier.local
+    return `${protocol}//auth.bytecourier.local/api/svc${normalized}`;
   }
-  return `http://localhost:8001${normalized}`;
+  return `http://auth.bytecourier.local/api/svc${normalized}`;
 }
 
