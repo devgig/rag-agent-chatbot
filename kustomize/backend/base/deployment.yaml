@@ -79,7 +79,7 @@ spec:
         - name: CONFIG_PATH
           value: "/config/config.json"
         - name: JWKS_URL
-          value: "http://auth.bytecourier.local/api/svc/.well-known/jwks.json"
+          value: "http://auth.auth-service.svc.cluster.local:8000/.well-known/jwks.json"
         volumeMounts:
         - name: tmp-volume
           mountPath: /tmp
