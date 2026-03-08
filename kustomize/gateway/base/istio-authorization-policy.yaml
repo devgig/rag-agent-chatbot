@@ -21,11 +21,16 @@ spec:
         - operation:
             notPaths:
               - /api/backend-svc*
-    # Allow unauthenticated access to health check only
+    # Allow unauthenticated access to health check
     - to:
         - operation:
             paths:
               - /api/backend-svc/health
+    # Allow unauthenticated WebSocket upgrade (backend validates JWT via first-message auth)
+    - to:
+        - operation:
+            paths:
+              - /api/backend-svc/ws/*
     # Authenticated access to all other backend endpoints
     - from:
         - source:
