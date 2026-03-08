@@ -52,44 +52,31 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
 
-  // Check for token in URL fragment (returned from auth service)
+  // Authenticate: accept fresh token from URL hash, or check stored token locally
   useEffect(() => {
+    // Fresh token in URL hash (just returned from auth service)
     const hash = window.location.hash;
     if (hash.includes('token=')) {
       const params = new URLSearchParams(hash.substring(1));
       const token = params.get('token');
       const email = params.get('email');
-      if (token && email) {
+      if (token && email && !isTokenExpired(token)) {
         setAuth(token, decodeURIComponent(email));
-        window.location.hash = '';
-      }
-    }
-  }, []);
-
-  // Check for existing token on mount
-  useEffect(() => {
-    const checkAuth = async () => {
-      const token = getToken();
-      if (!token || isTokenExpired(token)) {
-        clearAuth();
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+        setIsAuthenticated(true);
         setAuthChecked(true);
         return;
       }
-      try {
-        const res = await fetch(getAuthUrl("/auth/me"), {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          setIsAuthenticated(true);
-        } else {
-          clearAuth();
-        }
-      } catch {
-        clearAuth();
-      }
-      setAuthChecked(true);
-    };
-    checkAuth();
+    }
+
+    // Stored token — validate locally (backend validates via JWKS on API calls)
+    const token = getToken();
+    if (token && !isTokenExpired(token)) {
+      setIsAuthenticated(true);
+    } else {
+      clearAuth();
+    }
+    setAuthChecked(true);
   }, []);
 
   const handleLogout = useCallback(() => {
