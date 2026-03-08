@@ -20,7 +20,8 @@ steps:
 
       git remote add github https://$RAG_AGENT_CHATBOT_PAT@github.com/devgig/rag-agent-chatbot.git
 
-      git push github --force --all
+      # Azure DevOps checks out in detached HEAD, so push HEAD explicitly to main
+      git push github HEAD:refs/heads/main --force
       git push github --force --tags
     displayName: 'Mirror to GitHub'
     env:
