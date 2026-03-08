@@ -20,7 +20,8 @@ steps:
 
       git remote add github https://$RAG_AGENT_CHATBOT_PAT@github.com/devgig/rag-agent-chatbot.git
 
-      git push github --mirror
+      git push github --force --all
+      git push github --force --tags
     displayName: 'Mirror to GitHub'
     env:
       RAG_AGENT_CHATBOT_PAT: $(rag-agent-chatbot-pat)
