@@ -18,10 +18,10 @@ steps:
       git config --global user.email "devops-mirror@bytecourier.com"
       git config --global user.name "Azure DevOps Mirror"
 
-      git remote add github https://$(GITHUB_PAT)@github.com/devgig/rag-agent-chatbot.git
+      git remote add github https://$(RAG_AGENT_CHATBOT_PAT)@github.com/devgig/rag-agent-chatbot.git
 
       git push github --all
       git push github --tags
     displayName: 'Mirror to GitHub'
     env:
-      GITHUB_PAT: $(GITHUB_PAT)
+      RAG_AGENT_CHATBOT_PAT: $(rag-agent-chatbot-pat)
