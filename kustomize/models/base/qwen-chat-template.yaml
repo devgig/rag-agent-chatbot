@@ -10,7 +10,7 @@ metadata:
   name: qwen-chat-template
   namespace: rag-agent
   labels:
-    app: gpt-oss-120b
+    app: qwen25-vl-7b
     component: model-inference
 data:
   chat_template.jinja: |

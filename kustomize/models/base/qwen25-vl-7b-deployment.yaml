@@ -3,18 +3,18 @@
 # Qwen2.5-VL-7B-Instruct-AWQ (4-bit quantized) for text, images, RAG, and code.
 # AWQ quantization: ~3x smaller weights, faster loading, minimal quality loss.
 #
-# Backend connects via: gpt-oss-120b.rag-agent.svc.cluster.local:8000
+# Backend connects via: qwen25-vl-7b.rag-agent.svc.cluster.local:8000
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: gpt-oss-120b
+  name: qwen25-vl-7b
   namespace: rag-agent
   labels:
-    app: gpt-oss-120b
-    workspace: gpt-oss-120b
+    app: qwen25-vl-7b
+    workspace: qwen25-vl-7b
     component: model-inference
-    managed-by: kaito
+    managed-by: kustomize
 spec:
   replicas: 1
   strategy:
@@ -22,12 +22,12 @@ spec:
   progressDeadlineSeconds: 2400
   selector:
     matchLabels:
-      workspace: gpt-oss-120b
+      workspace: qwen25-vl-7b
   template:
     metadata:
       labels:
-        workspace: gpt-oss-120b
-        app: gpt-oss-120b
+        workspace: qwen25-vl-7b
+        app: qwen25-vl-7b
         istio.io/dataplane-mode: none      # Skips istio-cni iptables setup — fixes probe timeouts
       annotations:
         ambient.istio.io/redirection: disabled  # Also disables ztunnel redirection
@@ -45,7 +45,7 @@ spec:
         command: ["vllm", "serve"]
         args:
         - "Qwen/Qwen2.5-VL-7B-Instruct-AWQ"
-        - "--served-model-name=gpt-oss-120b"
+        - "--served-model-name=qwen25-vl-7b"
         - "--tensor-parallel-size=1"
         - "--gpu-memory-utilization=0.90"
         - "--max-model-len=16384"

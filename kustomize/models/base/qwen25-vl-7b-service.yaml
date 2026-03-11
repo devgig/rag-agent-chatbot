@@ -1,19 +1,19 @@
 # Service for GPU Model Inference
 # ================================
 # ClusterIP service exposing vLLM OpenAI-compatible API
-# Backend connects via: gpt-oss-120b.rag-agent.svc.cluster.local:8000
+# Backend connects via: qwen25-vl-7b.rag-agent.svc.cluster.local:8000
 
 apiVersion: v1
 kind: Service
 metadata:
-  name: gpt-oss-120b
+  name: qwen25-vl-7b
   namespace: rag-agent
   labels:
-    app: gpt-oss-120b
-    managed-by: kaito
+    app: qwen25-vl-7b
+    managed-by: kustomize
 spec:
   selector:
-    workspace: gpt-oss-120b
+    workspace: qwen25-vl-7b
   ports:
   - port: 8000
     targetPort: 8000

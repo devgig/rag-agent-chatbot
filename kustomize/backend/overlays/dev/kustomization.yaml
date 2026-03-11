@@ -22,5 +22,5 @@ replicas:
 configMapGenerator:
 - name: backend-config
   literals:
-  - MODELS=gpt-oss-120b
+  - MODELS=qwen25-vl-7b
   - LOG_LEVEL=DEBUG

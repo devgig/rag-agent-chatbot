@@ -13,7 +13,7 @@ metadata:
   name: model-cache-pvc
   namespace: rag-agent
   labels:
-    app: gpt-oss-120b
+    app: qwen25-vl-7b
     component: model-inference
 spec:
   accessModes:

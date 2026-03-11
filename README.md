@@ -20,7 +20,7 @@
 This project shows you how to use DGX Spark to prototype, build, and deploy a fully local RAG chatbot system.
 With 128GB of unified memory, DGX Spark can run LLMs locally with sufficient headroom for document retrieval workloads.
 
-At the core is a supervisor agent powered by gpt-oss-120B, orchestrating document retrieval through MCP (Model Context Protocol) tool servers.
+At the core is a supervisor agent powered by Qwen2.5-VL-7B, orchestrating document retrieval through MCP (Model Context Protocol) tool servers.
 The system focuses on retrieval-augmented generation (RAG), enabling users to upload documents and ask questions grounded in their content.
 Thanks to DGX Spark's out-of-the-box support for popular AI frameworks and libraries, development and prototyping are fast and frictionless.
 
@@ -52,7 +52,7 @@ flowchart TB
     end
 
     subgraph Models["Model Servers"]
-        LLM[gpt-oss-120b<br/>Supervisor LLM]
+        LLM[Qwen2.5-VL-7B<br/>Supervisor LLM]
         Embed[Qwen3-Embedding<br/>Embeddings]
     end
 
@@ -152,7 +152,7 @@ sequenceDiagram
 | **Backend** | FastAPI, LangGraph | API server, agent orchestration, WebSocket handler |
 | **Vector Store** | Milvus | Document embeddings, similarity search |
 | **Conversations** | PostgreSQL | Chat history, document sources |
-| **Supervisor LLM** | vLLM (gpt-oss-120b) | Main reasoning, tool selection |
+| **Supervisor LLM** | vLLM (Qwen2.5-VL-7B-AWQ) | Main reasoning, tool selection |
 | **Embeddings** | vLLM (Qwen3-Embedding) | Document vectorization |
 | **MCP Servers** | Python (stdio) | Tool implementations |
 

@@ -12,7 +12,7 @@ Strategies for sharing a single NVIDIA DGX Spark (Blackwell GB10, 128GB unified 
 | Current Workload | Qwen2.5-VL-7B-Instruct via vLLM (90% GPU mem utilization) |
 | GPU Resource | `nvidia.com/gpu: 1` — exclusive allocation to one pod |
 
-**The problem:** Kubernetes allocates the GPU as a single indivisible resource. The current `gpt-oss-120b` deployment claims the entire GPU, blocking any other pod from scheduling GPU workloads.
+**The problem:** Kubernetes allocates the GPU as a single indivisible resource. The current `qwen25-vl-7b` deployment claims the entire GPU, blocking any other pod from scheduling GPU workloads.
 
 ---
 
@@ -69,7 +69,7 @@ Allocatable:
 **Update your deployments** to request a fraction:
 
 ```yaml
-# gpt-oss-deployment.yaml — reduce from 1 to 1 virtual GPU slice
+# qwen25-vl-7b-deployment.yaml — reduce from 1 to 1 virtual GPU slice
 resources:
   limits:
     nvidia.com/gpu: 1   # now 1 of 4 slices, not 1 of 1
@@ -369,7 +369,7 @@ spec:
             - containerPort: 8000
           env:
             - name: LLM_ENDPOINT
-              value: "http://gpt-oss-120b.rag-agent.svc.cluster.local:8000"
+              value: "http://qwen25-vl-7b.rag-agent.svc.cluster.local:8000"
             - name: PEER_AGENTS
               value: "http://agent-executor.rag-agent.svc.cluster.local:8000,http://agent-reviewer.rag-agent.svc.cluster.local:8000"
           resources:
@@ -397,7 +397,7 @@ from langchain_openai import ChatOpenAI
 
 # All agents share the same GPU-backed LLM endpoint
 llm = ChatOpenAI(
-    base_url="http://gpt-oss-120b.rag-agent.svc.cluster.local:8000/v1",
+    base_url="http://qwen25-vl-7b.rag-agent.svc.cluster.local:8000/v1",
     model="Qwen/Qwen2.5-VL-7B-Instruct",
 )
 
@@ -464,7 +464,6 @@ Each MCP server is a lightweight CPU pod. Only the LLM inference touches the GPU
 | **Unified Memory** | The 128GB is shared between CPU and GPU. `nvidia-smi` memory reporting may differ from discrete GPU cards. Monitor with `tegrastats` or `/proc/driver/nvidia/gpus/*/information`. |
 | **ARM64 Considerations** | KServe and Knative have ARM64 images available but may require manual image overrides for some components. Test in a staging namespace first. |
 | **Istio Ambient + KServe** | KServe's webhook and data plane components may need Istio sidecar exemptions (similar to your existing `ambient.istio.io/redirection: disabled` annotations on GPU pods). |
-| **KAITO Alternative** | If KAITO resolves its NodeClaim limitation for BYO GPU nodes, it can manage model lifecycle. Monitor [KAITO releases](https://github.com/kaito-project/kaito) for updates. |
 | **vLLM Prefix Caching** | Already enabled — this helps multi-agent scenarios where agents share system prompts. Repeated prefixes are cached on GPU, reducing latency for subsequent agent calls. |
 
 ---

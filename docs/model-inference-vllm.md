@@ -7,17 +7,17 @@ Kubernetes manifests for GPU-accelerated LLM inference using vLLM on the NVIDIA 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ Backend (rag-agent-backend)                             │
-│ http://gpt-oss-120b:8000/v1                             │
+│ http://qwen25-vl-7b:8000/v1                             │
 └────────────────┬────────────────────────────────────────┘
                  │
                  ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Service: gpt-oss-120b (ClusterIP:8000)                  │
+│ Service: qwen25-vl-7b (ClusterIP:8000)                  │
 └────────────────┬────────────────────────────────────────┘
                  │
                  ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Deployment: gpt-oss-120b                                │
+│ Deployment: qwen25-vl-7b                                │
 │ - Image: nvcr.io/nvidia/vllm:25.11-py3                  │
 │ - Model: Qwen/Qwen2.5-VL-7B-Instruct-AWQ               │
 │ - Quantization: AWQ-Marlin (4-bit)                       │
@@ -74,15 +74,14 @@ The switch from the full-precision model to AWQ 4-bit quantization dramatically 
 
 | File | Purpose |
 |------|---------|
-| `gpt-oss-deployment.yaml` | vLLM inference deployment (AWQ-Marlin quantized) |
-| `kaito-service.yaml` | ClusterIP service exposing port 8000 |
+| `qwen25-vl-7b-deployment.yaml` | vLLM inference deployment (AWQ-Marlin quantized) |
+| `qwen25-vl-7b-service.yaml` | ClusterIP service exposing port 8000 |
 | `model-cache-pvc.yaml` | 100Gi PersistentVolumeClaim for HuggingFace model cache |
 | `qwen-chat-template.yaml` | ConfigMap with Jinja chat template for Qwen |
 | `qwen3-embedding-deployment.yaml` | Embedding service (CPU-based, separate from inference) |
 | `qwen3-embedding-service.yaml` | ClusterIP service for embedding endpoint |
 | `hf-external-secret.yaml` | HuggingFace token from Azure Key Vault |
 | `kustomization.yaml` | Kustomize configuration |
-| `kaito-workspace.yaml` | KAITO Workspace (reference only, not active) |
 
 ### Overlays
 
@@ -105,12 +104,12 @@ Automatically deployed when changes are pushed to `kustomize/models/**`:
 kubectl apply -k kustomize/models/overlays/dev
 
 # Check status
-kubectl get pods -n rag-agent -l app=gpt-oss-120b
-kubectl logs -n rag-agent -l app=gpt-oss-120b -f
+kubectl get pods -n rag-agent -l app=qwen25-vl-7b
+kubectl logs -n rag-agent -l app=qwen25-vl-7b -f
 
 # Test API endpoint
 kubectl exec -it -n rag-agent deployment/rag-agent-backend -- \
-  curl http://gpt-oss-120b:8000/v1/models
+  curl http://qwen25-vl-7b:8000/v1/models
 ```
 
 ## Probe Configuration
@@ -132,7 +131,7 @@ Backend connects using the served model name as hostname:
 ```python
 # assets/backend/agent.py
 base_url=f"http://{self.current_model}:8000/v1"
-# Resolves to: http://gpt-oss-120b.rag-agent.svc.cluster.local:8000
+# Resolves to: http://qwen25-vl-7b.rag-agent.svc.cluster.local:8000
 ```
 
 No backend changes needed when switching quantization or model variants.
@@ -160,17 +159,17 @@ Unauthenticated users are blocked at the ingress gateway before reaching the bac
 
 ```bash
 # Pod status
-kubectl get pods -n rag-agent -l app=gpt-oss-120b
+kubectl get pods -n rag-agent -l app=qwen25-vl-7b
 
 # Logs
-kubectl logs -n rag-agent -l app=gpt-oss-120b --tail=100
+kubectl logs -n rag-agent -l app=qwen25-vl-7b --tail=100
 
 # Service endpoints
-kubectl get endpoints gpt-oss-120b -n rag-agent
+kubectl get endpoints qwen25-vl-7b -n rag-agent
 
 # vLLM metrics (Prometheus-compatible)
 kubectl exec -it -n rag-agent deployment/rag-agent-backend -- \
-  curl http://gpt-oss-120b:8000/metrics
+  curl http://qwen25-vl-7b:8000/metrics
 ```
 
 ## Switching Models
@@ -180,7 +179,7 @@ Update the model in `gpt-oss-deployment.yaml`:
 ```yaml
 args:
 - "organization/model-name"
-- "--served-model-name=gpt-oss-120b"   # Keep service name stable
+- "--served-model-name=qwen25-vl-7b"   # Keep service name stable
 - "--quantization=awq_marlin"           # If using AWQ variant
 - "--dtype=half"                        # Required for AWQ
 - "--max-model-len=CONTEXT_LENGTH"
@@ -189,10 +188,10 @@ args:
 After switching models, delete and recreate the PVC to clear the old cache:
 
 ```bash
-kubectl scale deployment gpt-oss-120b -n rag-agent --replicas=0
+kubectl scale deployment qwen25-vl-7b -n rag-agent --replicas=0
 kubectl delete pvc model-cache-pvc -n rag-agent
 kubectl apply -f kustomize/models/base/model-cache-pvc.yaml
-kubectl scale deployment gpt-oss-120b -n rag-agent --replicas=1
+kubectl scale deployment qwen25-vl-7b -n rag-agent --replicas=1
 ```
 
 ## GPU Configuration

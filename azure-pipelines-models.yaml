@@ -73,7 +73,7 @@ stages:
     displayName: Validate YAML syntax
     steps:
       - task: Bash@3
-        displayName: Validate KAITO manifests with kustomize
+        displayName: Validate model manifests with kustomize
         inputs:
           targetType: 'inline'
           script: |

@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-Spark Chat is a fully local RAG-powered chatbot built for DGX Spark. It uses a supervisor agent powered by GPT-OSS-120B to orchestrate document retrieval and question-answering through MCP (Model Context Protocol) tool servers.
+Spark Chat is a fully local RAG-powered chatbot built for DGX Spark. It uses a supervisor agent powered by Qwen2.5-VL-7B to orchestrate document retrieval and question-answering through MCP (Model Context Protocol) tool servers.
 
 The system focuses on document ingestion and retrieval-augmented generation (RAG), allowing users to upload documents and ask questions grounded in their content. All processing runs locally on DGX Spark hardware.
 
-> **Note**: This demo uses ~70 out of the 128GB of DGX Spark's memory by default, so ensure that no other workloads are running on your Spark using `nvidia-smi` or switch to a smaller supervisor model like gpt-oss-20B.
+> **Note**: This demo uses the DGX Spark's unified memory, so ensure that no other GPU workloads are running on your Spark using `nvidia-smi`.
 
 This project is designed to be customizable, serving as a framework that developers can extend.
 
@@ -33,13 +33,10 @@ This project is designed to be customizable, serving as a framework that develop
 ## Default Models
 | Model                | Quantization | Model Type | VRAM        |
 |----------------------|--------------|------------|-------------|
-| GPT-OSS:120B         | MXFP4        | Chat       | ~ 63.5 GB   |
+| Qwen2.5-VL-7B-Instruct-AWQ | AWQ 4-bit | Chat | ~ 6.6 GB |
 | Qwen3-Embedding-4B   | Q8           | Embedding  | ~ 5.39 GB   |
 
-**Total VRAM required:** ~69 GB
-
-> **Warning**:
-> If the default model uses too much VRAM, switch to `gpt-oss-20b` following [this guide](#using-different-models).
+**Total VRAM required:** ~12 GB
 
 ---
 
@@ -63,7 +60,7 @@ Upload a document using the "Upload Documents" button in the sidebar under "Cont
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MODELS` | Comma-separated model names | `gpt-oss-120b` |
+| `MODELS` | Comma-separated model names | `qwen25-vl-7b` |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins | `http://localhost:3000` |
 | `MAX_UPLOAD_SIZE_MB` | Maximum file upload size in MB | `50` |
 | `POSTGRES_HOST` | PostgreSQL hostname | `postgres` |

@@ -126,7 +126,6 @@ These are notable libraries pulled in as transitive dependencies:
 | [node](https://hub.docker.com/_/node) (Alpine) | 20-alpine | MIT (Node.js) | Frontend build stage |
 | [nginx](https://hub.docker.com/_/nginx) (Alpine) | alpine | BSD-2-Clause | Frontend static file serving |
 | [python](https://hub.docker.com/_/python) (slim) | 3.12-slim | PSF License | Backend runtime |
-| [NVIDIA CUDA](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/cuda) | 13.0.1 | NVIDIA EULA (proprietary) | llama.cpp build/runtime |
 | [NVIDIA TensorRT-LLM](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/tensorrt-llm) | spark-single-gpu-dev | NVIDIA EULA (proprietary) | LLM serving (optional) |
 
 ### Infrastructure Services
@@ -138,12 +137,6 @@ These are notable libraries pulled in as transitive dependencies:
 | [etcd](https://github.com/etcd-io/etcd) | quay.io/coreos/etcd:v3.5.5 | Apache-2.0 | Distributed key-value store (Milvus coordination) |
 | [MinIO](https://github.com/minio/minio) | minio/minio:RELEASE.2023-03-20 | AGPL-3.0 | Object storage (Milvus backend) |
 
-### Tools Built From Source
-
-| Tool | License | Purpose |
-|------|---------|---------|
-| [llama.cpp](https://github.com/ggml-org/llama.cpp) | MIT | LLM inference engine (built in Dockerfile.llamacpp) |
-
 ---
 
 ## AI Models
@@ -152,7 +145,7 @@ These models are downloaded and served at runtime. They are not bundled in the r
 
 | Model | Provider | License | Purpose |
 |-------|----------|---------|---------|
-| [gpt-oss-120b](https://huggingface.co/nvidia) | NVIDIA | NVIDIA Open Model License | Supervisor LLM |
+| [Qwen2.5-VL-7B-Instruct-AWQ](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct-AWQ) | Alibaba Cloud (Qwen) | Apache-2.0 | Supervisor LLM |
 | [Qwen3-Embedding-4B](https://huggingface.co/Qwen) | Alibaba Cloud (Qwen) | Apache-2.0 | Document embedding/vectorization |
 
 ---
@@ -174,7 +167,7 @@ The following license types are used across all dependencies:
 
 | License | Type | Notable Packages |
 |---------|------|-----------------|
-| **MIT** | Permissive | React, FastAPI, LangChain, LangGraph, Vite, Tailwind CSS, llama.cpp |
+| **MIT** | Permissive | React, FastAPI, LangChain, LangGraph, Vite, Tailwind CSS |
 | **Apache-2.0** | Permissive | This project, TypeScript, Milvus, etcd, Transformers, Unstructured |
 | **BSD-2-Clause** | Permissive | nginx |
 | **BSD-3-Clause** | Permissive | uvicorn, NumPy, pandas, PyTorch, SciPy |
@@ -183,7 +176,7 @@ The following license types are used across all dependencies:
 | **AGPL-3.0** | Copyleft | MinIO (used as a standalone service) |
 | **MPL-2.0** | Weak copyleft | certifi |
 | **NVIDIA EULA** | Proprietary | CUDA containers, TensorRT-LLM |
-| **NVIDIA Open Model License** | Model-specific | gpt-oss-120b |
+| **Apache-2.0** (Models) | Permissive | Qwen2.5-VL-7B-Instruct-AWQ, Qwen3-Embedding-4B |
 
 ### AGPL-3.0 Note
 
