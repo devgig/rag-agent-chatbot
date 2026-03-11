@@ -46,11 +46,6 @@ stages:
   - job: Build
     displayName: Build and test frontend
     steps:
-      # - task: NodeTool@0
-      #   displayName: Install Node.js
-      #   inputs:
-      #     versionSpec: '20.x'
-
       - task: Bash@3
         displayName: Install dependencies
         inputs:
