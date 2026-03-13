@@ -84,6 +84,17 @@ export default function App() {
     setIsAuthenticated(false);
     setCurrentChatId(null);
     setResponse("[]");
+    // Redirect to auth service logout so the SSO session cookie is also
+    // cleared, preventing the user from being silently re-authenticated.
+    const { protocol, hostname } = window.location;
+    let authHost: string;
+    if (hostname.includes('bytecourier')) {
+      authHost = hostname.replace(/^sparkchat\./, 'auth.');
+    } else {
+      authHost = 'auth.bytecourier.local';
+    }
+    const redirectUri = encodeURIComponent(window.location.origin);
+    window.location.href = `${protocol}//${authHost}/logout?redirect_uri=${redirectUri}`;
   }, []);
 
   // Register global 401 handler
