@@ -6,7 +6,7 @@ This document describes every mechanism implemented to ensure the LLM **only** a
 
 ## Overview
 
-The system uses a defense-in-depth strategy across six layers: prompt instructions, forced tool calling, relevance filtering, retrieval pipeline design, iteration limits, and architectural isolation. Each layer independently prevents the model from answering outside the scope of uploaded documents.
+The system uses a defense-in-depth strategy across nine layers: prompt instructions, forced tool calling, relevance filtering, MCP tool boundaries, generation prompt constraints, iteration limits, state machine architecture, architectural isolation, and deterministic sampling. Each layer independently prevents the model from answering outside the scope of uploaded documents.
 
 ---
 
