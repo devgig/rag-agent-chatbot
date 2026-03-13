@@ -480,10 +480,15 @@ class ChatAgent:
         config = {"configurable": {"thread_id": chat_id}}
 
         try:
-            messages_to_process = [
-                SystemMessage(content=self.system_prompt),
-                HumanMessage(content=query_text),
-            ]
+            # Load existing conversation history so all turns are preserved
+            existing_messages = await self.conversation_store.get_messages(chat_id)
+
+            # Build full message list: fresh system prompt + prior turns + new query
+            messages_to_process = [SystemMessage(content=self.system_prompt)]
+            for msg in existing_messages:
+                if not isinstance(msg, SystemMessage):
+                    messages_to_process.append(msg)
+            messages_to_process.append(HumanMessage(content=query_text))
 
             initial_state = {
                 "iterations": 0,

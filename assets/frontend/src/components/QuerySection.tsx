@@ -288,26 +288,11 @@ export default function QuerySection({
                   cancelAnimationFrame(rafId.current);
                   rafId.current = null;
                 }
-                if (pendingTokens.current) {
-                  const tokensToFlush = pendingTokens.current;
-                  pendingTokens.current = "";
-                  setResponse(prev => {
-                    try {
-                      const messages = JSON.parse(prev);
-                      const last = messages[messages.length - 1];
-                      if (last && last.type === "AssistantMessage") {
-                        last.content = String(last.content || "") + tokensToFlush;
-                      } else {
-                        messages.push({ type: "AssistantMessage", content: tokensToFlush });
-                      }
-                      return JSON.stringify(messages);
-                    } catch {
-                      return String(prev || "") + tokensToFlush;
-                    }
-                  });
-                } else if (!firstTokenReceived.current) {
-                  setResponse(JSON.stringify(msg.messages));
-                }
+                // Always apply the full authoritative history from the backend.
+                // This covers both initial load (switching chats) and post-streaming
+                // updates, ensuring all conversation turns are displayed.
+                pendingTokens.current = "";
+                setResponse(JSON.stringify(msg.messages));
                 setIsStreaming(false);
                 setGraphStatus("");
               }
