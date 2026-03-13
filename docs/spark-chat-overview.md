@@ -28,7 +28,7 @@ This project is designed to be customizable, serving as a framework that develop
   - **Configurable File Limits**: Environment-driven upload size limits for production deployments
 
 ## System Overview
-<img src="../assets/system-diagram.png" alt="System Diagram" style="max-width:600px;border-radius:5px;justify-content:center">
+<img src="../assets/assets/system-diagram.svg" alt="System Diagram" style="max-width:800px;border-radius:5px;justify-content:center">
 
 ## Default Models
 | Model                | Quantization | Model Type | VRAM        |
