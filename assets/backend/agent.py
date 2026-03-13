@@ -19,6 +19,7 @@
 import asyncio
 import contextlib
 import json
+import uuid
 from typing import AsyncIterator, List, Dict, Any, TypedDict, Optional, Callable, Awaitable
 
 from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage, ToolMessage, ToolCall
@@ -477,7 +478,9 @@ class ChatAgent:
             "graph_flow": "START → generate → should_continue → action → generate → END"
         })
 
-        config = {"configurable": {"thread_id": chat_id}}
+        # Use a unique thread_id per query so the checkpointer never leaks
+        # prior conversation context into the LLM — each question is isolated.
+        config = {"configurable": {"thread_id": str(uuid.uuid4())}}
 
         try:
             messages_to_process = [
