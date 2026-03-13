@@ -238,6 +238,10 @@ export default function QuerySection({
   useEffect(() => {
     if (!currentChatId) return;
 
+    // Reset streaming refs so the incoming history message is accepted
+    firstTokenReceived.current = false;
+    hasAssistantContent.current = false;
+
     let isEffectActive = true;
     let ws: WebSocket | null = null;
 
