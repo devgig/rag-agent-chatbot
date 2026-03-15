@@ -23,17 +23,26 @@ import styles from '@/styles/Home.module.css';
 import { getAuthUrl, apiFetch, setOnUnauthorized } from '@/lib/api';
 import { getToken, getEmail, setAuth, clearAuth, isTokenExpired, getTokenExpiry } from '@/lib/auth';
 
-function redirectToAuthService() {
-  const { protocol, hostname } = window.location;
-  let authHost: string;
+const LOGGED_OUT_KEY = "spark_chat_logged_out";
+
+function getAuthHost(): string {
+  const { hostname } = window.location;
   if (hostname.includes('bytecourier')) {
-    authHost = hostname.replace(/^sparkchat\./, 'auth.');
-  } else {
-    // Local dev: use auth.bytecourier.local
-    authHost = 'auth.bytecourier.local';
+    return hostname.replace(/^sparkchat\./, 'auth.');
   }
+  return 'auth.bytecourier.local';
+}
+
+function redirectToAuthLogin() {
+  const { protocol } = window.location;
   const redirectUri = encodeURIComponent(window.location.origin);
-  window.location.href = `${protocol}//${authHost}?redirect_uri=${redirectUri}`;
+  window.location.href = `${protocol}//${getAuthHost()}?redirect_uri=${redirectUri}`;
+}
+
+function redirectToAuthLogout() {
+  const { protocol } = window.location;
+  const redirectUri = encodeURIComponent(window.location.origin);
+  window.location.href = `${protocol}//${getAuthHost()}/logout?redirect_uri=${redirectUri}`;
 }
 
 export default function App() {
@@ -62,6 +71,8 @@ export default function App() {
       const email = params.get('email');
       if (token && email && !isTokenExpired(token)) {
         setAuth(token, decodeURIComponent(email));
+        // Successful login clears the logged-out flag
+        sessionStorage.removeItem(LOGGED_OUT_KEY);
         history.replaceState(null, '', window.location.pathname + window.location.search);
         setIsAuthenticated(true);
         setAuthChecked(true);
@@ -79,28 +90,32 @@ export default function App() {
     setAuthChecked(true);
   }, []);
 
+  // Session expired — silently redirect to auth login for a new token.
+  // Does NOT clear the SSO session so the user is re-authenticated seamlessly.
+  const handleSessionExpired = useCallback(() => {
+    clearAuth();
+    setIsAuthenticated(false);
+    setCurrentChatId(null);
+    setResponse("[]");
+    redirectToAuthLogin();
+  }, []);
+
+  // Explicit sign-out — clears local auth AND the SSO session cookie.
+  // Sets a flag so the app shows a login page instead of auto-redirecting.
   const handleLogout = useCallback(() => {
     clearAuth();
     setIsAuthenticated(false);
     setCurrentChatId(null);
     setResponse("[]");
-    // Redirect to auth service logout so the SSO session cookie is also
-    // cleared, preventing the user from being silently re-authenticated.
-    const { protocol, hostname } = window.location;
-    let authHost: string;
-    if (hostname.includes('bytecourier')) {
-      authHost = hostname.replace(/^sparkchat\./, 'auth.');
-    } else {
-      authHost = 'auth.bytecourier.local';
-    }
-    const redirectUri = encodeURIComponent(window.location.origin);
-    window.location.href = `${protocol}//${authHost}/logout?redirect_uri=${redirectUri}`;
+    sessionStorage.setItem(LOGGED_OUT_KEY, "1");
+    redirectToAuthLogout();
   }, []);
 
-  // Register global 401 handler
+  // Register global 401 handler — uses session-expired (silent re-auth),
+  // NOT full logout, to avoid clearing the SSO session on token expiry.
   useEffect(() => {
-    setOnUnauthorized(handleLogout);
-  }, [handleLogout]);
+    setOnUnauthorized(handleSessionExpired);
+  }, [handleSessionExpired]);
 
   // Proactive token refresh — refreshes 2 minutes before expiry
   useEffect(() => {
@@ -125,7 +140,7 @@ export default function App() {
     const refreshToken = async () => {
       const token = getToken();
       if (!token || isTokenExpired(token)) {
-        handleLogout();
+        handleSessionExpired();
         return;
       }
       try {
@@ -140,16 +155,16 @@ export default function App() {
           // Schedule next refresh with the new token
           timerId = scheduleRefresh();
         } else {
-          handleLogout();
+          handleSessionExpired();
         }
       } catch {
-        handleLogout();
+        handleSessionExpired();
       }
     };
 
     let timerId = scheduleRefresh();
     return () => { if (timerId) clearTimeout(timerId); };
-  }, [isAuthenticated, handleLogout]);
+  }, [isAuthenticated, handleSessionExpired]);
 
   // Always start a fresh chat on page load
   useEffect(() => {
@@ -204,9 +219,38 @@ export default function App() {
     return null; // Avoid flash while checking token
   }
 
-  // Redirect to auth service if not authenticated
+  // Not authenticated — either show login page or silently redirect
   if (!isAuthenticated) {
-    redirectToAuthService();
+    // After explicit sign-out: show a login button instead of auto-redirecting
+    // (auto-redirect would just re-authenticate via upstream IdP session)
+    if (sessionStorage.getItem(LOGGED_OUT_KEY)) {
+      return (
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', height: '100vh', gap: '1rem',
+          fontFamily: 'system-ui, sans-serif',
+        }}>
+          <p style={{ fontSize: '1.1rem', color: 'var(--text-secondary, #666)' }}>
+            You have been signed out.
+          </p>
+          <button
+            onClick={() => {
+              sessionStorage.removeItem(LOGGED_OUT_KEY);
+              redirectToAuthLogin();
+            }}
+            style={{
+              padding: '0.6rem 1.5rem', fontSize: '1rem', cursor: 'pointer',
+              borderRadius: '8px', border: '1px solid #ccc',
+              background: 'var(--bg-primary, #fff)', color: 'var(--text-primary, #333)',
+            }}
+          >
+            Sign In
+          </button>
+        </div>
+      );
+    }
+    // Token expired or first visit — silently redirect to auth service
+    redirectToAuthLogin();
     return null;
   }
 
