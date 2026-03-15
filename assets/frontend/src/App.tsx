@@ -23,8 +23,6 @@ import styles from '@/styles/Home.module.css';
 import { getAuthUrl, apiFetch, setOnUnauthorized } from '@/lib/api';
 import { getToken, getEmail, setAuth, clearAuth, isTokenExpired, getTokenExpiry } from '@/lib/auth';
 
-const LOGGED_OUT_KEY = "spark_chat_logged_out";
-
 function getAuthHost(): string {
   const { hostname } = window.location;
   if (hostname.includes('bytecourier')) {
@@ -41,9 +39,10 @@ function redirectToAuthLogin() {
 
 function redirectToAuthLogout() {
   const { protocol } = window.location;
-  // No redirect_uri — user stays on auth.bytecourier.* login page
-  // and must re-authenticate via Google or email.
-  window.location.href = `${protocol}//${getAuthHost()}/logout`;
+  const redirectUri = encodeURIComponent(window.location.origin);
+  // Clear SSO session then redirect back — user must re-authenticate
+  // via Google or email before returning to the app.
+  window.location.href = `${protocol}//${getAuthHost()}/logout?redirect_uri=${redirectUri}`;
 }
 
 export default function App() {
@@ -72,8 +71,6 @@ export default function App() {
       const email = params.get('email');
       if (token && email && !isTokenExpired(token)) {
         setAuth(token, decodeURIComponent(email));
-        // Successful login clears the logged-out flag
-        sessionStorage.removeItem(LOGGED_OUT_KEY);
         history.replaceState(null, '', window.location.pathname + window.location.search);
         setIsAuthenticated(true);
         setAuthChecked(true);
@@ -91,24 +88,22 @@ export default function App() {
     setAuthChecked(true);
   }, []);
 
-  // Session expired — silently redirect to auth login for a new token.
-  // Does NOT clear the SSO session so the user is re-authenticated seamlessly.
+  // Session expired — clear SSO session and force fresh login.
+  // Redirects through /logout so the user must re-authenticate.
   const handleSessionExpired = useCallback(() => {
     clearAuth();
     setIsAuthenticated(false);
     setCurrentChatId(null);
     setResponse("[]");
-    redirectToAuthLogin();
+    redirectToAuthLogout();
   }, []);
 
   // Explicit sign-out — clears local auth AND the SSO session cookie.
-  // Sets a flag so the app shows a login page instead of auto-redirecting.
   const handleLogout = useCallback(() => {
     clearAuth();
     setIsAuthenticated(false);
     setCurrentChatId(null);
     setResponse("[]");
-    sessionStorage.setItem(LOGGED_OUT_KEY, "1");
     redirectToAuthLogout();
   }, []);
 
@@ -220,37 +215,10 @@ export default function App() {
     return null; // Avoid flash while checking token
   }
 
-  // Not authenticated — either show login page or silently redirect
+  // Not authenticated — redirect to auth login.
+  // SSO session was already cleared by /logout (sign-out or token expiry),
+  // so the auth service will show the login form (Google / email).
   if (!isAuthenticated) {
-    // After explicit sign-out: show a login button instead of auto-redirecting
-    // (auto-redirect would just re-authenticate via upstream IdP session)
-    if (sessionStorage.getItem(LOGGED_OUT_KEY)) {
-      return (
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          justifyContent: 'center', height: '100vh', gap: '1rem',
-          fontFamily: 'system-ui, sans-serif',
-        }}>
-          <p style={{ fontSize: '1.1rem', color: 'var(--text-secondary, #666)' }}>
-            You have been signed out.
-          </p>
-          <button
-            onClick={() => {
-              sessionStorage.removeItem(LOGGED_OUT_KEY);
-              redirectToAuthLogin();
-            }}
-            style={{
-              padding: '0.6rem 1.5rem', fontSize: '1rem', cursor: 'pointer',
-              borderRadius: '8px', border: '1px solid #ccc',
-              background: 'var(--bg-primary, #fff)', color: 'var(--text-primary, #333)',
-            }}
-          >
-            Sign In
-          </button>
-        </div>
-      );
-    }
-    // Token expired or first visit — silently redirect to auth service
     redirectToAuthLogin();
     return null;
   }
