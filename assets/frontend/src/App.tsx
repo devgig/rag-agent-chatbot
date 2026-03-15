@@ -23,6 +23,10 @@ import styles from '@/styles/Home.module.css';
 import { getAuthUrl, apiFetch, setOnUnauthorized } from '@/lib/api';
 import { getToken, getEmail, setAuth, clearAuth, isTokenExpired, getTokenExpiry } from '@/lib/auth';
 
+// Persists across the /logout redirect so the app knows not to
+// auto-redirect to auth (which would silently re-authenticate via Google).
+const FORCE_LOGIN_KEY = "spark_chat_force_login";
+
 function getAuthHost(): string {
   const { hostname } = window.location;
   if (hostname.includes('bytecourier')) {
@@ -31,17 +35,18 @@ function getAuthHost(): string {
   return 'auth.bytecourier.local';
 }
 
-function redirectToAuthLogin() {
+function redirectToAuthLogin(forcePrompt = false) {
   const { protocol } = window.location;
   const redirectUri = encodeURIComponent(window.location.origin);
-  window.location.href = `${protocol}//${getAuthHost()}?redirect_uri=${redirectUri}`;
+  // prompt=login tells the auth service to force re-authentication
+  // at the IdP (Google) even if an upstream session exists.
+  const prompt = forcePrompt ? '&prompt=login' : '';
+  window.location.href = `${protocol}//${getAuthHost()}?redirect_uri=${redirectUri}${prompt}`;
 }
 
 function redirectToAuthLogout() {
   const { protocol } = window.location;
   const redirectUri = encodeURIComponent(window.location.origin);
-  // Clear SSO session then redirect back — user must re-authenticate
-  // via Google or email before returning to the app.
   window.location.href = `${protocol}//${getAuthHost()}/logout?redirect_uri=${redirectUri}`;
 }
 
@@ -71,6 +76,7 @@ export default function App() {
       const email = params.get('email');
       if (token && email && !isTokenExpired(token)) {
         setAuth(token, decodeURIComponent(email));
+        sessionStorage.removeItem(FORCE_LOGIN_KEY);
         history.replaceState(null, '', window.location.pathname + window.location.search);
         setIsAuthenticated(true);
         setAuthChecked(true);
@@ -88,30 +94,21 @@ export default function App() {
     setAuthChecked(true);
   }, []);
 
-  // Session expired — clear SSO session and force fresh login.
-  // Redirects through /logout so the user must re-authenticate.
-  const handleSessionExpired = useCallback(() => {
+  // Force login — clears local auth and SSO session, then redirects back.
+  // Used by both explicit sign-out and token expiry.
+  const forceLogin = useCallback(() => {
     clearAuth();
     setIsAuthenticated(false);
     setCurrentChatId(null);
     setResponse("[]");
+    sessionStorage.setItem(FORCE_LOGIN_KEY, "1");
     redirectToAuthLogout();
   }, []);
 
-  // Explicit sign-out — clears local auth AND the SSO session cookie.
-  const handleLogout = useCallback(() => {
-    clearAuth();
-    setIsAuthenticated(false);
-    setCurrentChatId(null);
-    setResponse("[]");
-    redirectToAuthLogout();
-  }, []);
-
-  // Register global 401 handler — uses session-expired (silent re-auth),
-  // NOT full logout, to avoid clearing the SSO session on token expiry.
+  // Register global 401 handler
   useEffect(() => {
-    setOnUnauthorized(handleSessionExpired);
-  }, [handleSessionExpired]);
+    setOnUnauthorized(forceLogin);
+  }, [forceLogin]);
 
   // Proactive token refresh — refreshes 2 minutes before expiry
   useEffect(() => {
@@ -136,7 +133,7 @@ export default function App() {
     const refreshToken = async () => {
       const token = getToken();
       if (!token || isTokenExpired(token)) {
-        handleSessionExpired();
+        forceLogin();
         return;
       }
       try {
@@ -151,16 +148,16 @@ export default function App() {
           // Schedule next refresh with the new token
           timerId = scheduleRefresh();
         } else {
-          handleSessionExpired();
+          forceLogin();
         }
       } catch {
-        handleSessionExpired();
+        forceLogin();
       }
     };
 
     let timerId = scheduleRefresh();
     return () => { if (timerId) clearTimeout(timerId); };
-  }, [isAuthenticated, handleSessionExpired]);
+  }, [isAuthenticated, forceLogin]);
 
   // Always start a fresh chat on page load
   useEffect(() => {
@@ -215,10 +212,40 @@ export default function App() {
     return null; // Avoid flash while checking token
   }
 
-  // Not authenticated — redirect to auth login.
-  // SSO session was already cleared by /logout (sign-out or token expiry),
-  // so the auth service will show the login form (Google / email).
   if (!isAuthenticated) {
+    // After sign-out or token expiry: the /logout redirect cleared the auth
+    // service session and brought us back here. Do NOT auto-redirect to auth
+    // login — Google's upstream session would silently re-authenticate.
+    // Instead, show a Sign In button so the user explicitly initiates login
+    // with prompt=login to force the IdP to show the login form.
+    if (sessionStorage.getItem(FORCE_LOGIN_KEY)) {
+      return (
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', height: '100vh', gap: '1.2rem',
+          fontFamily: 'system-ui, sans-serif',
+        }}>
+          <p style={{ fontSize: '1.1rem', color: 'var(--text-secondary, #666)' }}>
+            Your session has ended.
+          </p>
+          <button
+            onClick={() => {
+              sessionStorage.removeItem(FORCE_LOGIN_KEY);
+              redirectToAuthLogin(true);
+            }}
+            style={{
+              padding: '0.6rem 1.5rem', fontSize: '1rem', cursor: 'pointer',
+              borderRadius: '8px', border: '1px solid #ccc',
+              background: 'var(--bg-primary, #fff)', color: 'var(--text-primary, #333)',
+            }}
+          >
+            Sign In
+          </button>
+        </div>
+      );
+    }
+
+    // First visit or direct navigation — normal auth redirect
     redirectToAuthLogin();
     return null;
   }
@@ -233,7 +260,7 @@ export default function App() {
           refreshTrigger={refreshTrigger}
           currentChatId={currentChatId}
           onChatChange={handleChatChange}
-          onLogout={handleLogout}
+          onLogout={forceLogin}
         />
 
         <div className={styles.mainContent}>
