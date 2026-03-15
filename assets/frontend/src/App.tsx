@@ -41,8 +41,9 @@ function redirectToAuthLogin() {
 
 function redirectToAuthLogout() {
   const { protocol } = window.location;
-  const redirectUri = encodeURIComponent(window.location.origin);
-  window.location.href = `${protocol}//${getAuthHost()}/logout?redirect_uri=${redirectUri}`;
+  // No redirect_uri — user stays on auth.bytecourier.* login page
+  // and must re-authenticate via Google or email.
+  window.location.href = `${protocol}//${getAuthHost()}/logout`;
 }
 
 export default function App() {
