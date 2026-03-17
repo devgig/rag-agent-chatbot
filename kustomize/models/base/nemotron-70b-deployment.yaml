@@ -1,6 +1,6 @@
-# Nemotron-3-70B-Instruct Deployment for DGX Spark
-# =================================================
-# NVIDIA Nemotron-3-70B-Instruct with FP8 quantization for text, RAG, and code.
+# Llama-3.1-Nemotron-70B-Instruct Deployment for DGX Spark
+# ========================================================
+# NVIDIA Llama-3.1-Nemotron-70B-Instruct-HF with FP8 quantization for text, RAG, and code.
 # FP8 quantization: Blackwell-native, ~70GB model weights, minimal quality loss.
 #
 # Backend connects via: nemotron-70b.rag-agent.svc.cluster.local:8000
@@ -44,7 +44,7 @@ spec:
         image: nvcr.io/nvidia/vllm:25.11-py3
         command: ["vllm", "serve"]
         args:
-        - "nvidia/Nemotron-3-70B-Instruct"
+        - "nvidia/Llama-3.1-Nemotron-70B-Instruct-HF"
         - "--served-model-name=nemotron-70b"
         - "--tensor-parallel-size=1"
         - "--gpu-memory-utilization=0.90"
