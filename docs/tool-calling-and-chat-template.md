@@ -1,52 +1,10 @@
 # Tool Calling and Chat Template
 
-How tool calling works in this project, why a custom chat template is required, and how the `search_documents` tool is integrated end-to-end.
+How tool calling works in this project and how the `search_documents` tool is integrated end-to-end.
 
-## The Problem
+## Tool Calling with Nemotron-3-70B
 
-Qwen2.5-VL-7B-Instruct-AWQ is a vision-language model. Its default chat template supports images and video but **does not support tool calling**. Without tool calling, the LLM cannot invoke `search_documents` to retrieve document context, which breaks the entire RAG pipeline.
-
-## The Solution: Custom Chat Template
-
-A custom Jinja2 chat template (`qwen-chat-template.yaml`) merges Qwen's vision support with [Hermes-style tool calling](https://huggingface.co/NousResearch/Hermes-2-Pro-Llama-3-8B). This template is mounted into the vLLM pod as a ConfigMap and referenced via the `--chat-template` flag.
-
-### How It Works
-
-The template controls how vLLM formats the conversation before sending it to the model. It handles three concerns:
-
-**1. System prompt with tool definitions**
-
-When tools are provided, the template injects them into the system message:
-
-```
-<|im_start|>system
-You are a document-grounded assistant...
-
-# Tools
-
-You may call one or more functions to assist with the user query.
-
-You are provided with function signatures within <tools></tools> XML tags:
-<tools>
-{"name": "search_documents", "parameters": {"query": {"type": "string"}}}
-</tools>
-
-For each function call, return a json object with function name and arguments
-within <tool_call></tool_call> XML tags:
-<tool_call>
-{"name": "search_documents", "arguments": {"query": "..."}}
-</tool_call>
-<|im_end|>
-```
-
-**2. Vision tokens**
-
-Images and videos in messages are replaced with Qwen's special tokens (`<|vision_start|><|image_pad|><|vision_end|>`), preserving multimodal capabilities.
-
-**3. Tool call/response formatting**
-
-- Assistant tool calls are wrapped in `<tool_call>` XML tags
-- Tool results are wrapped in `<tool_response>` tags and presented as user messages (Hermes convention)
+Nemotron-3-70B-Instruct natively supports tool calling through its built-in chat template. Unlike the previous Qwen2.5-VL setup which required a custom Jinja2 chat template, Nemotron handles tool definitions and tool call formatting out of the box.
 
 ### vLLM Configuration
 
@@ -54,12 +12,11 @@ Two deployment flags enable tool calling:
 
 ```yaml
 args:
-  - "--chat-template=/chat-template/chat_template.jinja"   # Custom template
-  - "--tool-call-parser=hermes"                             # Parse <tool_call> XML
+  - "--tool-call-parser=hermes"                             # Parse tool call output
   - "--enable-auto-tool-choice"                             # Let model decide when to call tools
 ```
 
-The `hermes` parser tells vLLM to look for `<tool_call>` XML in the model's output and convert it into OpenAI-compatible tool call objects in the streaming response.
+The `hermes` parser tells vLLM to look for tool call patterns in the model's output and convert them into OpenAI-compatible tool call objects in the streaming response. No custom chat template is needed — vLLM uses the model's built-in tokenizer chat template automatically.
 
 ## Tool Calling Pipeline
 
@@ -105,15 +62,7 @@ WebSocket ──▶ Frontend (token-by-token rendering)
 
 ## Component Details
 
-### 1. Chat Template (Kubernetes ConfigMap)
-
-**File:** `kustomize/models/base/qwen-chat-template.yaml`
-
-A ConfigMap containing the Jinja2 template. Mounted into the vLLM pod at `/chat-template/chat_template.jinja`.
-
-Source: [edwardzjl/chat-templates](https://github.com/edwardzjl/chat-templates/blob/main/qwen2_5/chat_template.jinja)
-
-### 2. Agent Tool Initialization (Backend)
+### 1. Agent Tool Initialization (Backend)
 
 **File:** `assets/backend/agent.py` — `init_tools()`
 
@@ -123,7 +72,7 @@ On startup, the backend:
 3. Converts tools to OpenAI function-calling format using `convert_to_openai_tool()`
 4. Stores tools in `openai_tools` (for the API) and `tools_by_name` (for execution)
 
-### 3. Forced Tool Call on First Iteration
+### 2. Forced Tool Call on First Iteration
 
 **File:** `assets/backend/agent.py` — `generate()`
 
@@ -138,7 +87,7 @@ else:
 
 This ensures the model always retrieves document context before answering, preventing it from using its own knowledge. On subsequent iterations (if any), `tool_choice` is set to `"auto"` so the model can choose to answer directly with the retrieved context.
 
-### 4. MCP Server Configuration
+### 3. MCP Server Configuration
 
 **File:** `assets/backend/client.py`
 
@@ -155,7 +104,7 @@ self.server_configs = {
 }
 ```
 
-### 5. search_documents Tool
+### 4. search_documents Tool
 
 **File:** `assets/backend/tools/mcp_servers/rag.py`
 
@@ -165,7 +114,7 @@ The tool:
 3. Falls back to searching all documents if source-filtered results are empty
 4. Returns formatted chunks with source attribution: `[Document 1 - filename.pdf]\n<content>`
 
-### 6. System Prompt
+### 5. System Prompt
 
 **File:** `assets/backend/prompts.py`
 
@@ -196,8 +145,8 @@ Typical flow for a RAG query:
 
 | Decision | Reason |
 |----------|--------|
-| Custom chat template over fine-tuning | Zero training cost, works with any Qwen2.5-VL checkpoint, easy to update |
-| Hermes-style XML over native function calling | Qwen2.5-VL wasn't trained with native tool calling; Hermes XML is a well-tested convention that works with instruction-tuned models |
+| Native tool calling over custom chat templates | Nemotron-3-70B supports tool calling natively — no custom template maintenance needed |
+| Hermes-style parser | Well-tested convention compatible with Nemotron's tool calling output format |
 | MCP over direct function calls | Clean process isolation, standard protocol, easy to add tools without modifying agent code |
 | Forced first tool call | Prevents the model from confidently answering from its training data instead of searching documents |
 | Single tool (search_documents) | The project is a focused RAG chatbot — one tool keeps the pipeline simple and reliable |

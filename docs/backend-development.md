@@ -78,7 +78,7 @@ FastAPI App (main.py)
    POSTGRES_USER=chatbot_user
    POSTGRES_PASSWORD=your_password
    MILVUS_ADDRESS=localhost:19530
-   MODELS=qwen25-vl-7b
+   MODELS=nemotron-70b
    CORS_ALLOWED_ORIGINS=http://localhost:3000
    MAX_UPLOAD_SIZE_MB=50
    ```

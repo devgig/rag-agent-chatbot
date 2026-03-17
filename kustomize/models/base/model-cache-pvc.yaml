@@ -3,9 +3,9 @@
 # Persists downloaded models across pod restarts to avoid re-downloading.
 # Significantly reduces startup time after initial download.
 #
-# Qwen2.5-VL-7B-Instruct: ~15GB download
-# With PVC: First startup ~5-10min, subsequent startups ~2-3min
-# Without PVC: Every startup ~5-10min
+# Nemotron-3-70B-Instruct: ~140GB download (FP16 weights, quantized to FP8 at load time)
+# With PVC: First startup ~15-20min, subsequent startups ~5-8min
+# Without PVC: Every startup ~15-20min
 
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -13,7 +13,7 @@ metadata:
   name: model-cache-pvc
   namespace: rag-agent
   labels:
-    app: qwen25-vl-7b
+    app: nemotron-70b
     component: model-inference
 spec:
   accessModes:

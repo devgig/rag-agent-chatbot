@@ -32,7 +32,7 @@ The RAG implementation enables the chatbot to answer questions using content fro
 | Agent | LangGraph | Orchestrates tool calls and LLM interactions |
 | Vector DB | Milvus | Stores and searches document embeddings |
 | Embedding | Qwen3-Embedding-4B | Converts text to vectors |
-| LLM | Qwen2.5-VL-7B-AWQ (vLLM) | Generates responses |
+| LLM | Nemotron-3-70B-Instruct (vLLM) | Generates responses |
 | Storage | PostgreSQL | Chat history, document metadata |
 
 ---
@@ -382,7 +382,7 @@ fields = [
 
 ```json
 {
-  "selected_model": "qwen25-vl-7b",
+  "selected_model": "nemotron-70b",
   "selected_sources": ["doc1.pdf", "doc2.pdf"]
 }
 ```

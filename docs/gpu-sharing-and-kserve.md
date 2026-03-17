@@ -9,10 +9,10 @@ Strategies for sharing a single NVIDIA DGX Spark (Blackwell GB10, 128GB unified 
 | GPU Node | `spark-7eb5` — NVIDIA DGX Spark, Blackwell GB10 |
 | GPU Memory | 128GB unified (shared CPU/GPU address space) |
 | CUDA | 13.0 (Driver 580.95) |
-| Current Workload | Qwen2.5-VL-7B-Instruct via vLLM (90% GPU mem utilization) |
+| Current Workload | Nemotron-3-70B-Instruct via vLLM (90% GPU mem utilization) |
 | GPU Resource | `nvidia.com/gpu: 1` — exclusive allocation to one pod |
 
-**The problem:** Kubernetes allocates the GPU as a single indivisible resource. The current `qwen25-vl-7b` deployment claims the entire GPU, blocking any other pod from scheduling GPU workloads.
+**The problem:** Kubernetes allocates the GPU as a single indivisible resource. The current `nemotron-70b` deployment claims the entire GPU, blocking any other pod from scheduling GPU workloads.
 
 ---
 
@@ -69,7 +69,7 @@ Allocatable:
 **Update your deployments** to request a fraction:
 
 ```yaml
-# qwen25-vl-7b-deployment.yaml — reduce from 1 to 1 virtual GPU slice
+# nemotron-70b-deployment.yaml — reduce from 1 to 1 virtual GPU slice
 resources:
   limits:
     nvidia.com/gpu: 1   # now 1 of 4 slices, not 1 of 1
@@ -84,7 +84,7 @@ resources:
 
 | Workload | GPU Memory | Purpose |
 |----------|-----------|---------|
-| vLLM (Qwen 7B) | ~50GB (reduce `gpu-memory-utilization` to 0.4) | Primary LLM inference |
+| vLLM (Nemotron 70B) | ~80GB (reduce `gpu-memory-utilization` to 0.6) | Primary LLM inference |
 | Agent Tooling Model | ~30GB | Smaller model for tool-use/routing |
 | Embedding (GPU-accel) | ~8GB | Optional: move embedding to GPU |
 | Reserved/Headroom | ~40GB | Burst capacity or additional agents |
@@ -172,7 +172,7 @@ kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.14.1/kser
 **Define InferenceServices:**
 
 ```yaml
-# Primary LLM — Qwen 7B via vLLM runtime
+# Primary LLM — Nemotron 70B via vLLM runtime
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
@@ -186,7 +186,7 @@ spec:
       modelFormat:
         name: vllm
       runtime: kserve-vllm
-      storageUri: "hf://Qwen/Qwen2.5-VL-7B-Instruct"
+      storageUri: "hf://nvidia/Nemotron-3-70B-Instruct"
       resources:
         limits:
           nvidia.com/gpu: 1
@@ -219,7 +219,7 @@ spec:
       modelFormat:
         name: vllm
       runtime: kserve-vllm
-      storageUri: "hf://Qwen/Qwen2.5-7B-Instruct"
+      storageUri: "hf://nvidia/Nemotron-3-8B-Instruct"
       resources:
         limits:
           nvidia.com/gpu: 1
@@ -272,7 +272,7 @@ If your agent models are fine-tuned variants of the same base, vLLM can serve mu
 ```yaml
 # Single vLLM deployment serving multiple "models"
 args:
-  - "--model=Qwen/Qwen2.5-7B-Instruct"
+  - "--model=nvidia/Nemotron-3-70B-Instruct"
   - "--enable-lora"
   - "--lora-modules"
   - "chat-agent=/models/lora/chat"
@@ -369,7 +369,7 @@ spec:
             - containerPort: 8000
           env:
             - name: LLM_ENDPOINT
-              value: "http://qwen25-vl-7b.rag-agent.svc.cluster.local:8000"
+              value: "http://nemotron-70b.rag-agent.svc.cluster.local:8000"
             - name: PEER_AGENTS
               value: "http://agent-executor.rag-agent.svc.cluster.local:8000,http://agent-reviewer.rag-agent.svc.cluster.local:8000"
           resources:
@@ -397,8 +397,8 @@ from langchain_openai import ChatOpenAI
 
 # All agents share the same GPU-backed LLM endpoint
 llm = ChatOpenAI(
-    base_url="http://qwen25-vl-7b.rag-agent.svc.cluster.local:8000/v1",
-    model="Qwen/Qwen2.5-VL-7B-Instruct",
+    base_url="http://nemotron-70b.rag-agent.svc.cluster.local:8000/v1",
+    model="nvidia/Nemotron-3-70B-Instruct",
 )
 
 # Sub-agents as remote services (CPU pods)
@@ -477,7 +477,7 @@ Total GPU Memory:           128 GB
 ├── OS/Driver Overhead:      ~4 GB
 ├── Available:              ~124 GB
 │
-├── Slot 1: Primary LLM     ~50 GB  (Qwen 7B at 0.4 utilization)
+├── Slot 1: Primary LLM     ~80 GB  (Nemotron 70B at 0.6 utilization)
 ├── Slot 2: Agent Model      ~30 GB  (Qwen 3B or similar)
 ├── Slot 3: Embedding/Other  ~14 GB  (GPU-accelerated embedding or specialty model)
 └── Slot 4: Headroom         ~30 GB  (burst, experiments, new agents)

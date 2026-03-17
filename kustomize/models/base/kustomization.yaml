@@ -3,18 +3,18 @@
 # This kustomization deploys vLLM model inference for K3s/BYO GPU environments.
 #
 # ARCHITECTURE:
-# - Deployment: vLLM serving Qwen2.5-VL-7B-Instruct-AWQ (4-bit quantized)
+# - Deployment: vLLM serving Nemotron-3-70B-Instruct (FP8 quantized)
 # - Service: ClusterIP exposing OpenAI-compatible API on port 8000
 # - ExternalSecret: HuggingFace token from Azure Key Vault
 #
 # GPU CONFIGURATION:
 # - Node selector: nvidia.com/gpu.present=true
 # - Tolerations: nvidia.com/gpu=present:NoSchedule
-# - Resources: 1 GPU, 2-8 CPU, 16-32Gi memory
+# - Resources: 1 GPU, 4-16 CPU, 32-96Gi memory
 #
 # BACKEND INTEGRATION:
-# Backend connects via: qwen25-vl-7b.rag-agent.svc.cluster.local:8000
-# No code changes needed - backend uses model name as hostname: http://qwen25-vl-7b:8000/v1
+# Backend connects via: nemotron-70b.rag-agent.svc.cluster.local:8000
+# No code changes needed - backend uses model name as hostname: http://nemotron-70b:8000/v1
 #
 # AZURE DEVOPS:
 # Deploy via: kubectl apply -k kustomize/models/overlays/dev/
@@ -25,17 +25,16 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: qwen25-vl-7b
+  name: nemotron-70b
 
 namespace: rag-agent
 
 resources:
   - acr-external-secret.yaml         # ACR pull credentials from Azure Key Vault
   - hf-external-secret.yaml          # HuggingFace token from Azure Key Vault
-  - qwen25-vl-7b-service.yaml        # ClusterIP service (port 8000)
+  - nemotron-70b-service.yaml         # ClusterIP service (port 8000)
   - model-cache-pvc.yaml              # Persistent storage for HuggingFace model cache
-  - qwen-chat-template.yaml           # Custom chat template for Qwen2.5-VL tool calling
-  - qwen25-vl-7b-deployment.yaml      # Single model (Qwen2.5-VL) for text, images, RAG, and coding
+  - nemotron-70b-deployment.yaml      # Nemotron-3-70B for text, RAG, and coding
   - qwen3-embedding-deployment.yaml   # Embedding service for RAG
   - qwen3-embedding-service.yaml      # ClusterIP service for embeddings (port 8000)
 
@@ -48,6 +47,6 @@ patches:
 labels:
 - includeSelectors: false  # Don't modify selectors (immutable in existing deployments)
   pairs:
-    app: qwen25-vl-7b
+    app: nemotron-70b
     component: model-inference
     managed-by: kustomize

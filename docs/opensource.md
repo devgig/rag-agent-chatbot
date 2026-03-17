@@ -145,7 +145,7 @@ These models are downloaded and served at runtime. They are not bundled in the r
 
 | Model | Provider | License | Purpose |
 |-------|----------|---------|---------|
-| [Qwen2.5-VL-7B-Instruct-AWQ](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct-AWQ) | Alibaba Cloud (Qwen) | Apache-2.0 | Supervisor LLM |
+| [Nemotron-3-70B-Instruct](https://huggingface.co/nvidia/Nemotron-3-70B-Instruct) | NVIDIA | NVIDIA Open Model License | Supervisor LLM |
 | [Qwen3-Embedding-4B](https://huggingface.co/Qwen) | Alibaba Cloud (Qwen) | Apache-2.0 | Document embedding/vectorization |
 
 ---
@@ -176,7 +176,8 @@ The following license types are used across all dependencies:
 | **AGPL-3.0** | Copyleft | MinIO (used as a standalone service) |
 | **MPL-2.0** | Weak copyleft | certifi |
 | **NVIDIA EULA** | Proprietary | CUDA containers, TensorRT-LLM |
-| **Apache-2.0** (Models) | Permissive | Qwen2.5-VL-7B-Instruct-AWQ, Qwen3-Embedding-4B |
+| **NVIDIA Open Model License** (Models) | Permissive | Nemotron-3-70B-Instruct |
+| **Apache-2.0** (Models) | Permissive | Qwen3-Embedding-4B |
 
 ### AGPL-3.0 Note
 

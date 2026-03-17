@@ -1,19 +1,19 @@
 # Service for GPU Model Inference
 # ================================
 # ClusterIP service exposing vLLM OpenAI-compatible API
-# Backend connects via: qwen25-vl-7b.rag-agent.svc.cluster.local:8000
+# Backend connects via: nemotron-70b.rag-agent.svc.cluster.local:8000
 
 apiVersion: v1
 kind: Service
 metadata:
-  name: qwen25-vl-7b
+  name: nemotron-70b
   namespace: rag-agent
   labels:
-    app: qwen25-vl-7b
+    app: nemotron-70b
     managed-by: kustomize
 spec:
   selector:
-    workspace: qwen25-vl-7b
+    workspace: nemotron-70b
   ports:
   - port: 8000
     targetPort: 8000
