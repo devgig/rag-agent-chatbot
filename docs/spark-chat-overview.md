@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Spark Chat is a fully local RAG-powered chatbot built for DGX Spark. It uses a supervisor agent powered by Nemotron-3-70B to orchestrate document retrieval and question-answering through MCP (Model Context Protocol) tool servers.
+Spark Chat is a fully local RAG-powered chatbot built for DGX Spark. It uses a supervisor agent powered by Nemotron-Super-49B to orchestrate document retrieval and question-answering through MCP (Model Context Protocol) tool servers.
 
 The system focuses on document ingestion and retrieval-augmented generation (RAG), allowing users to upload documents and ask questions grounded in their content. All processing runs locally on DGX Spark hardware.
 
@@ -33,10 +33,10 @@ This project is designed to be customizable, serving as a framework that develop
 ## Default Models
 | Model                | Quantization | Model Type | VRAM        |
 |----------------------|--------------|------------|-------------|
-| Nemotron-3-70B-Instruct | FP8 | Chat | ~ 70 GB |
+| Nemotron-Super-49B   | FP8 (pre-quantized) | Chat | ~ 25 GB |
 | Qwen3-Embedding-4B   | Q8           | Embedding  | ~ 5.39 GB   |
 
-**Total VRAM required:** ~75 GB
+**Total VRAM required:** ~30 GB
 
 ---
 
@@ -60,7 +60,7 @@ Upload a document using the "Upload Documents" button in the sidebar under "Cont
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MODELS` | Comma-separated model names | `nemotron-70b` |
+| `MODELS` | Comma-separated model names | `nemotron-super-49b` |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins | `http://localhost:3000` |
 | `MAX_UPLOAD_SIZE_MB` | Maximum file upload size in MB | `50` |
 | `POSTGRES_HOST` | PostgreSQL hostname | `postgres` |

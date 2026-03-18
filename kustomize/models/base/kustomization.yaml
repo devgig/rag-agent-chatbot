@@ -3,18 +3,18 @@
 # This kustomization deploys vLLM model inference for K3s/BYO GPU environments.
 #
 # ARCHITECTURE:
-# - Deployment: vLLM serving Nemotron-3-70B-Instruct (FP8 quantized)
+# - Deployment: vLLM serving Llama-3.3-Nemotron-Super-49B (pre-quantized FP8)
 # - Service: ClusterIP exposing OpenAI-compatible API on port 8000
 # - ExternalSecret: HuggingFace token from Azure Key Vault
 #
 # GPU CONFIGURATION:
 # - Node selector: nvidia.com/gpu.present=true
 # - Tolerations: nvidia.com/gpu=present:NoSchedule
-# - Resources: 1 GPU, 4-16 CPU, 32-96Gi memory
+# - Resources: 1 GPU, 4-16 CPU, 16-64Gi memory
 #
 # BACKEND INTEGRATION:
-# Backend connects via: nemotron-70b.rag-agent.svc.cluster.local:8000
-# No code changes needed - backend uses model name as hostname: http://nemotron-70b:8000/v1
+# Backend connects via: nemotron-super-49b.rag-agent.svc.cluster.local:8000
+# No code changes needed - backend uses model name as hostname: http://nemotron-super-49b:8000/v1
 #
 # AZURE DEVOPS:
 # Deploy via: kubectl apply -k kustomize/models/overlays/dev/
@@ -25,16 +25,16 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: nemotron-70b
+  name: nemotron-super-49b
 
 namespace: rag-agent
 
 resources:
   - acr-external-secret.yaml         # ACR pull credentials from Azure Key Vault
   - hf-external-secret.yaml          # HuggingFace token from Azure Key Vault
-  - nemotron-70b-service.yaml         # ClusterIP service (port 8000)
+  - nemotron-super-49b-service.yaml   # ClusterIP service (port 8000)
   - model-cache-pvc.yaml              # Persistent storage for HuggingFace model cache
-  - nemotron-70b-deployment.yaml      # Nemotron-3-70B for text, RAG, and coding
+  - nemotron-super-49b-deployment.yaml # Nemotron-Super-49B for text, RAG, and coding
   - qwen3-embedding-deployment.yaml   # Embedding service for RAG
   - qwen3-embedding-service.yaml      # ClusterIP service for embeddings (port 8000)
 
@@ -47,6 +47,6 @@ patches:
 labels:
 - includeSelectors: false  # Don't modify selectors (immutable in existing deployments)
   pairs:
-    app: nemotron-70b
+    app: nemotron-super-49b
     component: model-inference
     managed-by: kustomize

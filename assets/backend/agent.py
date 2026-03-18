@@ -279,7 +279,7 @@ class ChatAgent:
         })
         await self.stream_callback({'type': 'node_start', 'data': 'generate'})
 
-        supports_tools = self.current_model in {"nemotron-70b"}
+        supports_tools = self.current_model in {"nemotron-super-49b", "nemotron-70b", "qwen25-vl-7b"}
         has_tools = supports_tools and self.openai_tools and len(self.openai_tools) > 0
 
         logger.debug({

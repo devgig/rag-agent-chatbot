@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: nemotron-70b-dev
+  name: nemotron-super-49b-dev
 
 namespace: rag-agent
 
@@ -15,5 +15,5 @@ labels:
   pairs:
     environment: dev
 
-# Dev-specific configuration for Nemotron-3-70B-Instruct
-# Resource limits are already optimized for 70B model in base
+# Dev-specific configuration for Nemotron-Super-49B
+# Resource limits are already optimized for 49B FP8 model in base

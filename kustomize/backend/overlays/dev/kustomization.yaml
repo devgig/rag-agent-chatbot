@@ -22,5 +22,5 @@ replicas:
 configMapGenerator:
 - name: backend-config
   literals:
-  - MODELS=nemotron-70b
+  - MODELS=nemotron-super-49b
   - LOG_LEVEL=DEBUG

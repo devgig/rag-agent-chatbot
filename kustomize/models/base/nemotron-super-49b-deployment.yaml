@@ -1,18 +1,25 @@
-# Llama-3.1-Nemotron-70B-Instruct Deployment for DGX Spark
-# ========================================================
-# NVIDIA Llama-3.1-Nemotron-70B-Instruct-HF with FP8 quantization for text, RAG, and code.
-# FP8 quantization: Blackwell-native, ~70GB model weights, minimal quality loss.
+# Llama-3.3-Nemotron-Super-49B Deployment for DGX Spark
+# =====================================================
+# NVIDIA Llama-3.3-Nemotron-Super-49B-v1.5 with pre-quantized FP8 weights.
+# NAS-pruned from Llama-3.3-70B — near-70B quality at 49B parameter cost.
+# ~50GB VRAM for weights at FP8. gpu-memory-utilization=0.70 allocates ~84Gi
+# of 120Gi unified memory, leaving ~36Gi for OS, K3S, and daemonsets.
 #
-# Backend connects via: nemotron-70b.rag-agent.svc.cluster.local:8000
+# FP8 fallback: If FP8 produces NaN outputs on GB10 (SM121), switch to NVFP4:
+#   model: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4 (~25Gi weights)
+#   remove: --trust-remote-code
+#   change: --gpu-memory-utilization=0.55
+#
+# Backend connects via: nemotron-super-49b.rag-agent.svc.cluster.local:8000
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: nemotron-70b
+  name: nemotron-super-49b
   namespace: rag-agent
   labels:
-    app: nemotron-70b
-    workspace: nemotron-70b
+    app: nemotron-super-49b
+    workspace: nemotron-super-49b
     component: model-inference
     managed-by: kustomize
 spec:
@@ -22,12 +29,12 @@ spec:
   progressDeadlineSeconds: 2400
   selector:
     matchLabels:
-      workspace: nemotron-70b
+      workspace: nemotron-super-49b
   template:
     metadata:
       labels:
-        workspace: nemotron-70b
-        app: nemotron-70b
+        workspace: nemotron-super-49b
+        app: nemotron-super-49b
         istio.io/dataplane-mode: none      # Skips istio-cni iptables setup — fixes probe timeouts
       annotations:
         ambient.istio.io/redirection: disabled  # Also disables ztunnel redirection
@@ -44,19 +51,20 @@ spec:
         image: nvcr.io/nvidia/vllm:25.11-py3
         command: ["vllm", "serve"]
         args:
-        - "nvidia/Llama-3.1-Nemotron-70B-Instruct-HF"
-        - "--served-model-name=nemotron-70b"
+        - "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8"
+        # NVFP4 fallback if FP8 produces NaN on SM121:
+        # - "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4"
+        - "--served-model-name=nemotron-super-49b"
         - "--tensor-parallel-size=1"
-        - "--gpu-memory-utilization=0.90"
-        - "--max-model-len=8192"
-        - "--quantization=fp8"
+        - "--gpu-memory-utilization=0.70"
+        - "--max-model-len=32768"
         - "--dtype=auto"
         - "--host=0.0.0.0"
         - "--port=8000"
         - "--trust-remote-code"
         - "--enforce-eager"
         - "--enable-auto-tool-choice"
-        - "--tool-call-parser=hermes"
+        - "--tool-call-parser=llama_nemotron_json"
         - "--enable-prefix-caching"
         ports:
         - containerPort: 8000
@@ -73,11 +81,11 @@ spec:
           requests:
             nvidia.com/gpu: 1
             cpu: "4"
-            memory: "32Gi"
+            memory: "16Gi"
           limits:
             nvidia.com/gpu: 1
             cpu: "16"
-            memory: "96Gi"
+            memory: "64Gi"
         startupProbe:
           httpGet:
             path: /health
@@ -85,7 +93,7 @@ spec:
           initialDelaySeconds: 120
           periodSeconds: 30
           timeoutSeconds: 10
-          failureThreshold: 40   # 120s + 40*30s = 1320s max startup (70B loads slower than 7B)
+          failureThreshold: 40   # 120s + 40*30s = 1320s max startup
         livenessProbe:
           httpGet:
             path: /health

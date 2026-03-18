@@ -1,19 +1,19 @@
 # Service for GPU Model Inference
 # ================================
 # ClusterIP service exposing vLLM OpenAI-compatible API
-# Backend connects via: nemotron-70b.rag-agent.svc.cluster.local:8000
+# Backend connects via: nemotron-super-49b.rag-agent.svc.cluster.local:8000
 
 apiVersion: v1
 kind: Service
 metadata:
-  name: nemotron-70b
+  name: nemotron-super-49b
   namespace: rag-agent
   labels:
-    app: nemotron-70b
+    app: nemotron-super-49b
     managed-by: kustomize
 spec:
   selector:
-    workspace: nemotron-70b
+    workspace: nemotron-super-49b
   ports:
   - port: 8000
     targetPort: 8000

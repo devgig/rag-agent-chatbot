@@ -43,7 +43,7 @@ spec:
       initContainers:
       - name: create-config
         image: busybox
-        command: ['sh', '-c', 'echo ''{"sources":[],"models":["nemotron-70b"],"selected_model":"nemotron-70b","selected_sources":[],"current_chat_id":null}'' > /config/config.json']
+        command: ['sh', '-c', 'echo ''{"sources":[],"models":["nemotron-super-49b"],"selected_model":"nemotron-super-49b","selected_sources":[],"current_chat_id":null}'' > /config/config.json']
         securityContext:
           runAsNonRoot: true
           runAsUser: 1000
@@ -89,7 +89,7 @@ spec:
         - name: MILVUS_ADDRESS
           value: "tcp://milvus.milvus-system.svc.cluster.local:19530"
         - name: MODELS
-          value: "nemotron-70b"
+          value: "nemotron-super-49b"
         - name: CONFIG_PATH
           value: "/config/config.json"
         - name: JWKS_URL

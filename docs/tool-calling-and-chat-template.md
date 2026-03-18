@@ -2,9 +2,9 @@
 
 How tool calling works in this project and how the `search_documents` tool is integrated end-to-end.
 
-## Tool Calling with Nemotron-3-70B
+## Tool Calling with Nemotron-Super-49B
 
-Nemotron-3-70B-Instruct natively supports tool calling through its built-in chat template. Unlike the previous Qwen2.5-VL setup which required a custom Jinja2 chat template, Nemotron handles tool definitions and tool call formatting out of the box.
+Llama-3.3-Nemotron-Super-49B natively supports tool calling through its built-in chat template. vLLM provides a dedicated `llama_nemotron_json` parser that handles the model's native JSON-based tool call format.
 
 ### vLLM Configuration
 
@@ -12,11 +12,11 @@ Two deployment flags enable tool calling:
 
 ```yaml
 args:
-  - "--tool-call-parser=hermes"                             # Parse tool call output
-  - "--enable-auto-tool-choice"                             # Let model decide when to call tools
+  - "--tool-call-parser=llama_nemotron_json"          # Parse Nemotron's native tool call output
+  - "--enable-auto-tool-choice"                        # Let model decide when to call tools
 ```
 
-The `hermes` parser tells vLLM to look for tool call patterns in the model's output and convert them into OpenAI-compatible tool call objects in the streaming response. No custom chat template is needed — vLLM uses the model's built-in tokenizer chat template automatically.
+The `llama_nemotron_json` parser tells vLLM to look for tool call patterns in the model's output and convert them into OpenAI-compatible tool call objects in the streaming response. No custom chat template is needed — vLLM uses the model's built-in tokenizer chat template automatically.
 
 ## Tool Calling Pipeline
 
@@ -30,9 +30,9 @@ Backend (agent.py) ── formats messages with system prompt ──▶ vLLM
   │                                                              │
   │  vLLM applies chat template:                                 │
   │  1. Injects tool definitions into system message              │
-  │  2. Formats conversation with <|im_start|>/<|im_end|> tokens │
-  │  3. Model generates <tool_call> XML                           │
-  │  4. Hermes parser converts XML to OpenAI tool_call objects    │
+  │  2. Formats conversation with model's native template         │
+  │  3. Model generates JSON tool call output                     │
+  │  4. llama_nemotron_json parser converts to OpenAI tool_calls  │
   │                                                              │
   ◀──────────── streaming response with tool_calls ──────────────┘
   │
@@ -145,8 +145,8 @@ Typical flow for a RAG query:
 
 | Decision | Reason |
 |----------|--------|
-| Native tool calling over custom chat templates | Nemotron-3-70B supports tool calling natively — no custom template maintenance needed |
-| Hermes-style parser | Well-tested convention compatible with Nemotron's tool calling output format |
+| Native tool calling over custom chat templates | Nemotron-Super-49B supports tool calling natively with the `llama_nemotron_json` parser — no custom template maintenance needed |
+| `llama_nemotron_json` parser | NVIDIA's dedicated parser for Nemotron's native JSON tool call format, providing excellent BFCL benchmark scores (71.75% on BFCL v3) |
 | MCP over direct function calls | Clean process isolation, standard protocol, easy to add tools without modifying agent code |
 | Forced first tool call | Prevents the model from confidently answering from its training data instead of searching documents |
 | Single tool (search_documents) | The project is a focused RAG chatbot — one tool keeps the pipeline simple and reliable |

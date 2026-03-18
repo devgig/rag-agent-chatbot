@@ -51,7 +51,7 @@
 
   <!-- ════════════════ Arrows from Backend to Services ════════════════ -->
 
-  <!-- Arrow: Backend → Nemotron-3-70B -->
+  <!-- Arrow: Backend → Nemotron-Super-49B -->
   <line x1="840" y1="335" x2="1085" y2="86" stroke="white" stroke-width="2" marker-end="url(#arrow)"/>
   <text x="980" y="185" text-anchor="middle" fill="#ddd" font-size="11" transform="rotate(-14, 980, 185)">OpenAI API :8000</text>
 
@@ -69,9 +69,9 @@
   <rect x="925" y="480" width="50" height="20" rx="4" fill="#555"/>
   <text x="950" y="494" text-anchor="middle" fill="#ddd" font-size="11">:19530</text>
 
-  <!-- ════════════════ Nemotron-3-70B (GPU) ════════════════ -->
+  <!-- ════════════════ Nemotron-Super-49B (GPU) ════════════════ -->
   <rect x="1090" y="55" width="230" height="62" rx="8" fill="#4CAF50"/>
-  <text x="1205" y="80" text-anchor="middle" fill="white" font-size="14" font-weight="700">Nemotron-3-70B</text>
+  <text x="1205" y="80" text-anchor="middle" fill="white" font-size="14" font-weight="700">Nemotron-Super-49B</text>
   <text x="1205" y="100" text-anchor="middle" fill="#e0f2e0" font-size="12">(GPU)</text>
 
   <!-- ════════════════ Qwen3 Embedding (CPU) ════════════════ -->
