@@ -71,7 +71,7 @@ spec:
           name: http
         env:
         - name: HF_HUB_OFFLINE
-          value: "0"  # Must be 0 for first startup to download model; set to 1 after cached
+          value: "1"  # Model cached on PVC — skip network checks for faster startup
         - name: HF_TOKEN
           valueFrom:
             secretKeyRef:
@@ -93,7 +93,7 @@ spec:
           initialDelaySeconds: 120
           periodSeconds: 30
           timeoutSeconds: 10
-          failureThreshold: 40   # 120s + 40*30s = 1320s max startup
+          failureThreshold: 120  # 120s + 120*30s = 3720s (62 min) — accounts for first-time model download (~50GB)
         livenessProbe:
           httpGet:
             path: /health
