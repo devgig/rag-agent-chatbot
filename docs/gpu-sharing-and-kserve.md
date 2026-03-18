@@ -252,7 +252,7 @@ spec:
   grpcEndpoint: port:8085
   containers:
     - name: vllm
-      image: nvcr.io/nvidia/vllm:25.11-py3
+      image: nvcr.io/nvidia/vllm:26.02-py3
       resources:
         limits:
           nvidia.com/gpu: 1

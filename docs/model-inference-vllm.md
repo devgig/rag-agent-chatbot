@@ -18,7 +18,7 @@ Kubernetes manifests for GPU-accelerated LLM inference using vLLM on the NVIDIA 
                  ▼
 ┌─────────────────────────────────────────────────────────┐
 │ Deployment: nemotron-super-49b                          │
-│ - Image: nvcr.io/nvidia/vllm:25.11-py3                 │
+│ - Image: nvcr.io/nvidia/vllm:26.02-py3                 │
 │ - Model: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8  │
 │ - Quantization: Pre-quantized FP8                       │
 │ - GPU: 1x NVIDIA GB10 (spark-7eb5)                     │
