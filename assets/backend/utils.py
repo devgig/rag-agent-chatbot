@@ -16,6 +16,7 @@
 #
 """Utility functions for file processing and message conversion."""
 
+import asyncio
 import json
 import os
 import time
@@ -94,7 +95,7 @@ async def process_and_ingest_files_background(
         logger.debug({"message": "Loading documents", "task_id": task_id})
         
         try:
-            documents = vector_store._load_documents(file_paths)
+            documents = await asyncio.to_thread(vector_store._load_documents, file_paths)
             
             logger.debug({
                 "message": "Documents loaded, starting indexing",
@@ -103,7 +104,7 @@ async def process_and_ingest_files_background(
             })
             
             indexing_tasks[task_id] = "indexing_documents"
-            vector_store.index_documents(documents)
+            await asyncio.to_thread(vector_store.index_documents, documents)
 
             # Save sources to PostgreSQL for persistence
             if file_names and postgres_storage:
