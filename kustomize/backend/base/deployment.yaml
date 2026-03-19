@@ -92,6 +92,8 @@ spec:
           value: "nemotron-super-49b"
         - name: CONFIG_PATH
           value: "/config/config.json"
+        - name: UPLOADS_DIR
+          value: "/tmp/uploads"
         - name: JWKS_URL
           value: "http://auth-backend.auth-service.svc.cluster.local:8000/.well-known/jwks.json"
         volumeMounts:
