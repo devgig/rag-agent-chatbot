@@ -19,6 +19,7 @@
 import asyncio
 import contextlib
 import json
+import re
 import uuid
 from typing import AsyncIterator, List, Dict, Any, TypedDict, Optional, Callable, Awaitable
 
@@ -421,6 +422,10 @@ class ChatAgent:
         tool_calls_buffer = {}
         saw_tool_finish = False
         usage = None
+        # State for stripping <think>...</think> blocks from streamed tokens.
+        # Tokens arrive in arbitrary chunks so the tags may span multiple chunks.
+        _in_think_block = False
+        _pending = ""  # buffered text that might be a partial <think> or </think> tag
 
         async for chunk in stream:
             if hasattr(chunk, "usage") and chunk.usage is not None:
@@ -436,8 +441,45 @@ class ChatAgent:
 
                 content = getattr(delta, "content", None)
                 if content:
-                    await stream_callback({"type": "token", "data": content})
-                    llm_output_buffer.append(content)
+                    # --- strip <think>…</think> blocks from streamed output ---
+                    _pending += content
+                    emit = ""
+
+                    while _pending:
+                        if _in_think_block:
+                            # Look for closing </think> tag
+                            close_idx = _pending.find("</think>")
+                            if close_idx != -1:
+                                _pending = _pending[close_idx + len("</think>"):]
+                                _in_think_block = False
+                                continue
+                            # Check for partial </think> at the end of buffer
+                            if _pending.endswith(("<", "</", "</t", "</th", "</thi", "</thin", "</think", "</think>")):
+                                break  # wait for more data
+                            _pending = ""
+                            break
+                        else:
+                            # Look for opening <think> tag
+                            open_idx = _pending.find("<think>")
+                            if open_idx != -1:
+                                emit += _pending[:open_idx]
+                                _pending = _pending[open_idx + len("<think>"):]
+                                _in_think_block = True
+                                continue
+                            # Check for partial <think> at the end of buffer
+                            for i in range(1, min(len("<think>"), len(_pending) + 1)):
+                                if _pending.endswith("<think>"[:i]):
+                                    emit += _pending[:-i]
+                                    _pending = _pending[-i:]
+                                    break
+                            else:
+                                emit += _pending
+                                _pending = ""
+                            break
+
+                    if emit:
+                        await stream_callback({"type": "token", "data": emit})
+                        llm_output_buffer.append(emit)
                 for tc in getattr(delta, "tool_calls", []) or []:
                     idx = getattr(tc, "index", None)
                     if idx is None:
