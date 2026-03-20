@@ -116,7 +116,16 @@ class VectorStore:
             embedding_function=self.embeddings,
             collection_name="context",
             connection_args={"uri": self.uri},
-            auto_id=True
+            auto_id=True,
+            index_params={
+                "metric_type": "COSINE",
+                "index_type": "HNSW",
+                "params": {"M": 16, "efConstruction": 256},
+            },
+            search_params={
+                "metric_type": "COSINE",
+                "params": {"ef": 64},
+            },
         )
         logger.debug({
             "message": "Milvus vector store initialized",

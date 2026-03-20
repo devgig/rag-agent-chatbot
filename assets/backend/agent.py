@@ -263,18 +263,45 @@ class ChatAgent:
 
     async def generate(self, state: State) -> Dict[str, Any]:
         """Generate AI response using the current model.
-        
+
         Args:
             state: Current graph state
-            
+
         Returns:
             Updated state with new AI message
         """
+        iterations = state.get("iterations", 0)
+
+        # On iteration 0, skip the LLM call entirely and directly invoke
+        # search_documents with the user's query.  The old code forced
+        # tool_choice=search_documents which made the model spend ~10s
+        # generating a tool-call JSON that was completely deterministic.
+        if iterations == 0 and self.tools_by_name.get("search_documents"):
+            user_query = self._extract_user_query(state)
+            logger.debug({
+                "message": "GRAPH: fast-path — bypassing LLM for forced search_documents",
+                "chat_id": state.get("chat_id"),
+                "query": user_query[:100],
+            })
+            await self.stream_callback({'type': 'node_start', 'data': 'generate'})
+
+            tool_call_id = f"call_fast_{uuid.uuid4().hex[:8]}"
+            response = AIMessage(
+                content="",
+                tool_calls=[ToolCall(
+                    name="search_documents",
+                    args={"query": user_query},
+                    id=tool_call_id,
+                )],
+            )
+            await self.stream_callback({'type': 'node_end', 'data': 'generate'})
+            return {"messages": state.get("messages", []) + [response]}
+
         messages = convert_langgraph_messages_to_openai(state.get("messages", []))
         logger.debug({
             "message": "GRAPH: ENTERING NODE - generate",
             "chat_id": state.get("chat_id"),
-            "iterations": state.get("iterations", 0),
+            "iterations": iterations,
             "current_model": self.current_model,
             "message_count": len(state.get("messages", []))
         })
@@ -294,16 +321,9 @@ class ChatAgent:
 
         tool_params = {}
         if has_tools:
-            iterations = state.get("iterations", 0)
-            # Force search_documents on first iteration so the model
-            # can never skip retrieval and answer from its own knowledge.
-            if iterations == 0 and self.tools_by_name.get("search_documents"):
-                tool_choice = {"type": "function", "function": {"name": "search_documents"}}
-            else:
-                tool_choice = "auto"
             tool_params = {
                 "tools": self.openai_tools,
-                "tool_choice": tool_choice
+                "tool_choice": "auto",
             }
         
         stream = await self.model_client.chat.completions.create(
@@ -378,6 +398,14 @@ class ChatAgent:
         workflow.add_edge("action", "generate")
 
         return workflow.compile(checkpointer=memory)
+
+    @staticmethod
+    def _extract_user_query(state: State) -> str:
+        """Return the last HumanMessage content from the state."""
+        for msg in reversed(state.get("messages", [])):
+            if isinstance(msg, HumanMessage):
+                return msg.content
+        return ""
 
     def _format_tool_calls(self, tool_calls_buffer: Dict[int, Dict[str, str]]) -> List[ToolCall]:
         """Parse streamed tool call buffer into ToolCall objects.
