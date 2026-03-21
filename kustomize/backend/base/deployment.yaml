@@ -43,7 +43,10 @@ spec:
       initContainers:
       - name: create-config
         image: busybox
-        command: ['sh', '-c', 'echo ''{"sources":[],"models":["qwen35"],"selected_model":"qwen35","selected_sources":[],"current_chat_id":null}'' > /config/config.json']
+        command: ['sh', '-c', 'echo "{\"sources\":[],\"models\":[\"${MODELS}\"],\"selected_model\":\"${MODELS}\",\"selected_sources\":[],\"current_chat_id\":null}" > /config/config.json']
+        envFrom:
+        - configMapRef:
+            name: backend-config
         securityContext:
           runAsNonRoot: true
           runAsUser: 1000
@@ -68,6 +71,9 @@ spec:
         ports:
         - containerPort: 8000
           name: http
+        envFrom:
+        - configMapRef:
+            name: backend-config
         env:
         - name: POSTGRES_HOST
           value: "postgresql.postgres-system.svc.cluster.local"
@@ -88,8 +94,6 @@ spec:
               key: password
         - name: MILVUS_ADDRESS
           value: "tcp://milvus.milvus-system.svc.cluster.local:19530"
-        - name: MODELS
-          value: "qwen35"
         - name: CONFIG_PATH
           value: "/config/config.json"
         - name: UPLOADS_DIR
