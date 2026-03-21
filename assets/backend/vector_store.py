@@ -29,7 +29,7 @@ from typing import Optional, Callable
 import requests
 
 
-EMBEDDING_BATCH_SIZE = 32
+EMBEDDING_BATCH_SIZE = 8
 RELEVANCE_SCORE_THRESHOLD = float(os.getenv("RELEVANCE_SCORE_THRESHOLD", "0.4"))
 
 
@@ -52,7 +52,7 @@ class CustomEmbeddings:
                 self.url,
                 json={"input": batch, "model": self.model},
                 headers={"Content-Type": "application/json"},
-                timeout=60,
+                timeout=300,
             )
             response.raise_for_status()
             data = response.json()
