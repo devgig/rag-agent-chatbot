@@ -89,7 +89,7 @@ spec:
         - name: MILVUS_ADDRESS
           value: "tcp://milvus.milvus-system.svc.cluster.local:19530"
         - name: MODELS
-          value: "nemotron-super-49b"
+          value: "qwen35"
         - name: CONFIG_PATH
           value: "/config/config.json"
         - name: UPLOADS_DIR
