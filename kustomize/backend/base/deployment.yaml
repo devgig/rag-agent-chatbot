@@ -20,9 +20,11 @@ spec:
     metadata:
       labels:
         app: rag-agent-backend
+        istio.io/dataplane-mode: none
       annotations:
         # Graceful shutdown for WebSocket connections
         cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+        ambient.istio.io/redirection: disabled
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"
         prometheus.io/path: "/metrics"
