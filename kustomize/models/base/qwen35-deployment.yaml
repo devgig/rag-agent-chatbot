@@ -1,0 +1,116 @@
+# Qwen3.5-35B-A3B Deployment for DGX Spark
+# ==========================================
+# Qwen3.5-35B-A3B Mixture-of-Experts model with pre-quantized FP8 weights.
+# 35B total parameters, only 3B active per token — delivers ~35 tok/s on GB10.
+# ~35GB VRAM for weights at FP8. gpu-memory-utilization=0.70 allocates ~84Gi
+# leaving ~36Gi for OS, K3S, and daemonsets.
+#
+# Deployed in the shared "llm" namespace so multiple projects
+# (rag-agent-chatbot, ai-agents, etc.) can use it.
+#
+# Consumers connect via: qwen35.llm.svc.cluster.local:8000
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen35
+  namespace: llm
+  labels:
+    app: qwen35
+    workspace: qwen35
+    component: model-inference
+    managed-by: kustomize
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  progressDeadlineSeconds: 2400
+  selector:
+    matchLabels:
+      workspace: qwen35
+  template:
+    metadata:
+      labels:
+        workspace: qwen35
+        app: qwen35
+        istio.io/dataplane-mode: none
+      annotations:
+        ambient.istio.io/redirection: disabled
+    spec:
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: present
+        effect: NoSchedule
+      containers:
+      - name: vllm-inference
+        image: nvcr.io/nvidia/vllm:26.02-py3
+        command: ["vllm", "serve"]
+        args:
+        - "Qwen/Qwen3.5-35B-A3B-FP8"
+        - "--served-model-name=qwen35"
+        - "--tensor-parallel-size=1"
+        - "--gpu-memory-utilization=0.70"
+        - "--max-model-len=16384"
+        - "--dtype=auto"
+        - "--host=0.0.0.0"
+        - "--port=8000"
+        - "--enable-auto-tool-choice"
+        - "--tool-call-parser=hermes"
+        - "--enable-prefix-caching"
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: HF_HUB_OFFLINE
+          value: "0"  # Set to 1 after model is cached on PVC
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-credentials
+              key: token
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+            cpu: "4"
+            memory: "16Gi"
+          limits:
+            nvidia.com/gpu: 1
+            cpu: "16"
+            memory: "64Gi"
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 120
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 30
+          timeoutSeconds: 30
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3
+        volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
+        - name: model-cache
+          mountPath: /root/.cache/huggingface
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+      - name: model-cache
+        persistentVolumeClaim:
+          claimName: model-cache-pvc

@@ -1,19 +1,18 @@
 # PersistentVolumeClaim for HuggingFace Model Cache
 # =================================================
 # Persists downloaded models across pod restarts to avoid re-downloading.
-# Significantly reduces startup time after initial download.
 #
-# Nemotron-Super-49B FP8: ~50GB download (pre-quantized FP8 weights)
-# With PVC: First startup ~10-15min, subsequent startups ~3-5min
-# Without PVC: Every startup ~10-15min
+# Qwen3.5-35B-A3B FP8: ~35GB download
+# With PVC: First startup ~5-10min, subsequent startups ~2-3min
+# Without PVC: Every startup ~5-10min
 
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: model-cache-pvc
-  namespace: rag-agent
+  namespace: llm
   labels:
-    app: nemotron-super-49b
+    app: qwen35
     component: model-inference
 spec:
   accessModes:

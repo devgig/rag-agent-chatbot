@@ -1,20 +1,19 @@
 # vLLM Model Inference Configuration
 # ==================================================================================================
-# This kustomization deploys vLLM model inference for K3s/BYO GPU environments.
+# Deploys vLLM model inference in the shared "llm" namespace for K3s/BYO GPU.
 #
 # ARCHITECTURE:
-# - Deployment: vLLM serving Llama-3.3-Nemotron-Super-49B (pre-quantized FP8)
+# - Deployment: vLLM serving Qwen3.5-35B-A3B (MoE, FP8) in the "llm" namespace
 # - Service: ClusterIP exposing OpenAI-compatible API on port 8000
+# - ExternalName: alias in "rag-agent" namespace so backend resolves qwen35:8000
 # - ExternalSecret: HuggingFace token from Azure Key Vault
 #
-# GPU CONFIGURATION:
-# - Node selector: nvidia.com/gpu.present=true
-# - Tolerations: nvidia.com/gpu=present:NoSchedule
-# - Resources: 1 GPU, 4-16 CPU, 16-64Gi memory
+# SHARED MODEL:
+# The LLM runs in the "llm" namespace and is shared across projects:
+# - rag-agent-chatbot: http://qwen35:8000/v1 (via ExternalName in rag-agent ns)
+# - ai-agents: http://qwen35.llm.svc.cluster.local:8000/v1 (direct cross-ns DNS)
 #
-# BACKEND INTEGRATION:
-# Backend connects via: nemotron-super-49b.rag-agent.svc.cluster.local:8000
-# No code changes needed - backend uses model name as hostname: http://nemotron-super-49b:8000/v1
+# Embedding service stays in rag-agent namespace (only used by rag-agent-chatbot).
 #
 # AZURE DEVOPS:
 # Deploy via: kubectl apply -k kustomize/models/overlays/dev/
@@ -25,28 +24,21 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: nemotron-super-49b
-
-namespace: rag-agent
+  name: qwen35-llm
 
 resources:
-  - acr-external-secret.yaml         # ACR pull credentials from Azure Key Vault
-  - hf-external-secret.yaml          # HuggingFace token from Azure Key Vault
-  - nemotron-super-49b-service.yaml   # ClusterIP service (port 8000)
+  - llm-namespace.yaml                # Shared "llm" namespace
+  - acr-external-secret.yaml          # ACR pull credentials from Azure Key Vault
+  - hf-external-secret.yaml           # HuggingFace token from Azure Key Vault
   - model-cache-pvc.yaml              # Persistent storage for HuggingFace model cache
-  - nemotron-super-49b-deployment.yaml # Nemotron-Super-49B for text, RAG, and coding
-  - qwen3-embedding-deployment.yaml   # Embedding service for RAG
-  - qwen3-embedding-service.yaml      # ClusterIP service for embeddings (port 8000)
+  - qwen35-deployment.yaml            # Qwen3.5-35B-A3B MoE (FP8) in llm namespace
+  - qwen35-service.yaml               # ClusterIP service in llm namespace
+  - qwen35-externalname-service.yaml  # ExternalName alias in rag-agent namespace
+  - qwen3-embedding-deployment.yaml   # Embedding service for RAG (rag-agent ns)
+  - qwen3-embedding-service.yaml      # ClusterIP service for embeddings (rag-agent ns)
 
 patches:
   - target:
       kind: Deployment
       name: qwen3-embedding
     path: qwen3-embedding-image-patch.yaml
-
-labels:
-- includeSelectors: false  # Don't modify selectors (immutable in existing deployments)
-  pairs:
-    app: nemotron-super-49b
-    component: model-inference
-    managed-by: kustomize

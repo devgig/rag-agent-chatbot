@@ -2,18 +2,15 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: nemotron-super-49b-dev
+  name: qwen35-llm-dev
 
-namespace: rag-agent
+# No global namespace override — resources specify their own namespace
+# (llm for the model, rag-agent for the ExternalName service and embeddings)
 
 resources:
-  - namespace.yaml
   - ../../base
 
 labels:
 - includeSelectors: false
   pairs:
     environment: dev
-
-# Dev-specific configuration for Nemotron-Super-49B
-# Resource limits are already optimized for 49B FP8 model in base

@@ -43,7 +43,7 @@ spec:
       initContainers:
       - name: create-config
         image: busybox
-        command: ['sh', '-c', 'echo ''{"sources":[],"models":["nemotron-super-49b"],"selected_model":"nemotron-super-49b","selected_sources":[],"current_chat_id":null}'' > /config/config.json']
+        command: ['sh', '-c', 'echo ''{"sources":[],"models":["qwen35"],"selected_model":"qwen35","selected_sources":[],"current_chat_id":null}'' > /config/config.json']
         securityContext:
           runAsNonRoot: true
           runAsUser: 1000
