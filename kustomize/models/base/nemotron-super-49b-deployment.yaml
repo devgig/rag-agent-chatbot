@@ -50,7 +50,7 @@ spec:
         effect: NoSchedule
       containers:
       - name: vllm-inference
-        image: nvcr.io/nvidia/vllm:26.03-py3
+        image: nvcr.io/nvidia/vllm:26.02-py3
         command: ["vllm", "serve"]
         args:
         - "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4"
