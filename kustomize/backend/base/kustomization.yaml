@@ -29,7 +29,6 @@ patches:
     path: qwen3-embedding-image-patch.yaml
 
 labels:
-- includeSelectors: true
+- includeSelectors: false
   pairs:
-    app: rag-agent-backend
     component: backend
