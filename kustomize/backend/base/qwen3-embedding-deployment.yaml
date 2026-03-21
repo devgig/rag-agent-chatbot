@@ -1,0 +1,84 @@
+# Lightweight Embedding Service for RAG
+# ==========================================
+# Provides embedding generation for document indexing and retrieval.
+# Uses sentence-transformers with all-MiniLM-L6-v2 model (CPU-based).
+#
+# Backend Integration:
+# - Backend expects service at: http://qwen3-embedding:8000
+# - Endpoint: /v1/embeddings (OpenAI-compatible)
+# - Used by: assets/backend/vector_store.py (CustomEmbeddings class)
+#
+# Why sentence-transformers:
+# - Native ARM64 support (works on all node types)
+# - Fast on CPU (90ms per embedding)
+# - Small model size (~80MB)
+# - OpenAI-compatible API
+#
+# Image: Built by azure-pipelines-embedding.yaml, pushed to ACR
+# Source: assets/embedding/
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen3-embedding
+  labels:
+    app: qwen3-embedding
+    component: embedding-service
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 300
+  selector:
+    matchLabels:
+      app: qwen3-embedding
+  template:
+    metadata:
+      labels:
+        app: qwen3-embedding
+        component: embedding-service
+        istio.io/dataplane-mode: none      # Skips istio-cni iptables setup on storage nodes
+      annotations:
+        ambient.istio.io/redirection: disabled  # Also disables ztunnel redirection
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      imagePullSecrets:
+      - name: acr-secret
+      dnsPolicy: Default  # Bypass CoreDNS; iptables-nft broken on Rockchip storage nodes (kernel 6.1.0-1025)
+      nodeSelector:
+        node-type: storage  # Deploy on storage nodes (CPU-only)
+      containers:
+      - name: embedding-server
+        image: rag-agent-chatbot-embedding:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 24   # 10s + 24*5s = 130s max startup time
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 30
+          timeoutSeconds: 30
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 10
+          timeoutSeconds: 10
+          failureThreshold: 3

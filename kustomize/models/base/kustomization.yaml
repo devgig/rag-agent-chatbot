@@ -31,14 +31,9 @@ resources:
   - acr-external-secret.yaml          # ACR pull credentials from Azure Key Vault
   - hf-external-secret.yaml           # HuggingFace token from Azure Key Vault
   - model-cache-pvc.yaml              # Persistent storage for HuggingFace model cache
-  - qwen35-deployment.yaml            # Qwen3.5-35B-A3B MoE (FP8) in llm namespace
+  - qwen35-deployment.yaml            # Qwen3-30B-A3B MoE (FP8) in llm namespace
   - qwen35-service.yaml               # ClusterIP service in llm namespace
-  - qwen35-externalname-service.yaml  # ExternalName alias in rag-agent namespace
-  - qwen3-embedding-deployment.yaml   # Embedding service for RAG (rag-agent ns)
-  - qwen3-embedding-service.yaml      # ClusterIP service for embeddings (rag-agent ns)
+  # ExternalName service and embedding resources deploy to rag-agent namespace
+  # and are managed by the backend kustomization to avoid namespace conflicts.
 
-patches:
-  - target:
-      kind: Deployment
-      name: qwen3-embedding
-    path: qwen3-embedding-image-patch.yaml
+  # Embedding image patch is now in the backend kustomization.
