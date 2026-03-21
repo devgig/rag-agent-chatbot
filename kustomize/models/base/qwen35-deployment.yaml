@@ -1,14 +1,15 @@
-# Qwen3-30B-A3B Deployment for DGX Spark
-# ========================================
-# Qwen3-30B-A3B Mixture-of-Experts model with pre-quantized FP8 weights.
-# 30B total parameters, only 3B active per token — delivers ~35 tok/s on GB10.
-# ~30GB VRAM for weights at FP8. gpu-memory-utilization=0.70 allocates ~84Gi
-# leaving ~36Gi for OS, K3S, and daemonsets.
+# Nemotron 3 Nano 30B-A3B Deployment for DGX Spark
+# =================================================
+# NVIDIA Nemotron 3 Nano MoE model with NVFP4 quantization.
+# 30B total parameters, only 3B active per token — delivers ~56 tok/s (vLLM)
+# or ~70 tok/s (llama.cpp) on GB10. ~15GB VRAM for weights at NVFP4.
+# gpu-memory-utilization=0.55 allocates ~66Gi, leaving ~54Gi for OS/K3s.
 #
 # Deployed in the shared "llm" namespace so multiple projects
-# (rag-agent-chatbot, ai-agents, etc.) can use it.
+# (rag-agent-chatbot, ai-agents/NemoClaw, etc.) can use it.
 #
 # Consumers connect via: qwen35.llm.svc.cluster.local:8000
+# (Service name kept as "qwen35" for compatibility — model is Nemotron Nano)
 
 apiVersion: apps/v1
 kind: Deployment
@@ -49,10 +50,10 @@ spec:
         image: nvcr.io/nvidia/vllm:26.02-py3
         command: ["vllm", "serve"]
         args:
-        - "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8"
+        - "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
         - "--served-model-name=qwen35"
         - "--tensor-parallel-size=1"
-        - "--gpu-memory-utilization=0.70"
+        - "--gpu-memory-utilization=0.55"
         - "--max-model-len=16384"
         - "--dtype=auto"
         - "--host=0.0.0.0"

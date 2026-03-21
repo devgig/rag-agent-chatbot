@@ -81,19 +81,50 @@ NVFP4 halves the weight size (50 GB to 25 GB), which halves the bytes read per t
 ## Phase 3: Qwen3-30B-A3B MoE FP8 (current)
 
 **Model:** `Qwen/Qwen3-30B-A3B-Instruct-2507-FP8`
-**Throughput:** ~35 tok/s
+**Throughput:** ~38 tok/s (llama.cpp benchmark)
 **Weight size:** ~30 GB
 
 ### Why we switched
 
-The [NVIDIA DGX Spark AI agent scaling blog](https://developer.nvidia.com/blog/scaling-autonomous-ai-agents-and-workloads-with-nvidia-dgx-spark) benchmarked Qwen3.5-35B-A3B at 35.75 tok/s on DGX Spark — 8x faster than Nemotron-49B FP8. The key insight: **Mixture-of-Experts models only activate a subset of parameters per token.**
-
-Qwen3-30B-A3B has 30B total parameters but only 3B are active per token. This means:
+The [NVIDIA DGX Spark AI agent scaling blog](https://developer.nvidia.com/blog/scaling-autonomous-ai-agents-and-workloads-with-nvidia-dgx-spark) showed MoE models delivering dramatically better throughput than dense models. Qwen3-30B-A3B has 30B total parameters but only 3B active per token:
 - **~16x less data read per token** compared to a 49B dense model
-- **~35 tok/s generation** — a 500-token answer in ~14 seconds instead of 110
+- **~38 tok/s generation** on DGX Spark
 - **FP8 quality preserved** — no need for aggressive quantization
 
-We initially tried Qwen3.5-35B-A3B-FP8, but vLLM 26.02 (v0.15.1) doesn't support the `qwen3_5_moe` architecture yet. The Qwen3 predecessor (`qwen3_moe`) is supported.
+We initially tried Qwen3.5-35B-A3B-FP8, but vLLM 26.02 (v0.15.1) doesn't support the `qwen3_5_moe` architecture yet.
+
+### What we learned
+
+- **MoE is the right architecture for bandwidth-limited GPUs.** The GB10 has plenty of memory (128 GB) but limited bandwidth. MoE exploits this by storing many parameters but reading few.
+- **vLLM version compatibility matters.** Qwen3.5 models use a new architecture (`qwen3_5_moe`) not yet in vLLM 26.02. Always verify model architecture support before committing to a model.
+- **Shared serving reduces waste.** Running one model instance for multiple projects avoids GPU memory duplication on a single-GPU system.
+- **Qwen FP8 performance is suboptimal.** Qwen themselves acknowledge FP8 performance in Transformers needs further optimization. Community benchmarks showed Nemotron Nano NVFP4 significantly outperforming Qwen3-30B FP8 on the same hardware.
+
+---
+
+## Phase 4: Nemotron 3 Nano 30B-A3B NVFP4 (current)
+
+**Model:** `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4`
+**Throughput:** ~56 tok/s (vLLM), ~70 tok/s (llama.cpp)
+**Weight size:** ~15 GB
+
+### Why we switched
+
+Community benchmark data from llama.cpp discussions on DGX Spark hardware showed Nemotron Nano dramatically outperforming Qwen3-30B-A3B:
+
+| Model | Quant | DGX Spark (vLLM) | DGX Spark (llama.cpp) |
+| ----- | ----- | ---------------- | --------------------- |
+| Nemotron 3 Nano 30B | NVFP4 | **~56 tok/s** | **~70 tok/s** |
+| Qwen3-30B-A3B | FP8 | ~38 tok/s | ~38 tok/s |
+
+Nemotron Nano wins by **47% (vLLM)** to **84% (llama.cpp)** on the same hardware.
+
+### Why Nemotron Nano over Qwen3
+
+1. **NVIDIA's own model + quantization format.** NVFP4 is native to Blackwell — hardware-accelerated with an optimization trajectory that only improves as NIM, NemoClaw, and TRT-LLM mature.
+2. **Half the weight size.** ~15 GB (NVFP4) vs ~30 GB (Qwen FP8) — leaves ~100 GB free for KV cache, concurrent requests, or GPU time-slicing with a second model.
+3. **NemoClaw compatibility.** The ai-agents project uses NemoClaw for agent orchestration. NVIDIA model + NVIDIA agent framework = blessed path.
+4. **Qwen FP8 acknowledged as suboptimal.** Qwen themselves note FP8 performance needs further optimization. Nemotron's NVFP4 has no such caveat.
 
 ### Architectural changes
 
@@ -102,45 +133,33 @@ We initially tried Qwen3.5-35B-A3B-FP8, but vLLM 26.02 (v0.15.1) doesn't support
 | New `llm` namespace | Shared model serving across projects (rag-agent-chatbot, ai-agents) |
 | ExternalName service in `rag-agent` ns | Backend uses short name `http://qwen35:8000/v1` — ExternalName resolves to `qwen35.llm.svc.cluster.local` |
 | Cross-namespace DNS for ai-agents | Direct reference: `http://qwen35.llm.svc.cluster.local:8000/v1` |
-| Tool call parser: `hermes` | Qwen3 uses the Hermes tool calling format (not llama3_json) |
+| Tool call parser: `hermes` | Nemotron Nano supports the Hermes tool calling format |
 | Removed NIM deployment from ai-agents | The 70B NIM image was broken (wrong arch, model too large). Replaced with shared vLLM instance. |
-
-### What we learned
-
-- **MoE is the right architecture for bandwidth-limited GPUs.** The GB10 has plenty of memory (128 GB) but limited bandwidth. MoE exploits this by storing many parameters but reading few.
-- **vLLM version compatibility matters.** Qwen3.5 models use a new architecture (`qwen3_5_moe`) not yet in vLLM 26.02. Always verify model architecture support before committing to a model.
-- **Shared serving reduces waste.** Running one model instance for multiple projects avoids GPU memory duplication on a single-GPU system.
+| `--gpu-memory-utilization=0.55` | NVFP4 is only ~15 GB — lower utilization leaves more system headroom |
 
 ---
 
 ## Performance Summary Across Phases
 
-| Phase | Model | Architecture | Active params | Throughput | 500-token answer |
-| ----- | ----- | ------------ | ------------- | ---------- | ---------------- |
-| 1 | Nemotron-49B FP8 | Dense | 49B | ~4.5 tok/s | ~110s |
-| 2 | Nemotron-49B NVFP4 | Dense | 49B | ~8-12 tok/s | ~40-60s |
-| **3** | **Qwen3-30B-A3B FP8** | **MoE** | **3B** | **~35 tok/s** | **~14s** |
+| Phase | Model | Architecture | Active params | Weight size | Throughput (vLLM) | 500-token answer |
+| ----- | ----- | ------------ | ------------- | ----------- | ----------------- | ---------------- |
+| 1 | Nemotron-49B FP8 | Dense | 49B | ~50 GB | ~4.5 tok/s | ~110s |
+| 2 | Nemotron-49B NVFP4 | Dense | 49B | ~25 GB | ~8-12 tok/s | ~40-60s |
+| 3 | Qwen3-30B-A3B FP8 | MoE | 3B | ~30 GB | ~38 tok/s | ~13s |
+| **4** | **Nemotron 3 Nano 30B NVFP4** | **MoE** | **3B** | **~15 GB** | **~56 tok/s** | **~9s** |
 
 ---
 
 ## Future Considerations
 
-### Qwen3-Coder-30B-A3B-Instruct-FP8
+### TensorRT-LLM / NIM
 
-[`Qwen3-Coder-30B-A3B-Instruct-FP8`](https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8) — same MoE architecture (30B/3B active, ~30 GB FP8, ~35 tok/s) but tuned for code generation, review, and debugging.
-
-**When to consider:** If the ai-agents project shifts more code tasks from Claude (Tier 2/3) to the local GPU (Tier 4) to reduce API costs, the coder variant would outperform the general instruct model on those tasks.
-
-**Tradeoff:** The `llm` namespace instance is shared with rag-agent-chatbot (general Q&A). The coder model may be slightly worse for RAG-grounded document Q&A. Mitigation: GPU time-slicing to run both models concurrently.
-
-### Qwen3.5-35B-A3B-FP8 (when vLLM supports it)
-
-The Qwen3.5 generation improves on Qwen3 with better instruction following and reasoning. Once vLLM adds support for the `qwen3_5_moe` architecture (likely in a future NGC release), this would be a drop-in upgrade with the same throughput profile.
-
-### TensorRT-LLM
-
-NVIDIA's blog shows TensorRT-LLM delivering significantly better throughput than vLLM on DGX Spark (e.g., 120B model at 18 tok/s with TRT-LLM vs much slower with vLLM). A NIM container for Nemotron-Super-49B on DGX Spark exists on NGC but hasn't been validated for our setup. TRT-LLM requires pre-compiled engine files for each model/GPU combination.
+NVIDIA's blog shows TRT-LLM delivering better throughput than vLLM. A NIM container for Nemotron models on DGX Spark exists on NGC. Since we're now on an NVIDIA model with NVIDIA quantization, the path to NIM/TRT-LLM is straightforward and would likely push throughput even higher.
 
 ### GPU Time-Slicing
 
-Running multiple models on the GB10 via NVIDIA's time-slicing scheduler. This would allow serving both the general instruct model (for RAG Q&A) and the coder model (for ai-agents) simultaneously, at the cost of splitting GPU memory and time between them.
+At only ~15 GB for weights, there's ~100 GB of headroom in unified memory. GPU time-slicing could run a second specialized model (e.g., a coder variant) alongside the general model for different task types.
+
+### Qwen3.5-35B-A3B-FP8 (when vLLM supports it)
+
+If Qwen's FP8 performance improves and vLLM adds `qwen3_5_moe` support, this could be revisited as an alternative. But the NVFP4 + NVIDIA model advantage is significant enough that Qwen would need to close a large gap.

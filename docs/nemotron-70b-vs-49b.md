@@ -90,12 +90,12 @@ NVIDIA's NAS pruning removes structural redundancy (entire attention heads and M
 | Cold start download | ~70 GB | ~50 GB |
 | Quality vs 70B BF16 | ~97% (FP8 loss on larger model) | ~98% (NAS-pruned, FP8 on smaller model) |
 
-### Current deployment: Qwen3-30B-A3B (MoE)
+### Current deployment: Nemotron 3 Nano 30B-A3B (MoE)
 
-The project has since migrated from Nemotron-49B to [`Qwen3-30B-A3B-Instruct-2507-FP8`](https://huggingface.co/Qwen/Qwen3-30B-A3B-Instruct-2507-FP8), a Mixture-of-Experts model with 30B total parameters but only 3B active per token. This delivers **~35 tok/s** on DGX Spark — 8x faster than Nemotron-49B FP8 — because MoE models read far fewer weights per token, reducing memory-bandwidth pressure.
+The project has since migrated from Nemotron-49B through Qwen3-30B-A3B to [`NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4`](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4), a Mixture-of-Experts model with 30B total parameters but only 3B active per token. This delivers **~56 tok/s (vLLM)** on DGX Spark — 12x faster than Nemotron-49B FP8 — because MoE models read far fewer weights per token, and NVFP4 (~15 GB) halves the weight size compared to FP8.
 
 The model runs in a shared `llm` namespace, serving both the RAG chatbot and the AI agents pipeline. See [model-inference-vllm.md](model-inference-vllm.md) for current configuration details.
 
 ## Summary
 
-The DGX Spark's 128 GB unified memory is shared between CPU and GPU. The Nemotron-70B model needs ~70 GB just for weights at FP8, leaving almost no room for KV cache or system processes. The NAS-pruned 49B variant was a good fit at ~50 GB (FP8) or ~25 GB (NVFP4), but the project now uses Qwen3-30B-A3B MoE at ~30 GB (FP8) which delivers dramatically better throughput due to the MoE architecture (3B active params per token).
+The DGX Spark's 128 GB unified memory is shared between CPU and GPU. The Nemotron-70B model needs ~70 GB just for weights at FP8, leaving almost no room for KV cache or system processes. The NAS-pruned 49B variant was a good fit at ~50 GB (FP8) or ~25 GB (NVFP4), but the project now uses Nemotron 3 Nano 30B-A3B MoE at ~15 GB (NVFP4) which delivers ~56 tok/s due to the MoE architecture (3B active params per token) and NVIDIA's native NVFP4 quantization format. See [llm-selection-journey.md](llm-selection-journey.md) for the full evolution.

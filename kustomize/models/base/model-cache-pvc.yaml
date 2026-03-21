@@ -2,9 +2,9 @@
 # =================================================
 # Persists downloaded models across pod restarts to avoid re-downloading.
 #
-# Qwen3.5-35B-A3B FP8: ~35GB download
-# With PVC: First startup ~5-10min, subsequent startups ~2-3min
-# Without PVC: Every startup ~5-10min
+# Nemotron 3 Nano 30B-A3B NVFP4: ~15GB download
+# With PVC: First startup ~3-5min, subsequent startups ~1-2min
+# Without PVC: Every startup ~3-5min
 
 apiVersion: v1
 kind: PersistentVolumeClaim

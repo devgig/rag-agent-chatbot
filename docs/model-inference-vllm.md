@@ -34,9 +34,9 @@ Kubernetes manifests for GPU-accelerated LLM inference using vLLM on the NVIDIA 
 
 ## Current Configuration
 
-- **Model**: [`Qwen/Qwen3-30B-A3B-Instruct-2507-FP8`](https://huggingface.co/Qwen/Qwen3-30B-A3B-Instruct-2507-FP8) (30B total params, 3B active per token, MoE)
+- **Model**: [`nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4`](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4) (30B total params, 3B active per token, MoE)
 - **Architecture**: Mixture-of-Experts transformer — only 3B parameters are active per token, enabling high throughput despite 30B total
-- **Quantization**: Pre-quantized FP8 (~30GB weights)
+- **Quantization**: NVFP4 (~15GB weights — native Blackwell format)
 - **Context Length**: 16,384 tokens (model supports up to 128K)
 - **GPU**: 1x NVIDIA GB10 Blackwell (128GB unified memory)
 - **Namespace**: `llm` (shared across projects)
@@ -51,18 +51,19 @@ The Mixture-of-Experts architecture delivers dramatically better throughput than
 |-------|------|---------------|-------------|------------|---------|
 | Nemotron-49B FP8 | Dense | 49B | ~50 GB | ~4.5 tok/s | Highest |
 | Nemotron-49B NVFP4 | Dense | 49B | ~25 GB | ~8-12 tok/s | High |
-| **Qwen3-30B-A3B FP8** | **MoE** | **3B** | **~30 GB** | **~35 tok/s** | **Good** |
+| Qwen3-30B-A3B FP8 | MoE | 3B | ~30 GB | ~38 tok/s | Good |
+| **Nemotron 3 Nano 30B NVFP4** | **MoE** | **3B** | **~15 GB** | **~56 tok/s** | **Good** |
 
 ### Why MoE wins on DGX Spark
 
 1. **3B active parameters per token**: Only a fraction of weights are read per token, drastically reducing memory bandwidth pressure — the GB10's primary bottleneck
-2. **~35 tok/s generation**: [Benchmarked by NVIDIA](https://developer.nvidia.com/blog/scaling-autonomous-ai-agents-and-workloads-with-nvidia-dgx-spark) on DGX Spark — 8x faster than Nemotron-49B FP8
-3. **FP8 on Blackwell**: Native FP8 tensor core support, near-lossless quality
+2. **~56 tok/s generation (vLLM)**: [Benchmarked by community](https://developer.nvidia.com/blog/scaling-autonomous-ai-agents-and-workloads-with-nvidia-dgx-spark) on DGX Spark — 12x faster than Nemotron-49B FP8
+3. **NVFP4 on Blackwell**: Native hardware-accelerated quantization format, NVIDIA-optimized
 4. **Shared serving**: Runs in `llm` namespace, used by both RAG chatbot and AI agent workloads
 
 ### Performance Considerations
 
-- **First startup** requires downloading ~30GB of FP8 weights. Set `HF_HUB_OFFLINE=0` for the first run, then `1` after cached.
+- **First startup** requires downloading ~15GB of NVFP4 weights. Set `HF_HUB_OFFLINE=0` for the first run, then `1` after cached.
 - **CUDA graphs** are enabled (no `--enforce-eager`) for optimized kernel replay during generation.
 - **`--enable-prefix-caching`** reduces redundant computation for repeated system prompts.
 - **`--tool-call-parser=hermes`** enables native tool/function calling.
@@ -239,8 +240,8 @@ Azure Key Vault (hugging-face-read-only-token)
 
 ## References
 
-- [Qwen3-30B-A3B-FP8](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8) (current)
-- [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) (base unquantized)
+- [NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4) (current)
+- [NVIDIA-Nemotron-3-Nano-30B-A3B-BF16](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16) (base unquantized)
 - [NVIDIA DGX Spark AI Agent Scaling Blog](https://developer.nvidia.com/blog/scaling-autonomous-ai-agents-and-workloads-with-nvidia-dgx-spark) (benchmark source)
 - [vLLM Quantization](https://docs.vllm.ai/en/latest/features/quantization/supported_hardware.html)
 - [vLLM Documentation](https://docs.vllm.ai/)
