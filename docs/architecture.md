@@ -32,7 +32,7 @@ The RAG implementation enables the chatbot to answer questions using content fro
 | Agent | LangGraph | Orchestrates tool calls and LLM interactions |
 | Vector DB | Milvus | Stores and searches document embeddings |
 | Embedding | Qwen3-Embedding-4B | Converts text to vectors |
-| LLM | Nemotron-Super-49B (vLLM) | Generates responses |
+| LLM | Qwen3-30B-A3B MoE (vLLM, `llm` namespace) | Generates responses (~35 tok/s) |
 | Storage | PostgreSQL | Chat history, document metadata |
 
 ---

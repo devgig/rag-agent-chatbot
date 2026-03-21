@@ -1,78 +1,82 @@
 # Model Inference - vLLM on DGX Spark
 
-Kubernetes manifests for GPU-accelerated LLM inference using vLLM on the NVIDIA DGX Spark (GB10 Blackwell GPU, 128GB unified memory).
+Kubernetes manifests for GPU-accelerated LLM inference using vLLM on the NVIDIA DGX Spark (GB10 Blackwell GPU, 128GB unified memory). The model runs in a shared `llm` namespace so multiple projects can use it.
 
 ## Architecture
 
 ```
+┌─────────────────────────┐   ┌─────────────────────────┐
+│ rag-agent-chatbot       │   │ ai-agents               │
+│ (rag-agent namespace)   │   │ (ai-agents namespace)   │
+│ http://qwen35:8000/v1   │   │                         │
+│ (via ExternalName svc)  │   │                         │
+└───────────┬─────────────┘   └───────────┬─────────────┘
+            │                             │
+            ▼                             ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Backend (rag-agent-backend)                             │
-│ http://nemotron-super-49b:8000/v1                       │
+│ Namespace: llm (shared)                                 │
+│ Service: qwen35 (ClusterIP:8000)                        │
+│ qwen35.llm.svc.cluster.local:8000                       │
 └────────────────┬────────────────────────────────────────┘
                  │
                  ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Service: nemotron-super-49b (ClusterIP:8000)            │
-└────────────────┬────────────────────────────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────────────────────────────┐
-│ Deployment: nemotron-super-49b                          │
+│ Deployment: qwen35                                      │
 │ - Image: nvcr.io/nvidia/vllm:26.02-py3                 │
-│ - Model: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4│
-│ - Quantization: NVFP4                                   │
-│ - GPU: 1x NVIDIA GB10 (spark-7eb5)                     │
-│ - Context: 16,384 tokens                                │
-│ - PVC: model-cache-pvc (100Gi, Longhorn)                │
+│ - Model: Qwen/Qwen3-30B-A3B-FP8                      │
+│ - Architecture: Mixture-of-Experts (30B total, 3B active)│
+│ - Quantization: FP8                                      │
+│ - GPU: 1x NVIDIA GB10 (spark-7eb5)                      │
+│ - Context: 16,384 tokens                                 │
+│ - PVC: model-cache-pvc (100Gi, Longhorn)                 │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ## Current Configuration
 
-- **Model**: [`nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4`](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4) (49B params, NVFP4 quantized)
-- **Architecture**: Dense transformer, NAS-pruned from Llama-3.3-70B
-- **Quantization**: NVFP4 (~25GB weights — half the memory bandwidth of FP8)
+- **Model**: [`Qwen/Qwen3-30B-A3B-Instruct-2507-FP8`](https://huggingface.co/Qwen/Qwen3-30B-A3B-Instruct-2507-FP8) (30B total params, 3B active per token, MoE)
+- **Architecture**: Mixture-of-Experts transformer — only 3B parameters are active per token, enabling high throughput despite 30B total
+- **Quantization**: Pre-quantized FP8 (~30GB weights)
 - **Context Length**: 16,384 tokens (model supports up to 128K)
 - **GPU**: 1x NVIDIA GB10 Blackwell (128GB unified memory)
+- **Namespace**: `llm` (shared across projects)
 - **Serving**: OpenAI-compatible API (`/v1/chat/completions`, `/v1/models`)
-- **Features**: Native tool calling (`llama3_json` parser), prefix caching, CUDA graphs enabled
+- **Features**: Native tool calling (`hermes` parser), prefix caching, CUDA graphs enabled
 
-## NVFP4 Quantization
+## Why Qwen3-30B-A3B
 
-The deployment uses NVFP4 quantization to maximize generation throughput on the GB10's limited memory bandwidth:
+The Mixture-of-Experts architecture delivers dramatically better throughput than dense models on the GB10:
 
-| Metric | BF16 (unquantized) | FP8 (pre-quantized) | NVFP4 (current) |
-|--------|--------------------|--------------------|-----------------|
-| Model weight size | ~98 GB | ~50 GB | **~25 GB** |
-| Fits in 128GB unified memory | Tight | Comfortable | **Very comfortable** |
-| Quality vs BF16 | Baseline | ~98% | **~95-96%** |
-| KV cache headroom | ~20 GB | ~34 GB | **~41 GB** (at 0.55 util) |
-| Generation throughput | N/A | ~4.5 tok/s | **~8-12 tok/s** |
+| Model | Type | Active params | Weight size | Throughput | Quality |
+|-------|------|---------------|-------------|------------|---------|
+| Nemotron-49B FP8 | Dense | 49B | ~50 GB | ~4.5 tok/s | Highest |
+| Nemotron-49B NVFP4 | Dense | 49B | ~25 GB | ~8-12 tok/s | High |
+| **Qwen3-30B-A3B FP8** | **MoE** | **3B** | **~30 GB** | **~35 tok/s** | **Good** |
 
-### Why NVFP4 on DGX Spark
+### Why MoE wins on DGX Spark
 
-1. **Memory bandwidth is the bottleneck**: The GB10 is a mobile-class Blackwell chip. NVFP4 halves the bytes read per token, roughly doubling generation throughput
-2. **CUDA graphs enabled**: With `--enforce-eager` removed, vLLM uses CUDA graphs for kernel launch batching (20-40% additional speedup)
-3. **Reduced context window**: `--max-model-len=16384` instead of 32768 — the RAG pipeline uses ~4K tokens total, so 16K provides ample headroom with less memory overhead
-4. **Acceptable quality tradeoff**: ~2-3% quality degradation on benchmarks vs FP8, negligible for RAG-grounded Q&A where answers come from retrieved documents
-
-### FP8 Alternative
-
-For higher quality at the cost of slower generation (~4.5 tok/s), switch back to FP8:
-
-```yaml
-args:
-- "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8"
-- "--gpu-memory-utilization=0.70"
-- "--max-model-len=32768"
-- "--trust-remote-code"
-```
+1. **3B active parameters per token**: Only a fraction of weights are read per token, drastically reducing memory bandwidth pressure — the GB10's primary bottleneck
+2. **~35 tok/s generation**: [Benchmarked by NVIDIA](https://developer.nvidia.com/blog/scaling-autonomous-ai-agents-and-workloads-with-nvidia-dgx-spark) on DGX Spark — 8x faster than Nemotron-49B FP8
+3. **FP8 on Blackwell**: Native FP8 tensor core support, near-lossless quality
+4. **Shared serving**: Runs in `llm` namespace, used by both RAG chatbot and AI agent workloads
 
 ### Performance Considerations
 
-- **First startup** after switching models requires downloading ~25GB of NVFP4 weights. Set `HF_HUB_OFFLINE=0` for the first run, then `1` after cached.
+- **First startup** requires downloading ~30GB of FP8 weights. Set `HF_HUB_OFFLINE=0` for the first run, then `1` after cached.
 - **CUDA graphs** are enabled (no `--enforce-eager`) for optimized kernel replay during generation.
-- **`--enable-prefix-caching`** reduces redundant computation for requests that share common prompt prefixes (e.g., system prompts in RAG).
+- **`--enable-prefix-caching`** reduces redundant computation for repeated system prompts.
+- **`--tool-call-parser=hermes`** enables native tool/function calling.
+
+## Shared Namespace Strategy
+
+The model runs in the `llm` namespace and is consumed by multiple projects:
+
+| Consumer | Connection method |
+|----------|------------------|
+| **rag-agent-chatbot** | ExternalName service `qwen35` in `rag-agent` namespace → `qwen35.llm.svc.cluster.local` |
+| **ai-agents** | Direct cross-namespace DNS: `qwen35.llm.svc.cluster.local:8000/v1` |
+
+This avoids running duplicate model instances on a single GPU.
 
 ## Files
 
@@ -80,10 +84,12 @@ args:
 
 | File | Purpose |
 |------|---------|
-| `nemotron-super-49b-deployment.yaml` | vLLM inference deployment (pre-quantized FP8) |
-| `nemotron-super-49b-service.yaml` | ClusterIP service exposing port 8000 |
-| `model-cache-pvc.yaml` | 100Gi PersistentVolumeClaim for HuggingFace model cache |
-| `qwen3-embedding-deployment.yaml` | Embedding service (CPU-based, separate from inference) |
+| `llm-namespace.yaml` | Shared `llm` namespace |
+| `qwen35-deployment.yaml` | vLLM inference deployment (Qwen3-30B-A3B FP8) |
+| `qwen35-service.yaml` | ClusterIP service in `llm` namespace |
+| `qwen35-externalname-service.yaml` | ExternalName alias in `rag-agent` namespace |
+| `model-cache-pvc.yaml` | 100Gi PersistentVolumeClaim in `llm` namespace |
+| `qwen3-embedding-deployment.yaml` | Embedding service (CPU-based, in `rag-agent` namespace) |
 | `qwen3-embedding-service.yaml` | ClusterIP service for embedding endpoint |
 | `hf-external-secret.yaml` | HuggingFace token from Azure Key Vault |
 | `kustomization.yaml` | Kustomize configuration |
@@ -109,12 +115,12 @@ Automatically deployed when changes are pushed to `kustomize/models/**`:
 kubectl apply -k kustomize/models/overlays/dev
 
 # Check status
-kubectl get pods -n rag-agent -l app=nemotron-super-49b
-kubectl logs -n rag-agent -l app=nemotron-super-49b -f
+kubectl get pods -n llm -l app=qwen35
+kubectl logs -n llm -l app=qwen35 -f
 
 # Test API endpoint
 kubectl exec -it -n rag-agent deployment/rag-agent-backend -- \
-  curl http://nemotron-super-49b:8000/v1/models
+  curl http://qwen35:8000/v1/models
 ```
 
 ## Probe Configuration
@@ -136,10 +142,10 @@ Backend connects using the served model name as hostname:
 ```python
 # assets/backend/agent.py
 base_url=f"http://{self.current_model}:8000/v1"
-# Resolves to: http://nemotron-super-49b.rag-agent.svc.cluster.local:8000
+# Resolves to: http://qwen35:8000 → qwen35.llm.svc.cluster.local:8000 (via ExternalName)
 ```
 
-No backend changes needed when switching quantization or model variants.
+The `rag-agent` namespace has an ExternalName service that aliases `qwen35` to `qwen35.llm.svc.cluster.local`, so the backend code works with just the short name.
 
 ## Security
 
@@ -164,27 +170,27 @@ Unauthenticated users are blocked at the ingress gateway before reaching the bac
 
 ```bash
 # Pod status
-kubectl get pods -n rag-agent -l app=nemotron-super-49b
+kubectl get pods -n llm -l app=qwen35
 
 # Logs
-kubectl logs -n rag-agent -l app=nemotron-super-49b --tail=100
+kubectl logs -n llm -l app=qwen35 --tail=100
 
 # Service endpoints
-kubectl get endpoints nemotron-super-49b -n rag-agent
+kubectl get endpoints qwen35 -n llm
 
 # vLLM metrics (Prometheus-compatible)
 kubectl exec -it -n rag-agent deployment/rag-agent-backend -- \
-  curl http://nemotron-super-49b:8000/metrics
+  curl http://qwen35:8000/metrics
 ```
 
 ## Switching Models
 
-Update the model in `nemotron-super-49b-deployment.yaml`:
+Update the model in `qwen35-deployment.yaml`:
 
 ```yaml
 args:
 - "organization/model-name"
-- "--served-model-name=nemotron-super-49b"   # Keep service name stable
+- "--served-model-name=qwen35"   # Keep service name stable
 - "--dtype=auto"
 - "--max-model-len=CONTEXT_LENGTH"
 ```
@@ -192,10 +198,10 @@ args:
 After switching models, delete and recreate the PVC to clear the old cache:
 
 ```bash
-kubectl scale deployment nemotron-super-49b -n rag-agent --replicas=0
-kubectl delete pvc model-cache-pvc -n rag-agent
+kubectl scale deployment qwen35 -n llm --replicas=0
+kubectl delete pvc model-cache-pvc -n llm
 kubectl apply -f kustomize/models/base/model-cache-pvc.yaml
-kubectl scale deployment nemotron-super-49b -n rag-agent --replicas=1
+kubectl scale deployment qwen35 -n llm --replicas=1
 ```
 
 ## GPU Configuration
@@ -233,9 +239,9 @@ Azure Key Vault (hugging-face-read-only-token)
 
 ## References
 
-- [Llama-3.3-Nemotron-Super-49B-v1.5-NVFP4](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4) (current)
-- [Llama-3.3-Nemotron-Super-49B-v1.5-FP8](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8) (FP8 alternative)
-- [Llama-3.3-Nemotron-Super-49B-v1.5](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5) (base unquantized)
+- [Qwen3-30B-A3B-FP8](https://huggingface.co/Qwen/Qwen3-30B-A3B-FP8) (current)
+- [Qwen3-30B-A3B](https://huggingface.co/Qwen/Qwen3-30B-A3B) (base unquantized)
+- [NVIDIA DGX Spark AI Agent Scaling Blog](https://developer.nvidia.com/blog/scaling-autonomous-ai-agents-and-workloads-with-nvidia-dgx-spark) (benchmark source)
 - [vLLM Quantization](https://docs.vllm.ai/en/latest/features/quantization/supported_hardware.html)
 - [vLLM Documentation](https://docs.vllm.ai/)
 - [NVIDIA GPU Operator](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/)

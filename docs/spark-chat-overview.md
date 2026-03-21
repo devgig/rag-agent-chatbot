@@ -31,14 +31,14 @@ This project is designed to be customizable, serving as a framework that develop
 <img src="../assets/assets/system-diagram.svg" alt="System Diagram" style="max-width:800px;border-radius:5px;justify-content:center">
 
 ## Default Models
-| Model                | Quantization | Model Type | VRAM        |
-|----------------------|--------------|------------|-------------|
-| Nemotron-Super-49B   | NVFP4        | Chat       | ~ 25 GB     |
-| Qwen3-Embedding-4B   | Q8           | Embedding  | ~ 5.39 GB   |
+| Model                | Quantization | Model Type | VRAM        | Namespace |
+|----------------------|--------------|------------|-------------|-----------|
+| Qwen3-30B-A3B       | FP8          | Chat (MoE) | ~ 30 GB     | `llm`     |
+| Qwen3-Embedding-4B   | Q8           | Embedding  | ~ 5.39 GB   | `rag-agent` |
 
-**Total VRAM required:** ~30 GB
+**Total VRAM required:** ~40 GB
 
-> FP8 alternative available (~50GB, higher quality, ~4.5 tok/s vs ~8-12 tok/s with NVFP4). See `kustomize/models/base/nemotron-super-49b-deployment.yaml` for switching instructions.
+> The LLM runs in a shared `llm` namespace so multiple projects (rag-agent-chatbot, ai-agents) can use it. ~35 tok/s generation throughput on DGX Spark GB10.
 
 ---
 

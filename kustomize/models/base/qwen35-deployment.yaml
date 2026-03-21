@@ -1,8 +1,8 @@
-# Qwen3.5-35B-A3B Deployment for DGX Spark
-# ==========================================
-# Qwen3.5-35B-A3B Mixture-of-Experts model with pre-quantized FP8 weights.
-# 35B total parameters, only 3B active per token — delivers ~35 tok/s on GB10.
-# ~35GB VRAM for weights at FP8. gpu-memory-utilization=0.70 allocates ~84Gi
+# Qwen3-30B-A3B Deployment for DGX Spark
+# ========================================
+# Qwen3-30B-A3B Mixture-of-Experts model with pre-quantized FP8 weights.
+# 30B total parameters, only 3B active per token — delivers ~35 tok/s on GB10.
+# ~30GB VRAM for weights at FP8. gpu-memory-utilization=0.70 allocates ~84Gi
 # leaving ~36Gi for OS, K3S, and daemonsets.
 #
 # Deployed in the shared "llm" namespace so multiple projects
@@ -49,7 +49,7 @@ spec:
         image: nvcr.io/nvidia/vllm:26.02-py3
         command: ["vllm", "serve"]
         args:
-        - "Qwen/Qwen3.5-35B-A3B-FP8"
+        - "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8"
         - "--served-model-name=qwen35"
         - "--tensor-parallel-size=1"
         - "--gpu-memory-utilization=0.70"

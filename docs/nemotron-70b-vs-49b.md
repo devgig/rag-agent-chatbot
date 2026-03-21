@@ -90,17 +90,12 @@ NVIDIA's NAS pruning removes structural redundancy (entire attention heads and M
 | Cold start download | ~70 GB | ~50 GB |
 | Quality vs 70B BF16 | ~97% (FP8 loss on larger model) | ~98% (NAS-pruned, FP8 on smaller model) |
 
-### NVFP4 (current deployment)
+### Current deployment: Qwen3-30B-A3B (MoE)
 
-The project currently uses [`Nemotron-Super-49B-v1.5-NVFP4`](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4) at ~25 GB weights. NVFP4 was chosen over FP8 to maximize generation throughput on the GB10's limited memory bandwidth:
+The project has since migrated from Nemotron-49B to [`Qwen3-30B-A3B-Instruct-2507-FP8`](https://huggingface.co/Qwen/Qwen3-30B-A3B-Instruct-2507-FP8), a Mixture-of-Experts model with 30B total parameters but only 3B active per token. This delivers **~35 tok/s** on DGX Spark — 8x faster than Nemotron-49B FP8 — because MoE models read far fewer weights per token, reducing memory-bandwidth pressure.
 
-- **~2x faster generation**: ~8-12 tok/s vs ~4.5 tok/s with FP8, because halving weight size halves memory-bandwidth pressure
-- **CUDA graphs enabled**: With less memory pressure, `--enforce-eager` was removed, enabling CUDA graph kernel replay for an additional 20-40% speedup
-- **Quality tradeoff**: ~2-3% degradation on benchmarks vs FP8 — acceptable for RAG-grounded Q&A where answers come from retrieved documents
-- **More headroom**: At `--gpu-memory-utilization=0.55`, leaves ~54 GiB free for OS/K3s vs ~36 GiB with FP8
-
-The FP8 variant remains available as an alternative when higher quality is needed (see deployment YAML for switching instructions). NVFP4 on 70B would still require ~35 GB with significant quality degradation — another reason the 49B model is the right choice.
+The model runs in a shared `llm` namespace, serving both the RAG chatbot and the AI agents pipeline. See [model-inference-vllm.md](model-inference-vllm.md) for current configuration details.
 
 ## Summary
 
-The DGX Spark's 128 GB unified memory is shared between CPU and GPU. The Nemotron-70B model needs ~70 GB just for weights at FP8, leaving almost no room for KV cache or system processes. The NAS-pruned 49B variant uses ~25 GB at NVFP4 (or ~50 GB at FP8), provides near-identical quality, and leaves enough headroom for concurrent inference, prefix caching, and stable node operation.
+The DGX Spark's 128 GB unified memory is shared between CPU and GPU. The Nemotron-70B model needs ~70 GB just for weights at FP8, leaving almost no room for KV cache or system processes. The NAS-pruned 49B variant was a good fit at ~50 GB (FP8) or ~25 GB (NVFP4), but the project now uses Qwen3-30B-A3B MoE at ~30 GB (FP8) which delivers dramatically better throughput due to the MoE architecture (3B active params per token).
