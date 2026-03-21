@@ -289,7 +289,7 @@ class VectorStore:
             logger.error({"message": "Error flushing Milvus store", "error": str(e)}, exc_info=True)
 
 
-    def get_documents(self, query: str, k: int = 8, sources: List[str] = None) -> List[Document]:
+    def get_documents(self, query: str, k: int = 5, sources: List[str] = None) -> List[Document]:
         """
         Get relevant documents filtered by similarity score threshold.
 

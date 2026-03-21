@@ -1,14 +1,16 @@
 # Llama-3.3-Nemotron-Super-49B Deployment for DGX Spark
 # =====================================================
-# NVIDIA Llama-3.3-Nemotron-Super-49B-v1.5 with pre-quantized FP8 weights.
+# NVIDIA Llama-3.3-Nemotron-Super-49B-v1.5 with NVFP4 quantization.
 # NAS-pruned from Llama-3.3-70B — near-70B quality at 49B parameter cost.
-# ~50GB VRAM for weights at FP8. gpu-memory-utilization=0.70 allocates ~84Gi
-# of 120Gi unified memory, leaving ~36Gi for OS, K3S, and daemonsets.
+# ~25GB VRAM for weights at NVFP4. gpu-memory-utilization=0.55 allocates ~66Gi
+# of 120Gi unified memory, leaving ~54Gi for OS, K3S, and daemonsets.
+# NVFP4 roughly doubles generation throughput vs FP8 (~50GB) by halving
+# memory-bandwidth pressure, at a ~2-3% quality cost on benchmarks.
 #
-# FP8 fallback: If FP8 produces NaN outputs on GB10 (SM121), switch to NVFP4:
-#   model: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4 (~25Gi weights)
-#   remove: --trust-remote-code
-#   change: --gpu-memory-utilization=0.55
+# FP8 alternative (higher quality, slower):
+#   model: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8 (~50Gi weights)
+#   add: --trust-remote-code
+#   change: --gpu-memory-utilization=0.70
 #
 # Backend connects via: nemotron-super-49b.rag-agent.svc.cluster.local:8000
 
@@ -48,30 +50,28 @@ spec:
         effect: NoSchedule
       containers:
       - name: vllm-inference
-        image: nvcr.io/nvidia/vllm:26.02-py3
+        image: nvcr.io/nvidia/vllm:26.03-py3
         command: ["vllm", "serve"]
         args:
-        - "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8"
-        # NVFP4 fallback if FP8 produces NaN on SM121:
-        # - "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4"
+        - "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4"
+        # FP8 alternative (higher quality, slower):
+        # - "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8"
         - "--served-model-name=nemotron-super-49b"
         - "--tensor-parallel-size=1"
-        - "--gpu-memory-utilization=0.70"
-        - "--max-model-len=32768"
+        - "--gpu-memory-utilization=0.55"
+        - "--max-model-len=16384"
         - "--dtype=auto"
         - "--host=0.0.0.0"
         - "--port=8000"
-        - "--trust-remote-code"
-        - "--enforce-eager"
         - "--enable-auto-tool-choice"
-        - "--tool-call-parser=llama3_json"  # Use llama_nemotron_json if available in this vLLM version
+        - "--tool-call-parser=llama3_json"
         - "--enable-prefix-caching"
         ports:
         - containerPort: 8000
           name: http
         env:
         - name: HF_HUB_OFFLINE
-          value: "1"  # Model cached on PVC — skip network checks for faster startup
+          value: "0"  # Set to 1 after NVFP4 model is cached on PVC
         - name: HF_TOKEN
           valueFrom:
             secretKeyRef:
@@ -93,7 +93,7 @@ spec:
           initialDelaySeconds: 120
           periodSeconds: 30
           timeoutSeconds: 10
-          failureThreshold: 120  # 120s + 120*30s = 3720s (62 min) — accounts for first-time model download (~50GB)
+          failureThreshold: 120  # 120s + 120*30s = 3720s (62 min) — accounts for first-time model download (~25GB NVFP4)
         livenessProbe:
           httpGet:
             path: /health

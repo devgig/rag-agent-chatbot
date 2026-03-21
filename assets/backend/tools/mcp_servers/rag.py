@@ -232,7 +232,7 @@ async def search_documents(query: str) -> str:
     # Retrieve documents directly without LLM generation.
     # pymilvus operations are synchronous — run off the event loop.
     if sources:
-        retrieved_docs = await asyncio.to_thread(vector_store.get_documents, query, 8, sources)
+        retrieved_docs = await asyncio.to_thread(vector_store.get_documents, query, 5, sources)
     else:
         retrieved_docs = await asyncio.to_thread(vector_store.get_documents, query)
 
