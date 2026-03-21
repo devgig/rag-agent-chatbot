@@ -13,9 +13,12 @@ Instrumentator().instrument(app).expose(app)
 model = None
 
 
+EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
+
+
 class EmbeddingRequest(BaseModel):
     input: str | List[str]
-    model: str = "all-MiniLM-L6-v2"
+    model: str = EMBEDDING_MODEL
 
 
 class EmbeddingResponse(BaseModel):
@@ -28,9 +31,9 @@ class EmbeddingResponse(BaseModel):
 @app.on_event("startup")
 async def load_model():
     global model
-    logger.info("Loading sentence-transformers model...")
-    model = SentenceTransformer("all-MiniLM-L6-v2")
-    logger.info("Model loaded successfully")
+    logger.info(f"Loading sentence-transformers model: {EMBEDDING_MODEL}")
+    model = SentenceTransformer(EMBEDDING_MODEL)
+    logger.info(f"Model loaded successfully (dim={model.get_sentence_embedding_dimension()})")
 
 
 @app.post("/v1/embeddings")

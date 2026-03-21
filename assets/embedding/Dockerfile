@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Install dependencies
 RUN pip install --no-cache-dir \
-    sentence-transformers==2.3.1 \
+    sentence-transformers>=3.4.0 \
     fastapi==0.109.0 \
     uvicorn==0.27.0 \
     pydantic==2.5.3 \
@@ -27,7 +27,7 @@ COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 COPY --chown=appuser:appuser server.py .
 
 # Pre-download the model during build to avoid runtime network dependency
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" \
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('Qwen/Qwen3-Embedding-0.6B')" \
     && cp -r /root/.cache/huggingface /app/.cache_hf \
     && chown -R appuser:appuser /app/.cache_hf
 

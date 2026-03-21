@@ -1,18 +1,19 @@
-# Lightweight Embedding Service for RAG
-# ==========================================
+# Embedding Service for RAG
+# ==========================
 # Provides embedding generation for document indexing and retrieval.
-# Uses sentence-transformers with all-MiniLM-L6-v2 model (CPU-based).
+# Uses sentence-transformers with Qwen3-Embedding-0.6B model (CPU-based).
 #
 # Backend Integration:
 # - Backend expects service at: http://qwen3-embedding:8000
 # - Endpoint: /v1/embeddings (OpenAI-compatible)
 # - Used by: assets/backend/vector_store.py (CustomEmbeddings class)
 #
-# Why sentence-transformers:
-# - Native ARM64 support (works on all node types)
-# - Fast on CPU (90ms per embedding)
-# - Small model size (~80MB)
-# - OpenAI-compatible API
+# Model: Qwen/Qwen3-Embedding-0.6B
+# - 0.6B params (~1.2GB on disk, ~1-1.5GB RAM)
+# - Up to 1024-dim embeddings (default)
+# - 100+ languages including programming languages
+# - MTEB English: 70.7
+# - ~10-20ms per query on CPU
 #
 # Image: Built by azure-pipelines-embedding.yaml, pushed to ACR
 # Source: assets/embedding/
@@ -55,11 +56,11 @@ spec:
           name: http
         resources:
           requests:
-            cpu: "500m"
-            memory: "2Gi"
+            cpu: "250m"
+            memory: "1Gi"
           limits:
-            cpu: "2"
-            memory: "4Gi"
+            cpu: "1"
+            memory: "2Gi"
         startupProbe:
           httpGet:
             path: /health
