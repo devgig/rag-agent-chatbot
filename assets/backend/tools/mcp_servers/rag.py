@@ -207,8 +207,8 @@ class RAGAgent:
 
 mcp = FastMCP("RAG")
 rag_agent = RAGAgent()
-milvus_address = os.getenv("MILVUS_ADDRESS", "tcp://milvus.milvus-system.svc.cluster.local:19530")
-vector_store = create_vector_store_with_config(rag_agent.config_manager, uri=milvus_address)
+# Reuse the vector store already created by RAGAgent instead of creating a duplicate.
+vector_store = rag_agent.vector_store
 
 
 @mcp.tool()
@@ -229,16 +229,17 @@ async def search_documents(query: str) -> str:
 
     logger.info({"message": "Starting document search", "query": query, "sources": sources})
 
-    # Retrieve documents directly without LLM generation
+    # Retrieve documents directly without LLM generation.
+    # pymilvus operations are synchronous — run off the event loop.
     if sources:
-        retrieved_docs = vector_store.get_documents(query, sources=sources)
+        retrieved_docs = await asyncio.to_thread(vector_store.get_documents, query, 8, sources)
     else:
-        retrieved_docs = vector_store.get_documents(query)
+        retrieved_docs = await asyncio.to_thread(vector_store.get_documents, query)
 
     # Fallback to all documents if source filtering returns nothing
     if not retrieved_docs and sources:
         logger.info({"message": "No documents found with source filtering, trying without filters"})
-        retrieved_docs = vector_store.get_documents(query)
+        retrieved_docs = await asyncio.to_thread(vector_store.get_documents, query)
 
     if not retrieved_docs:
         logger.warning({"message": "No documents retrieved", "query": query})

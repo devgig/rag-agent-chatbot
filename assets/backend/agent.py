@@ -638,21 +638,14 @@ class ChatAgent:
                 if self.last_state and self.last_state.get("messages"):
                     try:
                         logger.debug(f'Saving messages to conversation store for chat: {chat_id}')
-                        # Append this turn's non-system messages to existing history
-                        # so the full conversation is preserved without sending it
-                        # all to the LLM (which causes hallucination on small models).
-                        existing = await self.conversation_store.get_messages(chat_id)
+                        # Append only this turn's non-system messages to the
+                        # existing history.  append_messages uses the cache when
+                        # warm, avoiding a redundant DB fetch on every turn.
                         new_messages = [
                             msg for msg in self.last_state["messages"]
                             if not isinstance(msg, SystemMessage)
                         ]
-                        # Keep a single leading SystemMessage then all turns
-                        combined = [SystemMessage(content=self.system_prompt)]
-                        for msg in existing:
-                            if not isinstance(msg, SystemMessage):
-                                combined.append(msg)
-                        combined.extend(new_messages)
-                        await self.conversation_store.save_messages(chat_id, combined)
+                        await self.conversation_store.append_messages(chat_id, new_messages)
                     except Exception as save_err:
                         logger.warning({"message": "Failed to persist conversation", "chat_id": chat_id, "error": str(save_err)})
             finally:

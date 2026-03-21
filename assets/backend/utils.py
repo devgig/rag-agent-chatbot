@@ -53,7 +53,7 @@ async def process_and_ingest_files_background(
             "file_count": len(file_info)
         })
 
-        indexing_tasks[task_id] = "saving_files"
+        indexing_tasks[task_id] = ("saving_files", time.time())
 
         uploads_base = os.getenv("UPLOADS_DIR", "uploads")
         permanent_dir = os.path.join(uploads_base, task_id)
@@ -91,7 +91,7 @@ async def process_and_ingest_files_background(
                     "error": str(e)
                 }, exc_info=True)
         
-        indexing_tasks[task_id] = "loading_documents"
+        indexing_tasks[task_id] = ("loading_documents", time.time())
         logger.debug({"message": "Loading documents", "task_id": task_id})
         
         try:
@@ -103,7 +103,7 @@ async def process_and_ingest_files_background(
                 "document_count": len(documents)
             })
             
-            indexing_tasks[task_id] = "indexing_documents"
+            indexing_tasks[task_id] = ("indexing_documents", time.time())
             await asyncio.to_thread(vector_store.index_documents, documents)
 
             # Save sources to PostgreSQL for persistence
@@ -141,13 +141,13 @@ async def process_and_ingest_files_background(
                         "sources": config.sources
                     })
             
-            indexing_tasks[task_id] = "completed"
+            indexing_tasks[task_id] = ("completed", time.time())
             logger.debug({
                 "message": "Background processing and indexing completed successfully",
                 "task_id": task_id
             })
         except Exception as e:
-            indexing_tasks[task_id] = f"failed_during_indexing: {str(e)}"
+            indexing_tasks[task_id] = (f"failed_during_indexing: {str(e)}", time.time())
             logger.error({
                 "message": "Error during document loading or indexing",
                 "task_id": task_id,
@@ -155,7 +155,7 @@ async def process_and_ingest_files_background(
             }, exc_info=True)
             
     except Exception as e:
-        indexing_tasks[task_id] = f"failed: {str(e)}"
+        indexing_tasks[task_id] = (f"failed: {str(e)}", time.time())
         logger.error({
             "message": "Error in background processing",
             "task_id": task_id,

@@ -449,12 +449,19 @@ class PostgreSQLConversationStorage:
             except Exception as e:
                 logger.error(f"Error in batch save worker: {e}")
 
+    async def append_messages(self, chat_id: str, new_messages: List[BaseMessage]) -> None:
+        """Append messages to a conversation without re-fetching when cache is warm."""
+        cached = self._get_cached_messages(chat_id)
+        if cached is not None:
+            updated = cached + new_messages
+        else:
+            existing = await self.get_messages(chat_id)
+            updated = existing + new_messages
+        await self.save_messages(chat_id, updated)
+
     async def add_message(self, chat_id: str, message: BaseMessage) -> None:
         """Add a single message to conversation (optimized)."""
-        current_messages = await self.get_messages(chat_id)
-        current_messages.append(message)
-        
-        await self.save_messages(chat_id, current_messages)
+        await self.append_messages(chat_id, [message])
 
     async def delete_conversation(self, chat_id: str) -> bool:
         """Delete a conversation by chat_id."""

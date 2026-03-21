@@ -27,6 +27,7 @@ This module provides the main HTTP API endpoints and WebSocket connections for:
 import asyncio
 import json
 import os
+import time
 import uuid
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -76,10 +77,20 @@ postgres_storage = PostgreSQLConversationStorage(
 
 vector_store = create_vector_store_with_config(config_manager, uri=MILVUS_ADDRESS)
 
-vector_store._initialize_store()
-
 agent: ChatAgent | None = None
-indexing_tasks: Dict[str, str] = {}
+
+TASK_TTL_SECONDS = 3600  # 1 hour
+indexing_tasks: Dict[str, tuple] = {}  # task_id -> (status, timestamp)
+
+
+def _record_task(task_id: str, status: str) -> None:
+    """Record a task status and evict entries older than TASK_TTL_SECONDS."""
+    now = time.time()
+    # Evict stale entries
+    stale = [tid for tid, (_, ts) in indexing_tasks.items() if now - ts > TASK_TTL_SECONDS]
+    for tid in stale:
+        del indexing_tasks[tid]
+    indexing_tasks[task_id] = (status, now)
 
 
 @asynccontextmanager
@@ -287,8 +298,8 @@ async def ingest_files(files: Optional[List[UploadFile]] = File(None), backgroun
                 "content": content
             })
         
-        indexing_tasks[task_id] = "queued"
-        
+        _record_task(task_id, "queued")
+
         background_tasks.add_task(
             process_and_ingest_files_background,
             file_info,
@@ -328,7 +339,8 @@ async def get_indexing_status(task_id: str, current_user: str = Depends(get_curr
         Current task status
     """
     if task_id in indexing_tasks:
-        return {"status": indexing_tasks[task_id]}
+        status, _ = indexing_tasks[task_id]
+        return {"status": status}
     else:
         raise HTTPException(status_code=404, detail="Task not found")
 
@@ -355,8 +367,8 @@ async def delete_source(source_name: str, current_user: str = Depends(get_curren
         Deletion result with count of removed embeddings
     """
     try:
-        # Delete embeddings from Milvus
-        deleted_count = vector_store.delete_documents_by_source(source_name)
+        # Delete embeddings from Milvus (sync pymilvus call — run off event loop)
+        deleted_count = await asyncio.to_thread(vector_store.delete_documents_by_source, source_name)
 
         if deleted_count < 0:
             raise HTTPException(status_code=500, detail=f"Error deleting embeddings for source: {source_name}")
@@ -648,7 +660,7 @@ async def delete_collection(collection_name: str, current_user: str = Depends(ge
         collection_name: Name of the collection to delete
     """
     try:
-        success = vector_store.delete_collection(collection_name)
+        success = await asyncio.to_thread(vector_store.delete_collection, collection_name)
         if success:
             return {"status": "success", "message": f"Collection '{collection_name}' deleted successfully"}
         else:
