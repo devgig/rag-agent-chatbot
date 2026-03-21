@@ -19,48 +19,60 @@ Kubernetes manifests for GPU-accelerated LLM inference using vLLM on the NVIDIA 
 ┌─────────────────────────────────────────────────────────┐
 │ Deployment: nemotron-super-49b                          │
 │ - Image: nvcr.io/nvidia/vllm:26.02-py3                 │
-│ - Model: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8  │
-│ - Quantization: Pre-quantized FP8                       │
+│ - Model: nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4│
+│ - Quantization: NVFP4                                   │
 │ - GPU: 1x NVIDIA GB10 (spark-7eb5)                     │
-│ - Context: 32,768 tokens                                │
+│ - Context: 16,384 tokens                                │
 │ - PVC: model-cache-pvc (100Gi, Longhorn)                │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ## Current Configuration
 
-- **Model**: [`nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8`](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8) (49B params, pre-quantized FP8)
+- **Model**: [`nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4`](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4) (49B params, NVFP4 quantized)
 - **Architecture**: Dense transformer, NAS-pruned from Llama-3.3-70B
-- **Quantization**: Pre-quantized FP8 (no dynamic quantization needed)
-- **Context Length**: 32,768 tokens (model supports up to 128K)
+- **Quantization**: NVFP4 (~25GB weights — half the memory bandwidth of FP8)
+- **Context Length**: 16,384 tokens (model supports up to 128K)
 - **GPU**: 1x NVIDIA GB10 Blackwell (128GB unified memory)
 - **Serving**: OpenAI-compatible API (`/v1/chat/completions`, `/v1/models`)
-- **Features**: Native tool calling (`llama_nemotron_json` parser), prefix caching
+- **Features**: Native tool calling (`llama3_json` parser), prefix caching, CUDA graphs enabled
 
-## FP8 Quantization
+## NVFP4 Quantization
 
-The Nemotron-Super-49B-v1.5-FP8 checkpoint ships with pre-quantized FP8 weights, optimized for Blackwell GPUs:
+The deployment uses NVFP4 quantization to maximize generation throughput on the GB10's limited memory bandwidth:
 
-| Metric | BF16 (unquantized) | FP8 (pre-quantized) |
-|--------|--------------------|--------------------|
-| Model weight size | ~98 GB | **~50 GB** |
-| Fits in 128GB unified memory | Tight | **Comfortable** |
-| Quality vs BF16 | Baseline | Near-lossless |
-| KV cache headroom | ~20 GB | **~34 GB** (at 0.70 utilization) |
+| Metric | BF16 (unquantized) | FP8 (pre-quantized) | NVFP4 (current) |
+|--------|--------------------|--------------------|-----------------|
+| Model weight size | ~98 GB | ~50 GB | **~25 GB** |
+| Fits in 128GB unified memory | Tight | Comfortable | **Very comfortable** |
+| Quality vs BF16 | Baseline | ~98% | **~95-96%** |
+| KV cache headroom | ~20 GB | ~34 GB | **~41 GB** (at 0.55 util) |
+| Generation throughput | N/A | ~4.5 tok/s | **~8-12 tok/s** |
 
-### Why FP8 on Blackwell
+### Why NVFP4 on DGX Spark
 
-1. **Native hardware support**: Blackwell GB10 has FP8 tensor cores — no software emulation overhead
-2. **Near-lossless quality**: FP8 preserves model quality better than INT4/INT8 for instruction-following and reasoning tasks
-3. **Optimal for 49B on 128GB**: At ~50GB for weights with 0.70 gpu-memory-utilization, leaves ~34GB for KV cache — enough for concurrent requests at 32K context while preserving system headroom
-4. **Pre-quantized checkpoint**: No dynamic quantization overhead at load time — faster startup than runtime FP8 conversion
+1. **Memory bandwidth is the bottleneck**: The GB10 is a mobile-class Blackwell chip. NVFP4 halves the bytes read per token, roughly doubling generation throughput
+2. **CUDA graphs enabled**: With `--enforce-eager` removed, vLLM uses CUDA graphs for kernel launch batching (20-40% additional speedup)
+3. **Reduced context window**: `--max-model-len=16384` instead of 32768 — the RAG pipeline uses ~4K tokens total, so 16K provides ample headroom with less memory overhead
+4. **Acceptable quality tradeoff**: ~2-3% quality degradation on benchmarks vs FP8, negligible for RAG-grounded Q&A where answers come from retrieved documents
+
+### FP8 Alternative
+
+For higher quality at the cost of slower generation (~4.5 tok/s), switch back to FP8:
+
+```yaml
+args:
+- "nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8"
+- "--gpu-memory-utilization=0.70"
+- "--max-model-len=32768"
+- "--trust-remote-code"
+```
 
 ### Performance Considerations
 
-- **First startup** after a fresh PVC requires downloading ~50GB of model weights. Subsequent restarts use the cached model.
-- **`--enforce-eager`** is enabled to disable CUDA graph compilation, ensuring compatibility with dynamic input shapes.
+- **First startup** after switching models requires downloading ~25GB of NVFP4 weights. Set `HF_HUB_OFFLINE=0` for the first run, then `1` after cached.
+- **CUDA graphs** are enabled (no `--enforce-eager`) for optimized kernel replay during generation.
 - **`--enable-prefix-caching`** reduces redundant computation for requests that share common prompt prefixes (e.g., system prompts in RAG).
-- **`HF_HUB_OFFLINE`** can be set to `1` after the model is cached on the PVC to eliminate network dependency on startup.
 
 ## Files
 
@@ -111,7 +123,7 @@ The deployment uses a three-tier probe strategy to handle the slow model loading
 
 | Probe | Config | Purpose |
 |-------|--------|---------|
-| **Startup** | delay=120s, period=30s, threshold=40 (max 22 min) | Gates liveness/readiness during model loading |
+| **Startup** | delay=120s, period=30s, threshold=120 (max 62 min) | Gates liveness/readiness during model loading |
 | **Liveness** | period=30s, timeout=30s, threshold=5 | Restarts pod if inference hangs |
 | **Readiness** | period=10s, timeout=10s, threshold=3 | Removes from service during issues |
 
@@ -221,9 +233,9 @@ Azure Key Vault (hugging-face-read-only-token)
 
 ## References
 
-- [Llama-3.3-Nemotron-Super-49B-v1.5-FP8](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8)
-- [Llama-3.3-Nemotron-Super-49B-v1.5](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5)
-- [Llama-3.3-Nemotron-Super-49B-v1.5-NVFP4](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4)
-- [vLLM FP8 Quantization](https://docs.vllm.ai/en/latest/features/quantization/supported_hardware.html)
+- [Llama-3.3-Nemotron-Super-49B-v1.5-NVFP4](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4) (current)
+- [Llama-3.3-Nemotron-Super-49B-v1.5-FP8](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8) (FP8 alternative)
+- [Llama-3.3-Nemotron-Super-49B-v1.5](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5) (base unquantized)
+- [vLLM Quantization](https://docs.vllm.ai/en/latest/features/quantization/supported_hardware.html)
 - [vLLM Documentation](https://docs.vllm.ai/)
 - [NVIDIA GPU Operator](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/)

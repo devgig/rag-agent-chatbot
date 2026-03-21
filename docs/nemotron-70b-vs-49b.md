@@ -90,10 +90,17 @@ NVIDIA's NAS pruning removes structural redundancy (entire attention heads and M
 | Cold start download | ~70 GB | ~50 GB |
 | Quality vs 70B BF16 | ~97% (FP8 loss on larger model) | ~98% (NAS-pruned, FP8 on smaller model) |
 
-### NVFP4 fallback
+### NVFP4 (current deployment)
 
-If FP8 produces NaN outputs on GB10 (SM121 compute capability), the project includes a documented fallback to [`Nemotron-Super-49B-v1.5-NVFP4`](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4) at ~25 GB weights — an option that would not exist with the 70B model (NVFP4 on 70B would still require ~35 GB, with significant quality degradation at that level of quantization).
+The project currently uses [`Nemotron-Super-49B-v1.5-NVFP4`](https://huggingface.co/nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-NVFP4) at ~25 GB weights. NVFP4 was chosen over FP8 to maximize generation throughput on the GB10's limited memory bandwidth:
+
+- **~2x faster generation**: ~8-12 tok/s vs ~4.5 tok/s with FP8, because halving weight size halves memory-bandwidth pressure
+- **CUDA graphs enabled**: With less memory pressure, `--enforce-eager` was removed, enabling CUDA graph kernel replay for an additional 20-40% speedup
+- **Quality tradeoff**: ~2-3% degradation on benchmarks vs FP8 — acceptable for RAG-grounded Q&A where answers come from retrieved documents
+- **More headroom**: At `--gpu-memory-utilization=0.55`, leaves ~54 GiB free for OS/K3s vs ~36 GiB with FP8
+
+The FP8 variant remains available as an alternative when higher quality is needed (see deployment YAML for switching instructions). NVFP4 on 70B would still require ~35 GB with significant quality degradation — another reason the 49B model is the right choice.
 
 ## Summary
 
-The DGX Spark's 128 GB unified memory is shared between CPU and GPU. The Nemotron-70B model needs ~70 GB just for weights at FP8, leaving almost no room for KV cache or system processes. The NAS-pruned 49B variant uses ~50 GB at FP8, provides near-identical quality, and leaves enough headroom for concurrent inference, prefix caching, and stable node operation.
+The DGX Spark's 128 GB unified memory is shared between CPU and GPU. The Nemotron-70B model needs ~70 GB just for weights at FP8, leaving almost no room for KV cache or system processes. The NAS-pruned 49B variant uses ~25 GB at NVFP4 (or ~50 GB at FP8), provides near-identical quality, and leaves enough headroom for concurrent inference, prefix caching, and stable node operation.

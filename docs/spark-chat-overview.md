@@ -33,10 +33,12 @@ This project is designed to be customizable, serving as a framework that develop
 ## Default Models
 | Model                | Quantization | Model Type | VRAM        |
 |----------------------|--------------|------------|-------------|
-| Nemotron-Super-49B   | FP8 (pre-quantized) | Chat | ~ 25 GB |
+| Nemotron-Super-49B   | NVFP4        | Chat       | ~ 25 GB     |
 | Qwen3-Embedding-4B   | Q8           | Embedding  | ~ 5.39 GB   |
 
 **Total VRAM required:** ~30 GB
+
+> FP8 alternative available (~50GB, higher quality, ~4.5 tok/s vs ~8-12 tok/s with NVFP4). See `kustomize/models/base/nemotron-super-49b-deployment.yaml` for switching instructions.
 
 ---
 

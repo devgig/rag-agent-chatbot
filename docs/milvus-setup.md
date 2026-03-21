@@ -61,6 +61,12 @@ cluster:
   enabled: false
 standalone:
   enabled: true
+  persistence:
+    enabled: true
+    persistentVolumeClaim:
+      size: 50Gi
+      accessModes: ReadWriteOnce
+      # Uses default storageClass (longhorn)
 woodpecker:
   enabled: false
 
@@ -78,6 +84,14 @@ etcd:
   replicaCount: 1
   persistence:
     size: 10Gi
+
+# Server-side default index for new collections
+extraConfigFiles:
+  user.yaml: |+
+    autoIndex:
+      params:
+        build: '{"index_type": "HNSW", "metric_type": "COSINE", "M": 16, "efConstruction": 256}'
+        search: '{"ef": 64}'
 ```
 
 ## Connection Details
@@ -96,16 +110,21 @@ Backend environment variable:
 
 ## Collection Schema
 
-The `context` collection is auto-created by `langchain-milvus` with:
+The `context` collection is auto-created by `langchain-milvus` with HNSW/COSINE indexing:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `pk` | INT64 | Auto-generated primary key |
-| `embedding` | FLOAT_VECTOR (384-dim) | Document chunk embedding |
-| `page_content` | VARCHAR | Text chunk content |
+| `vector` | FLOAT_VECTOR (384-dim) | Document chunk embedding (HNSW index, COSINE metric) |
+| `text` | VARCHAR | Text chunk content |
 | `source` | VARCHAR | Document filename (used for filtering/deletion) |
 | `file_path` | VARCHAR | Original file path |
 | `filename` | VARCHAR | Original filename |
+
+The vector index is configured both client-side (`vector_store.py`) and server-side (`autoIndex` in Milvus values.yaml):
+- **Index type**: HNSW (M=16, efConstruction=256)
+- **Metric**: COSINE (scores normalized to [0, 1])
+- **Search params**: ef=64
 
 ## Verification
 

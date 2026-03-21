@@ -42,22 +42,30 @@ The prompt also includes instructions to handle edge cases where retrieved resul
 
 ---
 
-## 2. Forced Tool Calling on First Iteration
+## 2. Forced Tool Calling on First Iteration (Fast Path)
 
-**File:** `assets/backend/agent.py` (lines 293-305)
+**File:** `assets/backend/agent.py` (lines 273-298)
 
-Even with strong prompt instructions, the model could theoretically skip calling `search_documents` and answer directly. This is prevented at the API level by forcing the tool choice:
+Even with strong prompt instructions, the model could theoretically skip calling `search_documents` and answer directly. This is prevented at the code level by bypassing the LLM entirely on the first iteration:
 
 ```python
 if iterations == 0 and self.tools_by_name.get("search_documents"):
-    tool_choice = {"type": "function", "function": {"name": "search_documents"}}
-else:
-    tool_choice = "auto"
+    user_query = self._extract_user_query(state)
+    tool_call_id = f"call_fast_{uuid.uuid4().hex[:8]}"
+    response = AIMessage(
+        content="",
+        tool_calls=[ToolCall(
+            name="search_documents",
+            args={"query": user_query},
+            id=tool_call_id,
+        )],
+    )
+    return {"messages": state.get("messages", []) + [response]}
 ```
 
-On the **first iteration** (iteration 0), the OpenAI-compatible API parameter `tool_choice` is set to explicitly require `search_documents`. The model has no option to skip retrieval. On subsequent iterations, `tool_choice` reverts to `"auto"` so the model can produce its final text response.
+On the **first iteration** (iteration 0), the agent constructs the `search_documents` tool call directly in Python without invoking the LLM at all. The model has no opportunity to skip retrieval — the tool call is hardcoded. On subsequent iterations, the LLM runs with `tool_choice="auto"` so it can produce its final text response.
 
-This is the strongest technical guarantee — even if the prompt were ignored, the model is structurally forced to call the retrieval tool before generating any answer.
+This is the strongest technical guarantee — the LLM is never even consulted about whether to retrieve documents. As a side benefit, this eliminates a ~10s LLM round-trip that was previously wasted generating a predetermined tool call.
 
 ---
 
@@ -215,7 +223,7 @@ While not a grounding constraint per se, deterministic sampling reduces the mode
 | Layer | Mechanism | Prevents |
 |-------|-----------|----------|
 | **Prompt** | System prompt with explicit rules | Model choosing to use general knowledge |
-| **Forced tool call** | `tool_choice` set to `search_documents` on iteration 0 | Model skipping retrieval entirely |
+| **Forced tool call** | Fast-path: tool call constructed in Python, LLM bypassed on iteration 0 | Model skipping retrieval entirely |
 | **Relevance threshold** | Score filtering at 0.4 cutoff | Low-quality/tangential chunks reaching the model |
 | **MCP tool boundary** | `search_documents` as sole data pathway | Direct vector store access or knowledge injection |
 | **Generation prompt** | Secondary prompt in RAG pipeline | Internal generation using general knowledge |

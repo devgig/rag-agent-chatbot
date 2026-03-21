@@ -113,8 +113,8 @@ Embeddings are stored in Milvus with metadata:
 | Field | Type | Description |
 |-------|------|-------------|
 | `pk` | Int64 | Auto-generated primary key |
-| `embedding` | FloatVector | 1024-dimensional embedding |
-| `page_content` | VarChar | Original text chunk |
+| `embedding` | FloatVector | 384-dimensional embedding |
+| `text` | VarChar | Original text chunk |
 | `source` | VarChar | Document filename |
 | `file_path` | VarChar | Full file path |
 
@@ -135,19 +135,20 @@ When a user asks a question, here's what happens:
 2. WebSocket → FastAPI Backend
    │
    ▼
-3. LangGraph Agent (generate node)
+3. LangGraph Agent (generate node — fast path)
    │
-   ├─── LLM decides: "I need to search documents"
+   ├─── Bypasses LLM: directly constructs search_documents tool call
+   │    (no LLM round-trip needed since retrieval is always forced)
    │
    ▼
 4. Tool Call: search_documents(query="user question")
    │
    ▼
-5. MCP RAG Server
+5. MCP RAG Server (runs Milvus search off event loop via asyncio.to_thread)
    │
    ├─── Get selected sources from config
    ├─── Embed query → Qwen3-Embedding
-   ├─── Vector search → Milvus (top-k=8 candidates)
+   ├─── Vector search → Milvus HNSW/COSINE index (top-k=5 candidates)
    ├─── Filter by relevance score threshold (drop low-similarity chunks)
    └─── Format results with source attribution
    │
@@ -155,9 +156,9 @@ When a user asks a question, here's what happens:
 6. Tool Result → Agent
    │
    ▼
-7. LangGraph Agent (generate node, 2nd iteration)
+7. LangGraph Agent (generate node, iteration 1)
    │
-   ├─── LLM receives: original question + retrieved context
+   ├─── Single LLM call: original question + retrieved context
    └─── Generates grounded response
    │
    ▼
@@ -174,12 +175,12 @@ When a user asks a question, here's what happens:
 
 ```python
 # vector_store.py
-def get_documents(self, query: str, k: int = 8, sources: List[str] = None):
+def get_documents(self, query: str, k: int = 5, sources: List[str] = None):
     # Build filter for source selection
     if sources:
         filter_expr = ' || '.join([f'source == "{s}"' for s in sources])
 
-    # Similarity search with relevance scoring
+    # Similarity search with COSINE relevance scoring (HNSW index)
     results_with_scores = self._store.similarity_search_with_relevance_scores(
         query, k=k, expr=filter_expr
     )
@@ -192,10 +193,11 @@ def get_documents(self, query: str, k: int = 8, sources: List[str] = None):
 ```
 
 **Key parameters:**
-- `k=8`: Retrieves up to 8 candidate chunks from Milvus
-- `RELEVANCE_SCORE_THRESHOLD` (env: `RELEVANCE_SCORE_THRESHOLD`, default `0.4`): Normalized [0, 1] score cutoff — chunks scoring below this are discarded before reaching the LLM
+- `k=5`: Retrieves up to 5 candidate chunks from Milvus (reduced from 8 to minimize prompt tokens for faster LLM generation)
+- `RELEVANCE_SCORE_THRESHOLD` (env: `RELEVANCE_SCORE_THRESHOLD`, default `0.4`): COSINE similarity score [0, 1] cutoff — chunks scoring below this are discarded before reaching the LLM
 - `sources`: Optional filter for specific documents
 - Scores are logged per-chunk at DEBUG level for threshold tuning
+- All Milvus operations are wrapped in `asyncio.to_thread()` to avoid blocking the async event loop
 
 ---
 
@@ -417,11 +419,16 @@ fields = [
 
 ## Performance Considerations
 
-1. **Embedding latency**: Qwen3-Embedding runs locally, ~50-100ms per query
-2. **Vector search**: Milvus IVF_FLAT index, <10ms for top-k retrieval
-3. **Streaming**: Token-by-token delivery with `requestAnimationFrame`-based throttle for smooth rendering
-4. **Background ingestion**: Large uploads don't block the UI
-5. **Usage tracking**: Token usage (prompt/completion/total) accumulated across tool-call iterations and reported after each response
+1. **Fast-path retrieval**: On iteration 0, the agent bypasses the LLM entirely and directly invokes `search_documents` — eliminates a ~10s round-trip to the 49B model
+2. **Embedding latency**: Qwen3-Embedding runs locally, ~50-100ms per query
+3. **Vector search**: Milvus HNSW index with COSINE metric, <10ms for top-k retrieval
+4. **Async Milvus ops**: All synchronous pymilvus calls run in `asyncio.to_thread()` to avoid blocking the event loop
+5. **Single VectorStore instance**: The MCP RAG server reuses the VectorStore created by RAGAgent instead of creating a duplicate
+6. **Efficient history persistence**: `append_messages()` uses the LRU cache when warm, avoiding redundant DB fetches on every turn
+7. **Streaming**: Token-by-token delivery with `requestAnimationFrame`-based throttle for smooth rendering
+8. **Background ingestion**: Large uploads don't block the UI
+9. **Task cleanup**: Indexing task status entries are evicted after 1 hour to prevent unbounded memory growth
+10. **Usage tracking**: Token usage (prompt/completion/total) accumulated across tool-call iterations and reported after each response
 
 ---
 
@@ -455,7 +462,7 @@ export RELEVANCE_SCORE_THRESHOLD=0.5
 ```
 
 ```python
-# vector_store.py - increase candidate pool
+# vector_store.py - increase candidate pool (default is 5)
 def get_documents(self, query: str, k: int = 10):  # More candidates before threshold filter
 ```
 
