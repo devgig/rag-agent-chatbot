@@ -161,39 +161,49 @@ class VectorStore:
                     file_ext = os.path.splitext(file_path)[1].lower()
                     logger.info(f"File extension: {file_ext}")
                     
-                    try:
-                        loader = UnstructuredLoader(file_path)
-                        docs = loader.load()
-                        logger.info(f"Successfully loaded {len(docs)} documents from {file_path}")
-                    except Exception as pdf_error:
-                        logger.error(f'error with unstructured loader, trying to load from scratch')
-                        file_text = None
-                        if file_ext == ".pdf":
-                            logger.info("Attempting PyPDF text extraction fallback")
-                            try:
-                                from pypdf import PdfReader
-                                reader = PdfReader(file_path)
-                                extracted_pages = []
-                                for page in reader.pages:
-                                    try:
-                                        extracted_pages.append(page.extract_text() or "")
-                                    except Exception as per_page_err:
-                                        logger.info(f"Warning: failed to extract a page: {per_page_err}")
-                                        extracted_pages.append("")
-                                file_text = "\n\n".join(extracted_pages).strip()
-                            except Exception as pypdf_error:
-                                logger.info(f"PyPDF fallback failed: {pypdf_error}")
-                                file_text = None
+                    docs = None
+                    file_text = None
 
-                        if not file_text:
-                            logger.info("Falling back to raw text read of file contents")
-                            try:
-                                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                                    file_text = f.read()
-                            except Exception as read_error:
-                                logger.info(f"Fallback read failed: {read_error}")
-                                file_text = ""
+                    # For PDFs, use PyPDF first — it's faster and more
+                    # reliable than UnstructuredLoader on ARM64.
+                    if file_ext == ".pdf":
+                        logger.info("Loading PDF with PyPDF")
+                        try:
+                            from pypdf import PdfReader
+                            reader = PdfReader(file_path)
+                            extracted_pages = []
+                            for page in reader.pages:
+                                try:
+                                    extracted_pages.append(page.extract_text() or "")
+                                except Exception as per_page_err:
+                                    logger.info(f"Warning: failed to extract a page: {per_page_err}")
+                                    extracted_pages.append("")
+                            file_text = "\n\n".join(extracted_pages).strip()
+                            logger.info(f"PyPDF extracted {len(extracted_pages)} pages")
+                        except Exception as pypdf_error:
+                            logger.info(f"PyPDF failed: {pypdf_error}")
 
+                    # For non-PDFs (or if PyPDF failed), try UnstructuredLoader
+                    if not file_text and docs is None:
+                        try:
+                            loader = UnstructuredLoader(file_path)
+                            docs = loader.load()
+                            logger.info(f"Successfully loaded {len(docs)} documents from {file_path}")
+                        except Exception as unstructured_error:
+                            logger.error(f'UnstructuredLoader failed: {unstructured_error}')
+
+                    # Final fallback: raw text read
+                    if not file_text and docs is None:
+                        logger.info("Falling back to raw text read of file contents")
+                        try:
+                            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                                file_text = f.read()
+                        except Exception as read_error:
+                            logger.info(f"Fallback read failed: {read_error}")
+                            file_text = ""
+
+                    # Convert extracted text to a Document if we don't have docs yet
+                    if docs is None:
                         if file_text and file_text.strip():
                             docs = [Document(
                                 page_content=file_text,
