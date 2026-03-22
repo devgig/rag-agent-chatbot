@@ -29,7 +29,7 @@ from typing import Optional, Callable
 import requests
 
 
-EMBEDDING_BATCH_SIZE = 8
+EMBEDDING_BATCH_SIZE = 4
 RELEVANCE_SCORE_THRESHOLD = float(os.getenv("RELEVANCE_SCORE_THRESHOLD", "0.4"))
 
 
