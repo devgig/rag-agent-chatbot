@@ -652,14 +652,20 @@ class ChatAgent:
                 if self.last_state and self.last_state.get("messages"):
                     try:
                         logger.debug(f'Saving messages to conversation store for chat: {chat_id}')
-                        # Append only this turn's non-system messages to the
-                        # existing history.  append_messages uses the cache when
-                        # warm, avoiding a redundant DB fetch on every turn.
+                        # Append this turn's non-system messages and save
+                        # immediately so the history sent to the frontend
+                        # right after is always up to date.
                         new_messages = [
                             msg for msg in self.last_state["messages"]
                             if not isinstance(msg, SystemMessage)
                         ]
-                        await self.conversation_store.append_messages(chat_id, new_messages)
+                        cached = self.conversation_store._get_cached_messages(chat_id)
+                        if cached is not None:
+                            combined = cached + new_messages
+                        else:
+                            existing = await self.conversation_store.get_messages(chat_id)
+                            combined = existing + new_messages
+                        await self.conversation_store.save_messages_immediate(chat_id, combined)
                     except Exception as save_err:
                         logger.warning({"message": "Failed to persist conversation", "chat_id": chat_id, "error": str(save_err)})
             finally:
