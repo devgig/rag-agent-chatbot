@@ -90,8 +90,7 @@ This avoids running duplicate model instances on a single GPU.
 | `qwen35-service.yaml` | ClusterIP service in `llm` namespace |
 | `qwen35-externalname-service.yaml` | ExternalName alias in `rag-agent` namespace |
 | `model-cache-pvc.yaml` | 100Gi PersistentVolumeClaim in `llm` namespace |
-| `qwen3-embedding-deployment.yaml` | Embedding service (CPU-based, in `rag-agent` namespace) |
-| `qwen3-embedding-service.yaml` | ClusterIP service for embedding endpoint |
+| `qwen3-embedding-*` | Moved to `kustomize/embedding/` (separate pipeline) |
 | `hf-external-secret.yaml` | HuggingFace token from Azure Key Vault |
 | `kustomization.yaml` | Kustomize configuration |
 

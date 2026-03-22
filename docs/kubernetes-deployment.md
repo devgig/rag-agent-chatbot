@@ -6,43 +6,43 @@ This directory contains Kubernetes manifests for deploying the RAG Agent Chatbot
 
 ```
 kustomize/
-├── base/                           # Base manifests (environment-agnostic)
-│   ├── frontend/                   # Frontend deployment and service
-│   │   ├── app/
-│   │   │   ├── deployment.yaml
-│   │   │   ├── image_patch.yaml
-│   │   │   └── kustomization.yaml
-│   │   ├── network/
-│   │   │   ├── service.yaml
-│   │   │   └── kustomization.yaml
+├── backend/                        # Backend API (rag-agent namespace)
+│   ├── base/
+│   │   ├── deployment.yaml         # FastAPI backend
+│   │   ├── service.yaml
+│   │   ├── qwen35-externalname-service.yaml  # → qwen35.llm.svc
 │   │   └── kustomization.yaml
-│   ├── backend/                    # Backend deployment and service
-│   │   ├── app/
-│   │   ├── network/
+│   └── overlays/dev/
+├── embedding/                      # Embedding service (rag-agent namespace)
+│   ├── base/
+│   │   ├── qwen3-embedding-deployment.yaml   # all-MiniLM-L6-v2, CPU
+│   │   ├── qwen3-embedding-service.yaml
 │   │   └── kustomization.yaml
-│   ├── database/                   # Database and infrastructure components
-│   │   ├── app/
-│   │   │   ├── postgres-deployment.yaml
-│   │   │   ├── milvus-deployment.yaml
-│   │   │   ├── etcd-deployment.yaml
-│   │   │   ├── minio-deployment.yaml
-│   │   │   └── kustomization.yaml
-│   │   ├── network/
-│   │   │   ├── postgres-service.yaml
-│   │   │   ├── milvus-service.yaml
-│   │   │   ├── etcd-service.yaml
-│   │   │   ├── minio-service.yaml
-│   │   │   └── kustomization.yaml
+│   └── overlays/dev/
+├── models/                         # LLM inference (llm namespace)
+│   ├── base/
+│   │   ├── qwen35-deployment.yaml  # Nemotron 3 Nano 30B, GPU
+│   │   ├── qwen35-service.yaml
+│   │   ├── llm-namespace.yaml
 │   │   └── kustomization.yaml
-│   └── kustomization.yaml
-└── overlays/                       # Environment-specific configurations
-    ├── dev/                        # Development environment
-    │   ├── kustomization.yaml
-    │   └── dev-patches.yaml
-    └── prod/                       # Production environment
-        ├── kustomization.yaml
-        └── prod-patches.yaml
+│   └── overlays/dev/
+├── frontend/                       # React frontend (rag-agent namespace)
+│   ├── base/
+│   └── overlays/dev/
+└── gateway/                        # Istio Gateway + auth policies
+    ├── base/
+    └── overlays/dev/
 ```
+
+Each directory has its own Azure DevOps pipeline so changes deploy independently:
+
+| Pipeline | Trigger paths | Namespace |
+|----------|--------------|-----------|
+| `azure-pipelines-backend.yaml` | `assets/backend/**`, `kustomize/backend/**` | `rag-agent` |
+| `azure-pipelines-embedding.yaml` | `assets/embedding/**`, `kustomize/embedding/**` | `rag-agent` |
+| `azure-pipelines-models.yaml` | `kustomize/models/**` | `llm` |
+| `azure-pipelines-frontend.yaml` | `assets/frontend/**`, `kustomize/frontend/**` | `rag-agent` |
+| `azure-pipelines-gateway.yaml` | `kustomize/gateway/**` | `istio-ingress` |
 
 ## Components
 

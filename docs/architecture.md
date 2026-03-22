@@ -31,7 +31,7 @@ The RAG implementation enables the chatbot to answer questions using content fro
 | Backend | FastAPI | REST API, WebSocket streaming |
 | Agent | LangGraph | Orchestrates tool calls and LLM interactions |
 | Vector DB | Milvus | Stores and searches document embeddings |
-| Embedding | Qwen3-Embedding-4B | Converts text to vectors |
+| Embedding | all-MiniLM-L6-v2 (22M, 384-dim) | Converts text to vectors |
 | LLM | Nemotron 3 Nano 30B MoE NVFP4 (vLLM, `llm` namespace) | Generates responses (~56 tok/s) |
 | Storage | PostgreSQL | Chat history, document metadata |
 
@@ -92,16 +92,16 @@ self.text_splitter = RecursiveCharacterTextSplitter(
 
 ### 4. Embedding Generation
 
-Each chunk is embedded using the Qwen3-Embedding model:
+Each chunk is embedded using the all-MiniLM-L6-v2 model (22M params, 384-dim):
 
 ```python
 # vector_store.py
 class CustomEmbeddings:
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        # POST to Qwen3-Embedding service
+        # POST to embedding service (separate pipeline/deployment)
         response = requests.post(
             "http://qwen3-embedding:8000/v1/embeddings",
-            json={"input": texts, "model": "Qwen3-Embedding-4B"}
+            json={"input": texts, "model": "all-MiniLM-L6-v2"}
         )
         return [item["embedding"] for item in response.json()["data"]]
 ```

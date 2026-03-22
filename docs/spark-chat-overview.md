@@ -34,9 +34,9 @@ This project is designed to be customizable, serving as a framework that develop
 | Model                | Quantization | Model Type | VRAM        | Namespace |
 |----------------------|--------------|------------|-------------|-----------|
 | Nemotron 3 Nano 30B | NVFP4        | Chat (MoE) | ~ 15 GB     | `llm`     |
-| Qwen3-Embedding-4B   | Q8           | Embedding  | ~ 5.39 GB   | `rag-agent` |
+| all-MiniLM-L6-v2     | FP32         | Embedding  | ~ 80 MB     | `rag-agent` |
 
-**Total VRAM required:** ~20 GB
+**Total GPU VRAM required:** ~15 GB (embedding runs on CPU, not GPU)
 
 > The LLM runs in a shared `llm` namespace so multiple projects (rag-agent-chatbot, ai-agents/NemoClaw) can use it. ~56 tok/s generation throughput on DGX Spark GB10.
 

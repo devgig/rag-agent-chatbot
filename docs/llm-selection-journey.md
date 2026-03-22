@@ -163,3 +163,9 @@ At only ~15 GB for weights, there's ~100 GB of headroom in unified memory. GPU t
 ### Qwen3.5-35B-A3B-FP8 (when vLLM supports it)
 
 If Qwen's FP8 performance improves and vLLM adds `qwen3_5_moe` support, this could be revisited as an alternative. But the NVFP4 + NVIDIA model advantage is significant enough that Qwen would need to close a large gap.
+
+### Embedding Model
+
+The embedding model (all-MiniLM-L6-v2, 22M params, 384-dim) runs on CPU storage nodes and is deployed via its own pipeline (`azure-pipelines-embedding.yaml`), independent of the backend. An attempt to upgrade to Qwen3-Embedding-0.6B (600M params, 1024-dim) was reverted because the model OOM-killed on 16GB ARM64 storage nodes even with 8Gi memory limits. Future options:
+- **GPU-based embedding**: With only ~15GB used by the LLM, there's headroom to run a larger embedding model on the GPU
+- **Smaller high-quality models**: Models like BAAI/bge-base-en-v1.5 (110M, 768-dim) offer better quality than MiniLM without the memory overhead of 0.6B+ models
