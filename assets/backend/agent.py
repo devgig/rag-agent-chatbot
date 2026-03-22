@@ -333,6 +333,7 @@ class ChatAgent:
             top_p=1,
             stream=True,
             stream_options={"include_usage": True},
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             **tool_params
         )
 
