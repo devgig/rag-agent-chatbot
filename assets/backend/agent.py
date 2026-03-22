@@ -452,7 +452,10 @@ class ChatAgent:
         usage = None
         # State for stripping <think>...</think> blocks from streamed tokens.
         # Tokens arrive in arbitrary chunks so the tags may span multiple chunks.
+        # Models like Nemotron Nano may output <think> as the very first token
+        # or start reasoning without tags — we handle both cases.
         _in_think_block = False
+        _seen_first_content = False
         _pending = ""  # buffered text that might be a partial <think> or </think> tag
 
         async for chunk in stream:
@@ -469,6 +472,16 @@ class ChatAgent:
 
                 content = getattr(delta, "content", None)
                 if content:
+                    # On first content chunk, check if model starts with <think>
+                    if not _seen_first_content:
+                        _seen_first_content = True
+                        stripped = content.lstrip()
+                        if stripped.startswith("<think>"):
+                            _in_think_block = True
+                            content = stripped[len("<think>"):]
+                            if not content:
+                                continue
+
                     # --- strip <think>…</think> blocks from streamed output ---
                     _pending += content
                     emit = ""

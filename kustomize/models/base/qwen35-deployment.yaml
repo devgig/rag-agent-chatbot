@@ -62,7 +62,6 @@ spec:
         - "--enable-auto-tool-choice"
         - "--tool-call-parser=hermes"
         - "--enable-prefix-caching"
-        - "--chat-template-kwargs={\"enable_thinking\":false}"
         ports:
         - containerPort: 8000
           name: http
