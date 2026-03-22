@@ -77,11 +77,11 @@ spec:
           requests:
             nvidia.com/gpu: 1
             cpu: "4"
-            memory: "16Gi"
+            memory: "32Gi"
           limits:
             nvidia.com/gpu: 1
             cpu: "16"
-            memory: "64Gi"
+            memory: "96Gi"
         startupProbe:
           httpGet:
             path: /health
