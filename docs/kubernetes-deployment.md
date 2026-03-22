@@ -10,7 +10,7 @@ kustomize/
 │   ├── base/
 │   │   ├── deployment.yaml         # FastAPI backend
 │   │   ├── service.yaml
-│   │   ├── qwen35-externalname-service.yaml  # → qwen35.llm.svc
+│   │   ├── nemotron-nano-externalname-service.yaml  # → nemotron-nano.llm.svc
 │   │   └── kustomization.yaml
 │   └── overlays/dev/
 ├── embedding/                      # Embedding service (rag-agent namespace)
@@ -21,8 +21,8 @@ kustomize/
 │   └── overlays/dev/
 ├── models/                         # LLM inference (llm namespace)
 │   ├── base/
-│   │   ├── qwen35-deployment.yaml  # Nemotron 3 Nano 30B, GPU
-│   │   ├── qwen35-service.yaml
+│   │   ├── nemotron-nano-deployment.yaml  # Nemotron 3 Nano 30B, GPU
+│   │   ├── nemotron-nano-service.yaml
 │   │   ├── llm-namespace.yaml
 │   │   └── kustomization.yaml
 │   └── overlays/dev/

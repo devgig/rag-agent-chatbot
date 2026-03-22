@@ -22,5 +22,5 @@ replicas:
 configMapGenerator:
 - name: backend-config
   literals:
-  - MODELS=qwen35
+  - MODELS=nemotron-nano
   - LOG_LEVEL=DEBUG

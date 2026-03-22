@@ -8,17 +8,17 @@
 # Deployed in the shared "llm" namespace so multiple projects
 # (rag-agent-chatbot, ai-agents/NemoClaw, etc.) can use it.
 #
-# Consumers connect via: qwen35.llm.svc.cluster.local:8000
-# (Service name kept as "qwen35" for compatibility — model is Nemotron Nano)
+# Consumers connect via: nemotron-nano.llm.svc.cluster.local:8000
+# (Service name kept as "nemotron-nano" for compatibility — model is Nemotron Nano)
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: qwen35
+  name: nemotron-nano
   namespace: llm
   labels:
-    app: qwen35
-    workspace: qwen35
+    app: nemotron-nano
+    workspace: nemotron-nano
     component: model-inference
     managed-by: kustomize
 spec:
@@ -28,12 +28,12 @@ spec:
   progressDeadlineSeconds: 3600
   selector:
     matchLabels:
-      workspace: qwen35
+      workspace: nemotron-nano
   template:
     metadata:
       labels:
-        workspace: qwen35
-        app: qwen35
+        workspace: nemotron-nano
+        app: nemotron-nano
         istio.io/dataplane-mode: none
       annotations:
         ambient.istio.io/redirection: disabled
@@ -51,7 +51,7 @@ spec:
         command: ["vllm", "serve"]
         args:
         - "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
-        - "--served-model-name=qwen35"
+        - "--served-model-name=nemotron-nano"
         - "--tensor-parallel-size=1"
         - "--gpu-memory-utilization=0.55"
         - "--max-model-len=16384"

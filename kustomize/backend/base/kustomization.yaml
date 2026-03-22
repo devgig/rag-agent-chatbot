@@ -12,8 +12,8 @@ resources:
   - httproute.yaml
   # KEDA autoscaling
   - keda-scaledobject.yaml
-  # ExternalName alias so backend resolves qwen35:8000 → qwen35.llm.svc
-  - qwen35-externalname-service.yaml
+  # ExternalName alias so backend resolves nemotron-nano:8000 → nemotron-nano.llm.svc
+  - nemotron-nano-externalname-service.yaml
 
 patches:
   - target:

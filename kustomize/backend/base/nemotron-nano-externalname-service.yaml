@@ -1,12 +1,12 @@
-# ExternalName Service — makes qwen35 resolvable from the rag-agent namespace.
+# ExternalName Service — makes nemotron-nano resolvable from the rag-agent namespace.
 # The backend constructs URLs as http://{model_name}:8000/v1 using just the
 # short service name, so this alias lets it reach the llm namespace.
 
 apiVersion: v1
 kind: Service
 metadata:
-  name: qwen35
+  name: nemotron-nano
   namespace: rag-agent
 spec:
   type: ExternalName
-  externalName: qwen35.llm.svc.cluster.local
+  externalName: nemotron-nano.llm.svc.cluster.local

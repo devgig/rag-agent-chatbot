@@ -5,13 +5,13 @@
 # ARCHITECTURE:
 # - Deployment: vLLM serving Qwen3.5-35B-A3B (MoE, FP8) in the "llm" namespace
 # - Service: ClusterIP exposing OpenAI-compatible API on port 8000
-# - ExternalName: alias in "rag-agent" namespace so backend resolves qwen35:8000
+# - ExternalName: alias in "rag-agent" namespace so backend resolves nemotron-nano:8000
 # - ExternalSecret: HuggingFace token from Azure Key Vault
 #
 # SHARED MODEL:
 # The LLM runs in the "llm" namespace and is shared across projects:
-# - rag-agent-chatbot: http://qwen35:8000/v1 (via ExternalName in rag-agent ns)
-# - ai-agents: http://qwen35.llm.svc.cluster.local:8000/v1 (direct cross-ns DNS)
+# - rag-agent-chatbot: http://nemotron-nano:8000/v1 (via ExternalName in rag-agent ns)
+# - ai-agents: http://nemotron-nano.llm.svc.cluster.local:8000/v1 (direct cross-ns DNS)
 #
 # Embedding service stays in rag-agent namespace (only used by rag-agent-chatbot).
 #
@@ -24,15 +24,15 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: qwen35-llm
+  name: nemotron-nano-llm
 
 resources:
   - llm-namespace.yaml                # Shared "llm" namespace
   - acr-external-secret.yaml          # ACR pull credentials from Azure Key Vault
   - hf-external-secret.yaml           # HuggingFace token from Azure Key Vault
   - model-cache-pvc.yaml              # Persistent storage for HuggingFace model cache
-  - qwen35-deployment.yaml            # Qwen3-30B-A3B MoE (FP8) in llm namespace
-  - qwen35-service.yaml               # ClusterIP service in llm namespace
+  - nemotron-nano-deployment.yaml            # Qwen3-30B-A3B MoE (FP8) in llm namespace
+  - nemotron-nano-service.yaml               # ClusterIP service in llm namespace
   # ExternalName service and embedding resources deploy to rag-agent namespace
   # and are managed by the backend kustomization to avoid namespace conflicts.
 

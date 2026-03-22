@@ -131,8 +131,8 @@ Nemotron Nano wins by **47% (vLLM)** to **84% (llama.cpp)** on the same hardware
 | Change | Rationale |
 | ------ | --------- |
 | New `llm` namespace | Shared model serving across projects (rag-agent-chatbot, ai-agents) |
-| ExternalName service in `rag-agent` ns | Backend uses short name `http://qwen35:8000/v1` — ExternalName resolves to `qwen35.llm.svc.cluster.local` |
-| Cross-namespace DNS for ai-agents | Direct reference: `http://qwen35.llm.svc.cluster.local:8000/v1` |
+| ExternalName service in `rag-agent` ns | Backend uses short name `http://nemotron-nano:8000/v1` — ExternalName resolves to `nemotron-nano.llm.svc.cluster.local` |
+| Cross-namespace DNS for ai-agents | Direct reference: `http://nemotron-nano.llm.svc.cluster.local:8000/v1` |
 | Tool call parser: `hermes` | Nemotron Nano supports the Hermes tool calling format |
 | Removed NIM deployment from ai-agents | The 70B NIM image was broken (wrong arch, model too large). Replaced with shared vLLM instance. |
 | `--gpu-memory-utilization=0.55` | NVFP4 is only ~15 GB — lower utilization leaves more system headroom |

@@ -12,7 +12,7 @@ metadata:
   name: model-cache-pvc
   namespace: llm
   labels:
-    app: qwen35
+    app: nemotron-nano
     component: model-inference
 spec:
   accessModes:

@@ -8,20 +8,20 @@ Kubernetes manifests for GPU-accelerated LLM inference using vLLM on the NVIDIA 
 ┌─────────────────────────┐   ┌─────────────────────────┐
 │ rag-agent-chatbot       │   │ ai-agents               │
 │ (rag-agent namespace)   │   │ (ai-agents namespace)   │
-│ http://qwen35:8000/v1   │   │                         │
+│ http://nemotron-nano:8000/v1   │   │                         │
 │ (via ExternalName svc)  │   │                         │
 └───────────┬─────────────┘   └───────────┬─────────────┘
             │                             │
             ▼                             ▼
 ┌─────────────────────────────────────────────────────────┐
 │ Namespace: llm (shared)                                 │
-│ Service: qwen35 (ClusterIP:8000)                        │
-│ qwen35.llm.svc.cluster.local:8000                       │
+│ Service: nemotron-nano (ClusterIP:8000)                        │
+│ nemotron-nano.llm.svc.cluster.local:8000                       │
 └────────────────┬────────────────────────────────────────┘
                  │
                  ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Deployment: qwen35                                      │
+│ Deployment: nemotron-nano                                      │
 │ - Image: nvcr.io/nvidia/vllm:26.02-py3                 │
 │ - Model: Qwen/Qwen3-30B-A3B-FP8                      │
 │ - Architecture: Mixture-of-Experts (30B total, 3B active)│
@@ -74,8 +74,8 @@ The model runs in the `llm` namespace and is consumed by multiple projects:
 
 | Consumer | Connection method |
 |----------|------------------|
-| **rag-agent-chatbot** | ExternalName service `qwen35` in `rag-agent` namespace → `qwen35.llm.svc.cluster.local` |
-| **ai-agents** | Direct cross-namespace DNS: `qwen35.llm.svc.cluster.local:8000/v1` |
+| **rag-agent-chatbot** | ExternalName service `nemotron-nano` in `rag-agent` namespace → `nemotron-nano.llm.svc.cluster.local` |
+| **ai-agents** | Direct cross-namespace DNS: `nemotron-nano.llm.svc.cluster.local:8000/v1` |
 
 This avoids running duplicate model instances on a single GPU.
 
@@ -86,9 +86,9 @@ This avoids running duplicate model instances on a single GPU.
 | File | Purpose |
 |------|---------|
 | `llm-namespace.yaml` | Shared `llm` namespace |
-| `qwen35-deployment.yaml` | vLLM inference deployment (Qwen3-30B-A3B FP8) |
-| `qwen35-service.yaml` | ClusterIP service in `llm` namespace |
-| `qwen35-externalname-service.yaml` | ExternalName alias in `rag-agent` namespace |
+| `nemotron-nano-deployment.yaml` | vLLM inference deployment (Qwen3-30B-A3B FP8) |
+| `nemotron-nano-service.yaml` | ClusterIP service in `llm` namespace |
+| `nemotron-nano-externalname-service.yaml` | ExternalName alias in `rag-agent` namespace |
 | `model-cache-pvc.yaml` | 100Gi PersistentVolumeClaim in `llm` namespace |
 | `qwen3-embedding-*` | Moved to `kustomize/embedding/` (separate pipeline) |
 | `hf-external-secret.yaml` | HuggingFace token from Azure Key Vault |
@@ -115,12 +115,12 @@ Automatically deployed when changes are pushed to `kustomize/models/**`:
 kubectl apply -k kustomize/models/overlays/dev
 
 # Check status
-kubectl get pods -n llm -l app=qwen35
-kubectl logs -n llm -l app=qwen35 -f
+kubectl get pods -n llm -l app=nemotron-nano
+kubectl logs -n llm -l app=nemotron-nano -f
 
 # Test API endpoint
 kubectl exec -it -n rag-agent deployment/rag-agent-backend -- \
-  curl http://qwen35:8000/v1/models
+  curl http://nemotron-nano:8000/v1/models
 ```
 
 ## Probe Configuration
@@ -142,10 +142,10 @@ Backend connects using the served model name as hostname:
 ```python
 # assets/backend/agent.py
 base_url=f"http://{self.current_model}:8000/v1"
-# Resolves to: http://qwen35:8000 → qwen35.llm.svc.cluster.local:8000 (via ExternalName)
+# Resolves to: http://nemotron-nano:8000 → nemotron-nano.llm.svc.cluster.local:8000 (via ExternalName)
 ```
 
-The `rag-agent` namespace has an ExternalName service that aliases `qwen35` to `qwen35.llm.svc.cluster.local`, so the backend code works with just the short name.
+The `rag-agent` namespace has an ExternalName service that aliases `nemotron-nano` to `nemotron-nano.llm.svc.cluster.local`, so the backend code works with just the short name.
 
 ## Security
 
@@ -170,27 +170,27 @@ Unauthenticated users are blocked at the ingress gateway before reaching the bac
 
 ```bash
 # Pod status
-kubectl get pods -n llm -l app=qwen35
+kubectl get pods -n llm -l app=nemotron-nano
 
 # Logs
-kubectl logs -n llm -l app=qwen35 --tail=100
+kubectl logs -n llm -l app=nemotron-nano --tail=100
 
 # Service endpoints
-kubectl get endpoints qwen35 -n llm
+kubectl get endpoints nemotron-nano -n llm
 
 # vLLM metrics (Prometheus-compatible)
 kubectl exec -it -n rag-agent deployment/rag-agent-backend -- \
-  curl http://qwen35:8000/metrics
+  curl http://nemotron-nano:8000/metrics
 ```
 
 ## Switching Models
 
-Update the model in `qwen35-deployment.yaml`:
+Update the model in `nemotron-nano-deployment.yaml`:
 
 ```yaml
 args:
 - "organization/model-name"
-- "--served-model-name=qwen35"   # Keep service name stable
+- "--served-model-name=nemotron-nano"   # Keep service name stable
 - "--dtype=auto"
 - "--max-model-len=CONTEXT_LENGTH"
 ```
@@ -198,10 +198,10 @@ args:
 After switching models, delete and recreate the PVC to clear the old cache:
 
 ```bash
-kubectl scale deployment qwen35 -n llm --replicas=0
+kubectl scale deployment nemotron-nano -n llm --replicas=0
 kubectl delete pvc model-cache-pvc -n llm
 kubectl apply -f kustomize/models/base/model-cache-pvc.yaml
-kubectl scale deployment qwen35 -n llm --replicas=1
+kubectl scale deployment nemotron-nano -n llm --replicas=1
 ```
 
 ## GPU Configuration
