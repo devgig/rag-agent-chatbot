@@ -1,0 +1,128 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - assets/embedding/**
+      - kustomize/embedding/**
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - assets/embedding/**
+      - kustomize/embedding/**
+
+resources:
+- repo: self
+
+variables:
+  system.debug: false
+  imageRepository: 'rag-agent-chatbot-embedding'
+  containerRegistry: 'acr-bytecourier'
+  containerRegistryUrl: 'bytecourier.azurecr.io'
+  kubernetesServiceConnection: 'k3s-cluster'
+  environment: 'K3s'
+  dockerfilePath: './assets/embedding/Dockerfile'
+  manifestPath: 'kustomize/embedding/base'
+  tag: '$(Build.SourceVersion)'
+  poolName: '$(buildAgentPool)'
+  imagePullSecret: 'acr-secret'
+  namespace: 'rag-agent'
+
+stages:
+- stage: CreateImageAndPublish
+  displayName: Build Embedding Image
+  condition: and(succeeded(), in(variables['Build.Reason'], 'BatchedCI', 'IndividualCI', 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  pool:
+    name: $(poolName)
+  jobs:
+  - job: BuildAndPush
+    displayName: Build image and Push to ACR
+    steps:
+      - checkout: self
+
+      - task: Docker@2
+        displayName: Build ARM64 image
+        inputs:
+          containerRegistry: '$(containerRegistry)'
+          repository: '$(imageRepository)'
+          command: build
+          dockerfile: $(dockerfilePath)
+          buildContext: '$(Build.SourcesDirectory)/assets/embedding'
+          arguments: '--platform linux/arm64'
+          tags: |
+            $(tag)
+            latest
+
+      - task: Docker@2
+        displayName: Push image to ACR
+        inputs:
+          containerRegistry: '$(containerRegistry)'
+          repository: '$(imageRepository)'
+          command: push
+          tags: |
+            $(tag)
+            latest
+
+  - job: PublishManifest
+    displayName: Publish manifests
+    dependsOn: BuildAndPush
+    steps:
+      - task: Bash@3
+        displayName: Update image in manifests
+        inputs:
+          targetType: 'inline'
+          script: |
+            cd kustomize/embedding/base
+            cat <<EOF >qwen3-embedding-image-patch.yaml
+            - op: replace
+              path: /spec/template/spec/containers/0/image
+              value: bytecourier.azurecr.io/$(imageRepository):$(tag)
+            EOF
+
+      - task: Bash@3
+        displayName: Generate manifests
+        inputs:
+          targetType: 'inline'
+          script: |
+            mkdir manifests
+            if [ -d "./kustomize/embedding/overlays/dev" ]; then
+              kubectl kustomize ./kustomize/embedding/overlays/dev > ./manifests/$(imageRepository)-dev-workloads.yaml
+            else
+              echo "dev overlay doesn't exist; skipping"
+            fi
+
+      - publish: 'manifests'
+        artifact: manifests
+
+- stage: Deploy
+  displayName: Deploy Embedding
+  dependsOn: CreateImageAndPublish
+  condition: succeeded()
+  pool:
+    name: $(poolName)
+  jobs:
+  - deployment: deploy
+    displayName: Deploy to K3s
+    environment: $(environment)
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - download: current
+              artifact: manifests
+
+            - task: KubernetesManifest@1
+              displayName: deploy
+              inputs:
+                action: deploy
+                connectionType: kubernetesServiceConnection
+                kubernetesServiceConnection: $(kubernetesServiceConnection)
+                namespace: $(namespace)
+                manifests: |
+                  $(Pipeline.Workspace)/manifests/$(imageRepository)-dev-workloads.yaml
+                imagePullSecrets: $(imagePullSecret)

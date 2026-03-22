@@ -6,6 +6,9 @@ trigger:
     include:
       - assets/backend/**
       - kustomize/backend/**
+    exclude:
+      - assets/embedding/**
+      - kustomize/embedding/**
 
 pr:
   branches:
@@ -15,6 +18,9 @@ pr:
     include:
       - assets/backend/**
       - kustomize/backend/**
+    exclude:
+      - assets/embedding/**
+      - kustomize/embedding/**
 
 resources:
 - repo: self

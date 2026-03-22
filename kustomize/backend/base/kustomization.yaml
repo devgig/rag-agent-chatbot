@@ -14,19 +14,12 @@ resources:
   - keda-scaledobject.yaml
   # ExternalName alias so backend resolves qwen35:8000 → qwen35.llm.svc
   - qwen35-externalname-service.yaml
-  # Embedding service (runs on CPU in rag-agent namespace)
-  - qwen3-embedding-deployment.yaml
-  - qwen3-embedding-service.yaml
 
 patches:
   - target:
       kind: Deployment
       name: rag-agent-backend
     path: image-patch.yaml
-  - target:
-      kind: Deployment
-      name: qwen3-embedding
-    path: qwen3-embedding-image-patch.yaml
 
 labels:
 - includeSelectors: false
