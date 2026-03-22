@@ -29,7 +29,7 @@ from typing import Optional, Callable
 import requests
 
 
-EMBEDDING_BATCH_SIZE = 2
+EMBEDDING_BATCH_SIZE = 32
 RELEVANCE_SCORE_THRESHOLD = float(os.getenv("RELEVANCE_SCORE_THRESHOLD", "0.4"))
 
 
@@ -38,7 +38,7 @@ class CustomEmbeddings:
 
     Supports batched requests to reduce HTTP round-trips during document indexing.
     """
-    def __init__(self, model: str = "Qwen/Qwen3-Embedding-0.6B", host: str = "http://qwen3-embedding.rag-agent.svc.cluster.local:8000"):
+    def __init__(self, model: str = "all-MiniLM-L6-v2", host: str = "http://qwen3-embedding.rag-agent.svc.cluster.local:8000"):
         self.model = model
         self.url = f"{host}/v1/embeddings"
         self._session = requests.Session()
@@ -52,7 +52,7 @@ class CustomEmbeddings:
                 self.url,
                 json={"input": batch, "model": self.model},
                 headers={"Content-Type": "application/json"},
-                timeout=300,
+                timeout=60,
             )
             response.raise_for_status()
             data = response.json()

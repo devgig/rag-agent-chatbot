@@ -13,7 +13,7 @@ Instrumentator().instrument(app).expose(app)
 model = None
 
 
-EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 
 class EmbeddingRequest(BaseModel):
