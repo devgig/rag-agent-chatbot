@@ -30,12 +30,14 @@ variables:
   manifestPath: 'kustomize/embedding/base'
   tag: '$(Build.SourceVersion)'
   poolName: '$(buildAgentPool)'
+  base_path: '$(Build.SourceBranchName)'
+  source_branch_name: '$(Build.SourceBranchName)'
   imagePullSecret: 'acr-secret'
   namespace: 'rag-agent'
 
 stages:
 - stage: CreateImageAndPublish
-  displayName: Build Embedding Image
+  displayName: Create image and Publish
   condition: and(succeeded(), in(variables['Build.Reason'], 'BatchedCI', 'IndividualCI', 'Manual'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
   pool:
     name: $(poolName)
@@ -85,7 +87,7 @@ stages:
             EOF
 
       - task: Bash@3
-        displayName: Generate manifests
+        displayName: Generate manifests for main branch
         inputs:
           targetType: 'inline'
           script: |
@@ -96,33 +98,11 @@ stages:
               echo "dev overlay doesn't exist; skipping"
             fi
 
+            if [ -d "./kustomize/embedding/overlays/prod" ]; then
+              kubectl kustomize ./kustomize/embedding/overlays/prod > ./manifests/$(imageRepository)-prod-workloads.yaml
+            else
+              echo "prod overlay doesn't exist; skipping"
+            fi
+
       - publish: 'manifests'
         artifact: manifests
-
-- stage: Deploy
-  displayName: Deploy Embedding
-  dependsOn: CreateImageAndPublish
-  condition: succeeded()
-  pool:
-    name: $(poolName)
-  jobs:
-  - deployment: deploy
-    displayName: Deploy to K3s
-    environment: $(environment)
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-            - download: current
-              artifact: manifests
-
-            - task: KubernetesManifest@1
-              displayName: deploy
-              inputs:
-                action: deploy
-                connectionType: kubernetesServiceConnection
-                kubernetesServiceConnection: $(kubernetesServiceConnection)
-                namespace: $(namespace)
-                manifests: |
-                  $(Pipeline.Workspace)/manifests/$(imageRepository)-dev-workloads.yaml
-                imagePullSecrets: $(imagePullSecret)
