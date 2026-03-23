@@ -80,7 +80,7 @@ stages:
           targetType: 'inline'
           script: |
             cd kustomize/embedding/base
-            cat <<EOF >qwen3-embedding-image-patch.yaml
+            cat <<'EOF' >embedding-image-patch.yaml
             - op: replace
               path: /spec/template/spec/containers/0/image
               value: bytecourier.azurecr.io/$(imageRepository):$(tag)

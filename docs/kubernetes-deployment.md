@@ -15,8 +15,8 @@ kustomize/
 │   └── overlays/dev/
 ├── embedding/                      # Embedding service (rag-agent namespace)
 │   ├── base/
-│   │   ├── qwen3-embedding-deployment.yaml   # all-MiniLM-L6-v2, CPU (service name is legacy)
-│   │   ├── qwen3-embedding-service.yaml     # Legacy name; serves all-MiniLM-L6-v2
+│   │   ├── embedding-deployment.yaml   # all-MiniLM-L6-v2, CPU
+│   │   ├── embedding-service.yaml
 │   │   └── kustomization.yaml
 │   └── overlays/dev/
 ├── models/                         # LLM inference (llm namespace)

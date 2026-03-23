@@ -100,7 +100,7 @@ class CustomEmbeddings:
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         # POST to embedding service (separate pipeline/deployment)
         response = requests.post(
-            "http://qwen3-embedding:8000/v1/embeddings",  # Service name is legacy; serves all-MiniLM-L6-v2
+            "http://embedding:8000/v1/embeddings",
             json={"input": texts, "model": "all-MiniLM-L6-v2"}
         )
         return [item["embedding"] for item in response.json()["data"]]

@@ -89,7 +89,7 @@ Separating model serving into its own namespace keeps GPU resources isolated fro
 | `nemotron-nano-service.yaml` | ClusterIP service in `llm` namespace |
 | `nemotron-nano-externalname-service.yaml` | ExternalName alias in `rag-agent` namespace |
 | `model-cache-pvc.yaml` | 100Gi PersistentVolumeClaim in `llm` namespace |
-| `qwen3-embedding-*` | Moved to `kustomize/embedding/` (separate pipeline, serves all-MiniLM-L6-v2) |
+| `embedding-*` | Moved to `kustomize/embedding/` (separate pipeline) |
 | `hf-external-secret.yaml` | HuggingFace token from Azure Key Vault |
 | `kustomization.yaml` | Kustomize configuration |
 

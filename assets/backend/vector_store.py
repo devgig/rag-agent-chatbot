@@ -37,9 +37,8 @@ class CustomEmbeddings:
     """Wraps embedding service (all-MiniLM-L6-v2) to match OpenAI format.
 
     Supports batched requests to reduce HTTP round-trips during document indexing.
-    Service name 'qwen3-embedding' is legacy; the model served is all-MiniLM-L6-v2.
     """
-    def __init__(self, model: str = "all-MiniLM-L6-v2", host: str = "http://qwen3-embedding.rag-agent.svc.cluster.local:8000"):
+    def __init__(self, model: str = "all-MiniLM-L6-v2", host: str = "http://embedding.rag-agent.svc.cluster.local:8000"):
         self.model = model
         self.url = f"{host}/v1/embeddings"
         self._session = requests.Session()

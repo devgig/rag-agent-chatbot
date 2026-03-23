@@ -2,14 +2,14 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: qwen3-embedding
+  name: embedding
 
 resources:
-  - qwen3-embedding-deployment.yaml
-  - qwen3-embedding-service.yaml
+  - embedding-deployment.yaml
+  - embedding-service.yaml
 
 patches:
   - target:
       kind: Deployment
-      name: qwen3-embedding
-    path: qwen3-embedding-image-patch.yaml
+      name: embedding
+    path: embedding-image-patch.yaml
