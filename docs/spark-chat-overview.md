@@ -48,12 +48,12 @@ This project is designed to be customizable, serving as a framework that develop
 
 ### Default Models
 
-| Model | Quantization | Model Type | Weights | GPU Allocation | Namespace |
-|-------|--------------|------------|---------|----------------|-----------|
-| Nemotron 3 Nano 30B | NVFP4 | Chat (MoE) | ~15 GB | ~66 GB (55% of 128 GB unified) | `llm` |
-| all-MiniLM-L6-v2 | FP32 | Embedding (384d) | ~80 MB | CPU only (~332 Mi RSS) | `rag-agent` |
+| Model | Quantization | Model Type | Weights | Actual Usage | Namespace |
+|-------|--------------|------------|---------|--------------|-----------|
+| Nemotron 3 Nano 30B | NVFP4 | Chat (MoE) | ~15 GB | ~72 GB GPU, ~4 Gi RAM | `llm` |
+| all-MiniLM-L6-v2 | FP32 | Embedding (384d) | ~80 MB | ~332 Mi RAM (CPU only) | `rag-agent` |
 
-**GPU memory:** The LLM pre-allocates ~66 GB via `--gpu-memory-utilization=0.55` for weights + KV cache + CUDA graphs, leaving ~54 GB for OS/K3s. The embedding model runs entirely on CPU.
+**GPU memory:** vLLM pre-allocates ~72 GB via `--gpu-memory-utilization=0.55` for weights + KV cache + CUDA graphs, leaving ~56 GB for OS/K3s. The embedding model runs entirely on CPU.
 
 > ~56 tok/s generation throughput on DGX Spark GB10.
 

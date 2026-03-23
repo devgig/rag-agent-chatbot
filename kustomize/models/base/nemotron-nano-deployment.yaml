@@ -3,7 +3,7 @@
 # NVIDIA Nemotron 3 Nano MoE model with NVFP4 quantization.
 # 30B total parameters, only 3B active per token — delivers ~56 tok/s (vLLM)
 # or ~70 tok/s (llama.cpp) on GB10. ~15GB VRAM for weights at NVFP4.
-# gpu-memory-utilization=0.55 allocates ~66Gi, leaving ~54Gi for OS/K3s.
+# gpu-memory-utilization=0.55 allocates ~72Gi, leaving ~56Gi for OS/K3s.
 #
 # Deployed in the "llm" namespace, separate from application workloads.
 #
