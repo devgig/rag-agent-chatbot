@@ -23,9 +23,9 @@ Kubernetes manifests for GPU-accelerated LLM inference using vLLM on the NVIDIA 
 ┌─────────────────────────────────────────────────────────┐
 │ Deployment: nemotron-nano                                      │
 │ - Image: nvcr.io/nvidia/vllm:26.02-py3                 │
-│ - Model: Qwen/Qwen3-30B-A3B-FP8                      │
+│ - Model: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4  │
 │ - Architecture: Mixture-of-Experts (30B total, 3B active)│
-│ - Quantization: FP8                                      │
+│ - Quantization: NVFP4                                    │
 │ - GPU: 1x NVIDIA GB10 (spark-7eb5)                      │
 │ - Context: 16,384 tokens                                 │
 │ - PVC: model-cache-pvc (100Gi, Longhorn)                 │
@@ -39,11 +39,11 @@ Kubernetes manifests for GPU-accelerated LLM inference using vLLM on the NVIDIA 
 - **Quantization**: NVFP4 (~15GB weights — native Blackwell format)
 - **Context Length**: 16,384 tokens (model supports up to 128K)
 - **GPU**: 1x NVIDIA GB10 Blackwell (128GB unified memory)
-- **Namespace**: `llm` (shared across projects)
+- **Namespace**: `llm` (dedicated, separate from application workloads)
 - **Serving**: OpenAI-compatible API (`/v1/chat/completions`, `/v1/models`)
 - **Features**: Native tool calling (`hermes` parser), prefix caching, CUDA graphs enabled
 
-## Why Qwen3-30B-A3B
+## Why Nemotron 3 Nano 30B MoE
 
 The Mixture-of-Experts architecture delivers dramatically better throughput than dense models on the GB10:
 
@@ -85,11 +85,11 @@ Separating model serving into its own namespace keeps GPU resources isolated fro
 | File | Purpose |
 |------|---------|
 | `llm-namespace.yaml` | Shared `llm` namespace |
-| `nemotron-nano-deployment.yaml` | vLLM inference deployment (Qwen3-30B-A3B FP8) |
+| `nemotron-nano-deployment.yaml` | vLLM inference deployment (Nemotron 3 Nano 30B NVFP4) |
 | `nemotron-nano-service.yaml` | ClusterIP service in `llm` namespace |
 | `nemotron-nano-externalname-service.yaml` | ExternalName alias in `rag-agent` namespace |
 | `model-cache-pvc.yaml` | 100Gi PersistentVolumeClaim in `llm` namespace |
-| `qwen3-embedding-*` | Moved to `kustomize/embedding/` (separate pipeline) |
+| `qwen3-embedding-*` | Moved to `kustomize/embedding/` (separate pipeline, serves all-MiniLM-L6-v2) |
 | `hf-external-secret.yaml` | HuggingFace token from Azure Key Vault |
 | `kustomization.yaml` | Kustomize configuration |
 

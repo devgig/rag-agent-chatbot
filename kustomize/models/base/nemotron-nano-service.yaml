@@ -1,6 +1,6 @@
-# Service for Qwen3.5-35B-A3B Model Inference
-# =============================================
-# ClusterIP service in the shared "llm" namespace.
+# Service for Nemotron 3 Nano 30B Model Inference
+# ================================================
+# ClusterIP service in the "llm" namespace.
 # Consumers connect via: nemotron-nano.llm.svc.cluster.local:8000
 
 apiVersion: v1

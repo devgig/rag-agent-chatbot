@@ -3,7 +3,7 @@
 # Deploys vLLM model inference in the shared "llm" namespace for K3s/BYO GPU.
 #
 # ARCHITECTURE:
-# - Deployment: vLLM serving Qwen3.5-35B-A3B (MoE, FP8) in the "llm" namespace
+# - Deployment: vLLM serving Nemotron 3 Nano 30B (MoE, NVFP4) in the "llm" namespace
 # - Service: ClusterIP exposing OpenAI-compatible API on port 8000
 # - ExternalName: alias in "rag-agent" namespace so backend resolves nemotron-nano:8000
 # - ExternalSecret: HuggingFace token from Azure Key Vault
@@ -30,7 +30,7 @@ resources:
   - acr-external-secret.yaml          # ACR pull credentials from Azure Key Vault
   - hf-external-secret.yaml           # HuggingFace token from Azure Key Vault
   - model-cache-pvc.yaml              # Persistent storage for HuggingFace model cache
-  - nemotron-nano-deployment.yaml            # Qwen3-30B-A3B MoE (FP8) in llm namespace
+  - nemotron-nano-deployment.yaml            # Nemotron 3 Nano 30B MoE (NVFP4) in llm namespace
   - nemotron-nano-service.yaml               # ClusterIP service in llm namespace
   # ExternalName service and embedding resources deploy to rag-agent namespace
   # and are managed by the backend kustomization to avoid namespace conflicts.

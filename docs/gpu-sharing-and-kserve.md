@@ -9,10 +9,10 @@ Strategies for sharing a single NVIDIA DGX Spark (Blackwell GB10, 128GB unified 
 | GPU Node | `spark-7eb5` — NVIDIA DGX Spark, Blackwell GB10 |
 | GPU Memory | 128GB unified (shared CPU/GPU address space) |
 | CUDA | 13.0 (Driver 580.95) |
-| Current Workload | Nemotron-Super-49B-v1.5 via vLLM (70% GPU mem utilization) |
+| Current Workload | Nemotron 3 Nano 30B NVFP4 via vLLM (55% GPU mem utilization) |
 | GPU Resource | `nvidia.com/gpu: 1` — exclusive allocation to one pod |
 
-**The problem:** Kubernetes allocates the GPU as a single indivisible resource. The current `nemotron-super-49b` deployment claims the entire GPU, blocking any other pod from scheduling GPU workloads.
+**The problem:** Kubernetes allocates the GPU as a single indivisible resource. The current `nemotron-nano` deployment claims the entire GPU, blocking any other pod from scheduling GPU workloads.
 
 ---
 
@@ -69,7 +69,7 @@ Allocatable:
 **Update your deployments** to request a fraction:
 
 ```yaml
-# nemotron-super-49b-deployment.yaml — reduce from 1 to 1 virtual GPU slice
+# nemotron-nano-deployment.yaml — reduce from 1 to 1 virtual GPU slice
 resources:
   limits:
     nvidia.com/gpu: 1   # now 1 of 4 slices, not 1 of 1
@@ -84,7 +84,7 @@ resources:
 
 | Workload | GPU Memory | Purpose |
 |----------|-----------|---------|
-| vLLM (Nemotron Super 49B) | ~50GB (reduce `gpu-memory-utilization` to 0.4) | Primary LLM inference |
+| vLLM (Nemotron Nano 30B) | ~15GB (`gpu-memory-utilization` at 0.55) | Primary LLM inference |
 | Agent Tooling Model | ~30GB | Smaller model for tool-use/routing |
 | Embedding (GPU-accel) | ~8GB | Optional: move embedding to GPU |
 | Reserved/Headroom | ~40GB | Burst capacity or additional agents |
@@ -186,7 +186,7 @@ spec:
       modelFormat:
         name: vllm
       runtime: kserve-vllm
-      storageUri: "hf://nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8"
+      storageUri: "hf://nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
       resources:
         limits:
           nvidia.com/gpu: 1
@@ -272,7 +272,7 @@ If your agent models are fine-tuned variants of the same base, vLLM can serve mu
 ```yaml
 # Single vLLM deployment serving multiple "models"
 args:
-  - "--model=nvidia/Llama-3_3-Nemotron-Super-49B-v1_5-FP8"
+  - "--model=nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
   - "--enable-lora"
   - "--lora-modules"
   - "chat-agent=/models/lora/chat"
@@ -369,7 +369,7 @@ spec:
             - containerPort: 8000
           env:
             - name: LLM_ENDPOINT
-              value: "http://nemotron-super-49b.rag-agent.svc.cluster.local:8000"
+              value: "http://nemotron-nano.llm.svc.cluster.local:8000"
             - name: PEER_AGENTS
               value: "http://agent-executor.rag-agent.svc.cluster.local:8000,http://agent-reviewer.rag-agent.svc.cluster.local:8000"
           resources:
@@ -397,8 +397,8 @@ from langchain_openai import ChatOpenAI
 
 # All agents share the same GPU-backed LLM endpoint
 llm = ChatOpenAI(
-    base_url="http://nemotron-super-49b.rag-agent.svc.cluster.local:8000/v1",
-    model="nemotron-super-49b",
+    base_url="http://nemotron-nano.llm.svc.cluster.local:8000/v1",
+    model="nemotron-nano",
 )
 
 # Sub-agents as remote services (CPU pods)
@@ -429,7 +429,7 @@ Each tool server is a lightweight CPU pod. Only the LLM inference touches the GP
 
 1. Create the time-slicing ConfigMap with `replicas: 4`
 2. Patch the GPU Operator ClusterPolicy
-3. Reduce vLLM `gpu-memory-utilization` from 0.7 to 0.4
+3. Adjust vLLM `gpu-memory-utilization` as needed (currently 0.55)
 4. Verify `nvidia.com/gpu: 4` on the node
 5. Existing workload continues unchanged (now uses 1 of 4 slices)
 
@@ -477,7 +477,7 @@ Total GPU Memory:           128 GB
 ├── OS/Driver Overhead:      ~4 GB
 ├── Available:              ~124 GB
 │
-├── Slot 1: Primary LLM     ~50 GB  (Nemotron Super 49B at 0.4 utilization)
+├── Slot 1: Primary LLM     ~15 GB  (Nemotron Nano 30B at 0.55 utilization)
 ├── Slot 2: Agent Model      ~30 GB  (Qwen 3B or similar)
 ├── Slot 3: Embedding/Other  ~14 GB  (GPU-accelerated embedding or specialty model)
 └── Slot 4: Headroom         ~30 GB  (burst, experiments, new agents)

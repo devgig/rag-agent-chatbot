@@ -100,7 +100,7 @@ class CustomEmbeddings:
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         # POST to embedding service (separate pipeline/deployment)
         response = requests.post(
-            "http://qwen3-embedding:8000/v1/embeddings",
+            "http://qwen3-embedding:8000/v1/embeddings",  # Service name is legacy; serves all-MiniLM-L6-v2
             json={"input": texts, "model": "all-MiniLM-L6-v2"}
         )
         return [item["embedding"] for item in response.json()["data"]]
@@ -138,7 +138,7 @@ When a user asks a question, here's what happens:
 3. LangGraph Agent (generate node — single pass)
    │
    ├─── Read selected sources from config
-   ├─── Embed query → Qwen3-Embedding
+   ├─── Embed query → all-MiniLM-L6-v2 (via embedding service)
    ├─── Vector search → Milvus HNSW/COSINE index (top-k=5 candidates)
    ├─── Filter by relevance score threshold (drop low-similarity chunks)
    ├─── Format context with source attribution
@@ -298,7 +298,7 @@ CREATE TABLE sources (
 # Collection: "context"
 fields = [
     FieldSchema("pk", DataType.INT64, is_primary=True, auto_id=True),
-    FieldSchema("embedding", DataType.FLOAT_VECTOR, dim=1024),
+    FieldSchema("embedding", DataType.FLOAT_VECTOR, dim=384),
     FieldSchema("page_content", DataType.VARCHAR, max_length=65535),
     FieldSchema("source", DataType.VARCHAR, max_length=255),
     FieldSchema("file_path", DataType.VARCHAR, max_length=1024),
@@ -325,7 +325,7 @@ fields = [
 
 ```json
 {
-  "selected_model": "nemotron-super-49b",
+  "selected_model": "nemotron-nano",
   "selected_sources": ["doc1.pdf", "doc2.pdf"]
 }
 ```
@@ -360,7 +360,7 @@ fields = [
 ## Performance Considerations
 
 1. **Direct RAG pipeline**: Inline vector search + single LLM call in one pass (~3s end-to-end), eliminating the former ~20s MCP subprocess overhead
-2. **Embedding latency**: Qwen3-Embedding runs locally, ~50-100ms per query
+2. **Embedding latency**: all-MiniLM-L6-v2 runs locally on CPU, ~50-100ms per query
 3. **Vector search**: Milvus HNSW index with COSINE metric, <10ms for top-k retrieval
 4. **Async Milvus ops**: All synchronous pymilvus calls run in `asyncio.to_thread()` to avoid blocking the event loop
 5. **No checkpointer overhead**: Graph runs without a MemorySaver since each query is stateless

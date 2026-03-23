@@ -78,7 +78,7 @@ NVFP4 halves the weight size (50 GB to 25 GB), which halves the bytes read per t
 
 ---
 
-## Phase 3: Qwen3-30B-A3B MoE FP8 (current)
+## Phase 3: Qwen3-30B-A3B MoE FP8
 
 **Model:** `Qwen/Qwen3-30B-A3B-Instruct-2507-FP8`
 **Throughput:** ~38 tok/s (llama.cpp benchmark)

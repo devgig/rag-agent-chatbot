@@ -153,7 +153,7 @@ kubectl exec -n rag-agent $BACKEND_POD -c backend -- \
 If document uploads don't complete:
 
 1. Check Milvus standalone pod is running and ready
-2. Check embedding service is healthy: `kubectl get pods -n rag-agent -l app=qwen3-embedding`
+2. Check embedding service is healthy: `kubectl get pods -n rag-agent -l app=qwen3-embedding` (service name is legacy; serves all-MiniLM-L6-v2)
 3. Check backend logs: `kubectl logs -n rag-agent -l app=rag-agent-backend -c backend --tail=50`
 
 ### Resetting Milvus
