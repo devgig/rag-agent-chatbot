@@ -55,7 +55,63 @@ This project is designed to be customizable, serving as a framework that develop
 
 **GPU memory:** vLLM pre-allocates ~72 GB via `--gpu-memory-utilization=0.55` for weights + KV cache + CUDA graphs, leaving ~56 GB for OS/K3s. The embedding model runs entirely on CPU.
 
-> ~56 tok/s generation throughput on DGX Spark GB10.
+### Inference Performance
+
+Metrics sourced from vLLM Prometheus endpoint (`/metrics`) on DGX Spark GB10.
+
+#### Time to First Token (TTFT)
+
+Time from request arrival to first generated token. Dominated by prompt prefill.
+
+| Percentile | Latency |
+|------------|---------|
+| p50 | 100–250 ms |
+| p95 | < 750 ms |
+| Average | ~1.5 s |
+
+The first request after a cold start may take 20–40s due to CUDA graph warmup.
+
+#### Token Generation Throughput (TPOT)
+
+Sustained output token rate during active generation.
+
+| Metric | Value |
+|--------|-------|
+| Peak generation | **56.8 tok/s** |
+| Sustained generation | **~57 tok/s** |
+| Prompt prefill | up to **280 tok/s** |
+
+vLLM logs report 10-second averaged throughput, which dilutes active generation across idle intervals and appears lower than the actual per-request rate.
+
+#### End-to-End Request Latency
+
+Total time from request arrival to final token delivered.
+
+| Percentile | Latency |
+|------------|---------|
+| p50 | < 1.5 s |
+| p90 | < 5 s |
+| Average | ~4.2 s |
+
+Average request size: ~1,337 prompt tokens, ~150 generation tokens.
+
+#### Dynamic Batching
+
+vLLM chunked prefill is enabled with `max_num_batched_tokens=2048`, allowing prompt processing and generation to be interleaved across concurrent requests.
+
+| Metric | Value |
+|--------|-------|
+| KV cache capacity | 3.1M tokens |
+| Max concurrent requests (at 16K context) | 184x |
+| Peak KV cache usage | 0.1% |
+
+#### Cache & Utilization
+
+| Metric | Value |
+|--------|-------|
+| Prefix cache hit rate | 0% (enabled, no repeated prefixes observed) |
+| Completion reasons | 17 stop, 1 length, 0 errors |
+| Total tokens processed | 26,149 prompt + 2,868 generation |
 
 ### RAG Pipeline Flow
 
