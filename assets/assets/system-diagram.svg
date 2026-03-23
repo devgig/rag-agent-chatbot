@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1580 720" font-family="'Segoe UI', Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1370 720" font-family="'Segoe UI', Arial, sans-serif">
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
       <polygon points="0 0, 10 3.5, 0 7" fill="white"/>
@@ -10,7 +10,7 @@
   </defs>
 
   <!-- Background -->
-  <rect width="1580" height="720" rx="8" fill="#2d2d2d"/>
+  <rect width="1370" height="720" rx="8" fill="#2d2d2d"/>
 
   <!-- ════════════════ Istio Ambient Mesh Region ════════════════ -->
   <rect x="410" y="55" width="510" height="540" rx="12" fill="rgba(85,85,85,0.45)" stroke="#777" stroke-width="1.5"/>
@@ -51,11 +51,11 @@
 
   <!-- ════════════════ Arrows from Backend to Services ════════════════ -->
 
-  <!-- Arrow: Backend → Nemotron-Super-49B -->
+  <!-- Arrow: Backend → Nemotron Nano -->
   <line x1="840" y1="335" x2="1085" y2="86" stroke="white" stroke-width="2" marker-end="url(#arrow)"/>
   <text x="980" y="185" text-anchor="middle" fill="#ddd" font-size="11" transform="rotate(-14, 980, 185)">OpenAI API :8000</text>
 
-  <!-- Arrow: Backend → Qwen3 Embedding -->
+  <!-- Arrow: Backend → Embedding -->
   <line x1="840" y1="345" x2="1085" y2="228" stroke="white" stroke-width="2" marker-end="url(#arrow)"/>
   <text x="970" y="270" text-anchor="middle" fill="#ddd" font-size="11">/v1/embeddings :8000</text>
 
@@ -64,19 +64,19 @@
   <rect x="935" y="388" width="42" height="20" rx="4" fill="#555"/>
   <text x="956" y="402" text-anchor="middle" fill="#ddd" font-size="11">:5432</text>
 
-  <!-- Arrow: Backend → Milvus Proxy -->
+  <!-- Arrow: Backend → Milvus -->
   <line x1="840" y1="385" x2="1085" y2="558" stroke="white" stroke-width="2" marker-end="url(#arrow)"/>
   <rect x="925" y="480" width="50" height="20" rx="4" fill="#555"/>
   <text x="950" y="494" text-anchor="middle" fill="#ddd" font-size="11">:19530</text>
 
-  <!-- ════════════════ Nemotron-Super-49B (GPU) ════════════════ -->
+  <!-- ════════════════ Nemotron Nano (GPU) ════════════════ -->
   <rect x="1090" y="55" width="230" height="62" rx="8" fill="#4CAF50"/>
-  <text x="1205" y="80" text-anchor="middle" fill="white" font-size="14" font-weight="700">Nemotron-Super-49B</text>
+  <text x="1205" y="80" text-anchor="middle" fill="white" font-size="14" font-weight="700">Nemotron Nano 30B</text>
   <text x="1205" y="100" text-anchor="middle" fill="#e0f2e0" font-size="12">(GPU)</text>
 
-  <!-- ════════════════ Qwen3 Embedding (CPU) ════════════════ -->
+  <!-- ════════════════ Embedding (CPU) ════════════════ -->
   <rect x="1090" y="197" width="230" height="62" rx="8" fill="#66BB6A"/>
-  <text x="1205" y="222" text-anchor="middle" fill="white" font-size="14" font-weight="700">Qwen3 Embedding</text>
+  <text x="1205" y="222" text-anchor="middle" fill="white" font-size="14" font-weight="700">all-MiniLM-L6-v2</text>
   <text x="1205" y="242" text-anchor="middle" fill="#e0f2e0" font-size="12">(CPU)</text>
 
   <!-- ════════════════ PostgreSQL (CPU) ════════════════ -->
@@ -84,26 +84,10 @@
   <text x="1190" y="426" text-anchor="middle" fill="white" font-size="14" font-weight="700">PostgreSQL</text>
   <text x="1190" y="446" text-anchor="middle" fill="#f0d4ff" font-size="12">(CPU)</text>
 
-  <!-- ════════════════ Milvus Proxy (CPU) ════════════════ -->
+  <!-- ════════════════ Milvus Standalone (CPU) ════════════════ -->
   <rect x="1090" y="530" width="200" height="62" rx="8" fill="#9C27B0"/>
-  <text x="1190" y="556" text-anchor="middle" fill="white" font-size="14" font-weight="700">Milvus Proxy</text>
-  <text x="1190" y="576" text-anchor="middle" fill="#f0d4ff" font-size="12">(CPU)</text>
-
-  <!-- Arrow: Milvus Proxy → Milvus etcd -->
-  <line x1="1290" y1="548" x2="1355" y2="500" stroke="white" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-  <!-- Arrow: Milvus Proxy → Milvus DataNode -->
-  <line x1="1290" y1="575" x2="1355" y2="620" stroke="white" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-  <!-- ════════════════ Milvus etcd (CPU) ════════════════ -->
-  <rect x="1360" y="470" width="185" height="55" rx="7" fill="#AB47BC"/>
-  <text x="1452" y="493" text-anchor="middle" fill="white" font-size="13" font-weight="600">Milvus etcd</text>
-  <text x="1452" y="511" text-anchor="middle" fill="#f0d4ff" font-size="11">(CPU)</text>
-
-  <!-- ════════════════ Milvus DataNode (CPU) ════════════════ -->
-  <rect x="1360" y="592" width="185" height="55" rx="7" fill="#AB47BC"/>
-  <text x="1452" y="615" text-anchor="middle" fill="white" font-size="13" font-weight="600">Milvus DataNode</text>
-  <text x="1452" y="633" text-anchor="middle" fill="#f0d4ff" font-size="11">(CPU)</text>
+  <text x="1190" y="556" text-anchor="middle" fill="white" font-size="14" font-weight="700">Milvus</text>
+  <text x="1190" y="576" text-anchor="middle" fill="#f0d4ff" font-size="12">(Standalone, CPU)</text>
 
   <!-- ════════════════ KEDA (CPU) ════════════════ -->
   <rect x="465" y="522" width="130" height="55" rx="6" fill="#78909C"/>
