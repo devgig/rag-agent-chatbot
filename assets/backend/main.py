@@ -221,7 +221,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
         logger.debug(f"WebSocket authenticated for chat_id: {chat_id}")
 
         history_messages = await postgres_storage.get_messages(chat_id)
-        history = [postgres_storage._message_to_dict(msg) for msg in history_messages[1:]]
+        history = [postgres_storage._message_to_dict(msg) for msg in history_messages]
         await websocket.send_json({"type": "history", "messages": history})
 
         while True:
@@ -240,7 +240,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
                 await websocket.send_json({"type": "error", "content": "An error occurred processing your request"})
 
             final_messages = await postgres_storage.get_messages(chat_id)
-            final_history = [postgres_storage._message_to_dict(msg) for msg in final_messages[1:]]
+            final_history = [postgres_storage._message_to_dict(msg) for msg in final_messages]
             await websocket.send_json({"type": "history", "messages": final_history})
 
     except WebSocketDisconnect:
