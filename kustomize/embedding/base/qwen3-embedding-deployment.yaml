@@ -3,7 +3,7 @@
 # Provides embedding generation for document indexing and retrieval.
 # Uses sentence-transformers with all-MiniLM-L6-v2 model (CPU-based).
 #
-# Backend Integration:
+# Backend Integration (service name 'qwen3-embedding' is legacy):
 # - Backend expects service at: http://qwen3-embedding:8000
 # - Endpoint: /v1/embeddings (OpenAI-compatible)
 # - Used by: assets/backend/vector_store.py (CustomEmbeddings class)

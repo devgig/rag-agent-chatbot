@@ -131,8 +131,8 @@ These are notable libraries pulled in as transitive dependencies:
 | Service | Image | License | Purpose |
 |---------|-------|---------|---------|
 | [PostgreSQL](https://www.postgresql.org/) | postgres:15-alpine | PostgreSQL License (permissive) | Conversation and source storage |
-| [Milvus](https://github.com/milvus-io/milvus) | milvusdb/milvus:v2.5.15 | Apache-2.0 | Vector database for embeddings |
-| [etcd](https://github.com/etcd-io/etcd) | quay.io/coreos/etcd:v3.5.5 | Apache-2.0 | Distributed key-value store (Milvus coordination) |
+| [Milvus](https://github.com/milvus-io/milvus) | milvusdb/milvus:v2.6.7 | Apache-2.0 | Vector database for embeddings (standalone mode) |
+| [etcd](https://github.com/etcd-io/etcd) | quay.io/coreos/etcd:v3.5.5 | Apache-2.0 | Key-value store (Milvus metadata) |
 | [MinIO](https://github.com/minio/minio) | minio/minio:RELEASE.2023-03-20 | AGPL-3.0 | Object storage (Milvus backend) |
 
 ---

@@ -1,5 +1,5 @@
-# Service for Qwen3-Embedding
-# Exposes embeddings API on port 8000
+# Service for Embedding (all-MiniLM-L6-v2)
+# Service name 'qwen3-embedding' is legacy; the model served is all-MiniLM-L6-v2.
 # Accessible at: http://qwen3-embedding:8000 (within namespace)
 # Full DNS: qwen3-embedding.rag-agent.svc.cluster.local:8000
 
