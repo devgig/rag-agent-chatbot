@@ -97,7 +97,7 @@ We initially tried Qwen3.5-35B-A3B-FP8, but vLLM 26.02 (v0.15.1) doesn't support
 
 - **MoE is the right architecture for bandwidth-limited GPUs.** The GB10 has plenty of memory (128 GB) but limited bandwidth. MoE exploits this by storing many parameters but reading few.
 - **vLLM version compatibility matters.** Qwen3.5 models use a new architecture (`qwen3_5_moe`) not yet in vLLM 26.02. Always verify model architecture support before committing to a model.
-- **Shared serving reduces waste.** Running one model instance for multiple projects avoids GPU memory duplication on a single-GPU system.
+- **Dedicated model namespace.** Isolating model serving from application workloads keeps GPU resources separate from the deployment lifecycle.
 - **Qwen FP8 performance is suboptimal.** Qwen themselves acknowledge FP8 performance in Transformers needs further optimization. Community benchmarks showed Nemotron Nano NVFP4 significantly outperforming Qwen3-30B FP8 on the same hardware.
 
 ---
@@ -121,20 +121,17 @@ Nemotron Nano wins by **47% (vLLM)** to **84% (llama.cpp)** on the same hardware
 
 ### Why Nemotron Nano over Qwen3
 
-1. **NVIDIA's own model + quantization format.** NVFP4 is native to Blackwell — hardware-accelerated with an optimization trajectory that only improves as NIM, NemoClaw, and TRT-LLM mature.
+1. **NVIDIA's own model + quantization format.** NVFP4 is native to Blackwell — hardware-accelerated with an optimization trajectory that only improves as NIM and TRT-LLM mature.
 2. **Half the weight size.** ~15 GB (NVFP4) vs ~30 GB (Qwen FP8) — leaves ~100 GB free for KV cache, concurrent requests, or GPU time-slicing with a second model.
-3. **NemoClaw compatibility.** The ai-agents project uses NemoClaw for agent orchestration. NVIDIA model + NVIDIA agent framework = blessed path.
-4. **Qwen FP8 acknowledged as suboptimal.** Qwen themselves note FP8 performance needs further optimization. Nemotron's NVFP4 has no such caveat.
+3. **Qwen FP8 acknowledged as suboptimal.** Qwen themselves note FP8 performance needs further optimization. Nemotron's NVFP4 has no such caveat.
 
 ### Architectural changes
 
 | Change | Rationale |
 | ------ | --------- |
-| New `llm` namespace | Shared model serving across projects (rag-agent-chatbot, ai-agents) |
+| New `llm` namespace | Dedicated namespace for shared model serving |
 | ExternalName service in `rag-agent` ns | Backend uses short name `http://nemotron-nano:8000/v1` — ExternalName resolves to `nemotron-nano.llm.svc.cluster.local` |
-| Cross-namespace DNS for ai-agents | Direct reference: `http://nemotron-nano.llm.svc.cluster.local:8000/v1` |
 | Tool call parser: `hermes` | Nemotron Nano supports the Hermes tool calling format |
-| Removed NIM deployment from ai-agents | The 70B NIM image was broken (wrong arch, model too large). Replaced with shared vLLM instance. |
 | `--gpu-memory-utilization=0.55` | NVFP4 is only ~15 GB — lower utilization leaves more system headroom |
 
 ---

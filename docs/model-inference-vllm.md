@@ -1,22 +1,22 @@
 # Model Inference - vLLM on DGX Spark
 
-Kubernetes manifests for GPU-accelerated LLM inference using vLLM on the NVIDIA DGX Spark (GB10 Blackwell GPU, 128GB unified memory). The model runs in a shared `llm` namespace so multiple projects can use it.
+Kubernetes manifests for GPU-accelerated LLM inference using vLLM on the NVIDIA DGX Spark (GB10 Blackwell GPU, 128GB unified memory). The model runs in a dedicated `llm` namespace, separate from application workloads.
 
 ## Architecture
 
 ```
-┌─────────────────────────┐   ┌─────────────────────────┐
-│ rag-agent-chatbot       │   │ ai-agents               │
-│ (rag-agent namespace)   │   │ (ai-agents namespace)   │
-│ http://nemotron-nano:8000/v1   │   │                         │
-│ (via ExternalName svc)  │   │                         │
-└───────────┬─────────────┘   └───────────┬─────────────┘
-            │                             │
-            ▼                             ▼
+┌─────────────────────────┐
+│ rag-agent-chatbot       │
+│ (rag-agent namespace)   │
+│ http://nemotron-nano:8000/v1  │
+│ (via ExternalName svc)  │
+└───────────┬─────────────┘
+            │
+            ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Namespace: llm (shared)                                 │
-│ Service: nemotron-nano (ClusterIP:8000)                        │
-│ nemotron-nano.llm.svc.cluster.local:8000                       │
+│ Namespace: llm                                          │
+│ Service: nemotron-nano (ClusterIP:8000)                 │
+│ nemotron-nano.llm.svc.cluster.local:8000                │
 └────────────────┬────────────────────────────────────────┘
                  │
                  ▼
@@ -59,7 +59,7 @@ The Mixture-of-Experts architecture delivers dramatically better throughput than
 1. **3B active parameters per token**: Only a fraction of weights are read per token, drastically reducing memory bandwidth pressure — the GB10's primary bottleneck
 2. **~56 tok/s generation (vLLM)**: [Benchmarked by community](https://developer.nvidia.com/blog/scaling-autonomous-ai-agents-and-workloads-with-nvidia-dgx-spark) on DGX Spark — 12x faster than Nemotron-49B FP8
 3. **NVFP4 on Blackwell**: Native hardware-accelerated quantization format, NVIDIA-optimized
-4. **Shared serving**: Runs in `llm` namespace, used by both RAG chatbot and AI agent workloads
+4. **Dedicated namespace**: Runs in `llm` namespace, isolated from application workloads
 
 ### Performance Considerations
 
@@ -68,16 +68,15 @@ The Mixture-of-Experts architecture delivers dramatically better throughput than
 - **`--enable-prefix-caching`** reduces redundant computation for repeated system prompts.
 - **`--tool-call-parser=hermes`** enables native tool/function calling.
 
-## Shared Namespace Strategy
+## Namespace Strategy
 
-The model runs in the `llm` namespace and is consumed by multiple projects:
+The model runs in the `llm` namespace, separate from application workloads:
 
-| Consumer | Connection method |
-|----------|------------------|
+| Component | Connection method |
+|-----------|------------------|
 | **rag-agent-chatbot** | ExternalName service `nemotron-nano` in `rag-agent` namespace → `nemotron-nano.llm.svc.cluster.local` |
-| **ai-agents** | Direct cross-namespace DNS: `nemotron-nano.llm.svc.cluster.local:8000/v1` |
 
-This avoids running duplicate model instances on a single GPU.
+Separating model serving into its own namespace keeps GPU resources isolated from application deployment lifecycle.
 
 ## Files
 

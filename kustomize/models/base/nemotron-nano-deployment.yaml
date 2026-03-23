@@ -5,8 +5,7 @@
 # or ~70 tok/s (llama.cpp) on GB10. ~15GB VRAM for weights at NVFP4.
 # gpu-memory-utilization=0.55 allocates ~66Gi, leaving ~54Gi for OS/K3s.
 #
-# Deployed in the shared "llm" namespace so multiple projects
-# (rag-agent-chatbot, ai-agents/NemoClaw, etc.) can use it.
+# Deployed in the "llm" namespace, separate from application workloads.
 #
 # Consumers connect via: nemotron-nano.llm.svc.cluster.local:8000
 # (Service name kept as "nemotron-nano" for compatibility — model is Nemotron Nano)

@@ -8,10 +8,9 @@
 # - ExternalName: alias in "rag-agent" namespace so backend resolves nemotron-nano:8000
 # - ExternalSecret: HuggingFace token from Azure Key Vault
 #
-# SHARED MODEL:
-# The LLM runs in the "llm" namespace and is shared across projects:
+# MODEL SERVING:
+# The LLM runs in the "llm" namespace, separate from application workloads.
 # - rag-agent-chatbot: http://nemotron-nano:8000/v1 (via ExternalName in rag-agent ns)
-# - ai-agents: http://nemotron-nano.llm.svc.cluster.local:8000/v1 (direct cross-ns DNS)
 #
 # Embedding service stays in rag-agent namespace (only used by rag-agent-chatbot).
 #
