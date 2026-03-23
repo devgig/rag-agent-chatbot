@@ -477,7 +477,7 @@ Total GPU Memory:           128 GB
 ├── OS/Driver Overhead:      ~4 GB
 ├── Available:              ~124 GB
 │
-├── Slot 1: Primary LLM     ~15 GB  (Nemotron Nano 30B at 0.55 utilization)
+├── Slot 1: Primary LLM     ~66 GB  (Nemotron Nano 30B at 0.55 utilization)
 ├── Slot 2: Agent Model      ~30 GB  (Qwen 3B or similar)
 ├── Slot 3: Embedding/Other  ~14 GB  (GPU-accelerated embedding or specialty model)
 └── Slot 4: Headroom         ~30 GB  (burst, experiments, new agents)
