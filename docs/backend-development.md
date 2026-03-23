@@ -9,7 +9,6 @@ The backend handles:
 - Document ingestion and vector storage for RAG
 - WebSocket connections for real-time chat streaming
 - Chat history management via PostgreSQL
-- MCP (Model Context Protocol) tool server integration
 
 ## Authentication
 
@@ -26,10 +25,9 @@ See `kustomize/gateway/base/istio-request-authentication.yaml` and `kustomize/ga
 FastAPI App (main.py)
 ├── WebSocket: /ws/chat/{chat_id}  (real-time chat)
 ├── REST: /ingest, /sources, /chats, /models, etc.
-├── ChatAgent (agent.py)           (LangGraph state machine)
-│   ├── generate → should_continue → tool_node → loop
-│   ├── MCP Client (client.py)     (RAG tool server)
-│   └── AsyncOpenAI with timeouts  (LLM API calls)
+├── ChatAgent (agent.py)           (LangGraph: START → generate → END)
+│   ├── Inline vector search       (direct Milvus query via VectorStore)
+│   └── AsyncOpenAI with timeouts  (streaming LLM call)
 ├── PostgreSQLStorage              (LRU-cached conversation store)
 │   ├── Bounded LRU caches         (max 200 entries, TTL expiration)
 │   ├── Batch save worker          (1s flush interval)

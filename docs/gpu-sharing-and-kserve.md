@@ -407,19 +407,19 @@ executor = RemoteAgent("http://agent-executor:8000/a2a")
 reviewer = RemoteAgent("http://agent-reviewer:8000/a2a")
 ```
 
-#### Pattern 3: MCP Tool Servers as Agents
+#### Pattern 3: Tool Servers as Independent Pods
 
-Your backend already supports MCP. Deploy specialized tool servers as independent pods that the central agent orchestrator invokes:
+Deploy specialized tool servers as independent pods that the central agent orchestrator invokes:
 
 ```
 Backend (LangGraph Agent)
-  ├── MCP: code-execution-server (CPU pod)
-  ├── MCP: web-search-server (CPU pod)
-  ├── MCP: database-query-server (CPU pod)
+  ├── Tool: code-execution-server (CPU pod)
+  ├── Tool: web-search-server (CPU pod)
+  ├── Tool: database-query-server (CPU pod)
   └── LLM: vLLM on GPU (inference calls)
 ```
 
-Each MCP server is a lightweight CPU pod. Only the LLM inference touches the GPU.
+Each tool server is a lightweight CPU pod. Only the LLM inference touches the GPU.
 
 ---
 

@@ -117,15 +117,13 @@ ws.onopen = () => {
 
 ### Challenge
 
-LangGraph uses an in-memory `MemorySaver` checkpointer for intermediate state during graph execution. This state is local to the process and vanishes when the pod dies. If conversation history only lived in memory, a pod restart would erase all conversations.
+Conversation state only exists in the LangGraph graph execution during a single query. If conversation history only lived in memory, a pod restart would erase all conversations.
 
 ### How It's Handled
 
-**Dual-layer state management**:
+**PostgreSQL-backed persistence**:
 
-1. **In-memory (ephemeral)**: LangGraph `MemorySaver` holds state during active graph execution (`agent.py:38`). This is only needed for the duration of a single query's generate-tool-generate loop.
-
-2. **PostgreSQL (durable)**: After each query completes, the full message history is persisted (`agent.py:565-568`):
+After each query completes, the full message history is persisted to PostgreSQL:
 
 ```python
 # In _run_graph() finally block:
@@ -430,7 +428,7 @@ The connection stays open and the oversized message is rejected without terminat
 
 ### Challenge
 
-Kubernetes health probes use HTTP GET requests. They verify the HTTP server is responding but say nothing about whether WebSocket connections are functional, whether the agent is initialized, or whether downstream services (PostgreSQL, Milvus, MCP servers) are reachable.
+Kubernetes health probes use HTTP GET requests. They verify the HTTP server is responding but say nothing about whether WebSocket connections are functional, whether the agent is initialized, or whether downstream services (PostgreSQL, Milvus) are reachable.
 
 ### How It's Handled
 
@@ -444,7 +442,7 @@ async def health_check():
     return {"status": "healthy"}
 ```
 
-**Startup probe** allows slow initialization (MCP tool loading with retries):
+**Startup probe** allows slow initialization:
 
 ```yaml
 startupProbe:
@@ -457,7 +455,6 @@ startupProbe:
 - WebSocket connection count or saturation
 - PostgreSQL pool availability
 - Milvus connectivity
-- MCP server responsiveness
 
 A more comprehensive health check could report on these subsystems, but the current approach avoids probe failures due to transient downstream issues.
 
@@ -484,16 +481,16 @@ Backend Pod (FastAPI + uvicorn)
     │  - Per-user connection limit
     │  - Async streaming via Queue
     │
-    ├──► LangGraph (in-memory MemorySaver)
-    │       Ephemeral state during query execution
+    ├──► LangGraph (START → generate → END)
+    │       Inline vector search + LLM call
     │
     ├──► PostgreSQL (asyncpg pool)
     │       Durable conversation storage
     │       LRU cache with 300s TTL
     │       Batched writes (1s interval)
     │
-    └──► MCP Server (stdio)
-            search_documents tool
+    └──► Milvus (vector search)
+            Direct query via VectorStore
 ```
 
 ---
@@ -520,7 +517,7 @@ Backend Pod (FastAPI + uvicorn)
 | --- | --- | --- | --- | --- |
 | 1 | **Pod eviction severs WebSocket connections** | K8s pods are ephemeral; rolling updates and scale-down kill active connections | `safe-to-evict: false` annotation, `maxUnavailable: 0` rolling update, client exponential backoff reconnection (5 attempts, up to 16s delay) | `deployment.yaml:25`, `QuerySection.tsx:401-410` |
 | 2 | **JWT auth on WebSocket upgrade** | Browser `WebSocket` API cannot set custom HTTP headers; putting JWT in URL leaks it to logs | First-message auth: Istio allows `/ws/*` unauthenticated, backend validates JWT sent as first WebSocket frame within 10s timeout | `main.py:158-210`, `istio-authorization-policy.yaml:29-33`, `api.ts:102-106` |
-| 3 | **Conversation state lost on pod restart** | LangGraph `MemorySaver` is in-process memory only | Dual-layer: ephemeral MemorySaver for active execution, PostgreSQL for durable persistence; batched writes every 1s with flush-on-shutdown | `agent.py:38,565-568`, `postgres_storage.py:414-450,193-226` |
+| 3 | **Conversation state lost on pod restart** | LangGraph state is ephemeral during query execution | PostgreSQL for durable persistence; batched writes every 1s with flush-on-shutdown | `agent.py`, `postgres_storage.py:414-450,193-226` |
 | 4 | **Autoscaling disrupts active connections** | Scale-down terminates pods holding WebSocket connections; scale-up doesn't rebalance existing connections | KEDA with conservative scale-down: 2 min stabilization, 25% max reduction per minute; aggressive scale-up: immediate, 2 pods per 30s | `keda-scaledobject.yaml` |
 | 5 | **Single user exhausts connections** | No built-in WebSocket connection limit; open tabs accumulate | Per-user server-side tracking (`email -> Set[conn_id]`), configurable limit (default 5), close with code `4029` on excess | `main.py:64-65,202-205` |
 | 6 | **Istio breaks WebSocket upgrades** | Service mesh L7 policies, request authentication, and URL rewriting can interfere with upgrade handshake | Explicit AuthorizationPolicy bypass for `/ws/*`, HTTPRoute URL rewrite strips `/api/backend-svc` prefix, frontend bypasses Istio sidecar entirely | `httproute.yaml`, `istio-authorization-policy.yaml`, `frontend/deployment.yaml` |

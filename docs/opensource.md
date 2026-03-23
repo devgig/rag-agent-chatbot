@@ -74,11 +74,9 @@ Source: `assets/backend/pyproject.toml`
 | [langchain-openai](https://github.com/langchain-ai/langchain) | >=0.3.28 | MIT | OpenAI integration for LangChain |
 | [langchain-nvidia-ai-endpoints](https://github.com/langchain-ai/langchain-nvidia) | >=0.3.13 | MIT | NVIDIA AI Endpoints integration |
 | [langchain-milvus](https://github.com/langchain-ai/langchain) | >=0.2.1 | MIT | Milvus vector store integration |
-| [langchain-mcp-adapters](https://github.com/langchain-ai/langchain-mcp-adapters) | >=0.1.0 | MIT | Model Context Protocol adapters |
 | [langchain-text-splitters](https://github.com/langchain-ai/langchain) | >=0.3.9 | MIT | Text chunking utilities |
 | [langchain-unstructured](https://github.com/langchain-ai/langchain) | >=0.1.6 | MIT | Unstructured document loader |
-| [LangGraph](https://github.com/langchain-ai/langgraph) | >=0.6.0 | MIT | Stateful multi-agent orchestration |
-| [MCP](https://github.com/modelcontextprotocol/python-sdk) | >=0.1.0 | MIT | Model Context Protocol SDK |
+| [LangGraph](https://github.com/langchain-ai/langgraph) | >=0.6.0 | MIT | Stateful agent orchestration |
 
 ### Document Processing
 

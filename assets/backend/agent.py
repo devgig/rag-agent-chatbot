@@ -14,71 +14,47 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-"""ChatAgent implementation for LLM-powered conversational AI with tool calling."""
+"""ChatAgent implementation for LLM-powered conversational AI with direct RAG pipeline."""
 
 import asyncio
 import contextlib
-import json
-import re
-import uuid
 from typing import AsyncIterator, List, Dict, Any, TypedDict, Optional, Callable, Awaitable
 
-from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage, ToolMessage, ToolCall
-from langchain_core.utils.function_calling import convert_to_openai_tool
-from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 import httpx
 from openai import AsyncOpenAI
 
-from client import MCPClient
 from logger import logger
 from prompts import Prompts
 from postgres_storage import PostgreSQLConversationStorage
-from utils import convert_langgraph_messages_to_openai
 
 
-memory = MemorySaver()
 SENTINEL = object()
 StreamCallback = Callable[[Dict[str, Any]], Awaitable[None]]
 
 LLM_REQUEST_TIMEOUT = 120.0
-MAX_ITERATIONS = 3
 
 
 class State(TypedDict, total=False):
-    iterations: int
     messages: List[AnyMessage]
     chat_id: Optional[str]
 
 
 class ChatAgent:
-    """Main conversational agent with tool calling and agent delegation capabilities.
-    
-    This agent orchestrates conversation flow using a LangGraph state machine that can:
-    - Generate responses using LLMs
-    - Execute tool calls (including MCP tools)
-    - Manage conversation history via PostgreSQL
+    """Conversational agent with direct RAG pipeline.
+
+    Performs document search and LLM generation in a single graph node,
+    bypassing the former MCP subprocess architecture.
     """
 
     def __init__(self, vector_store, config_manager, postgres_storage: PostgreSQLConversationStorage):
-        """Initialize the chat agent.
-        
-        Args:
-            vector_store: VectorStore instance for document retrieval
-            config_manager: ConfigManager for reading configuration
-            postgres_storage: PostgreSQL storage for conversation persistence
-        """
         self.vector_store = vector_store
         self.config_manager = config_manager
         self.conversation_store = postgres_storage
         self.current_model = None
-        self.max_iterations = MAX_ITERATIONS
         self.model_client: Optional[AsyncOpenAI] = None
-
-        self.mcp_client = None
-        self.openai_tools = None
-        self.tools_by_name = None
-        self.system_prompt = None
+        self.system_prompt_template = None
 
         self.graph = self._build_graph()
         self.stream_callback = None
@@ -86,72 +62,15 @@ class ChatAgent:
 
     @classmethod
     async def create(cls, vector_store, config_manager, postgres_storage: PostgreSQLConversationStorage):
-        """
-        Asynchronously creates and initializes a ChatAgent instance.
-        
-        This factory method ensures that all async setup, like loading tools,
-        is completed before the agent is ready to be used.
-        """
+        """Create and initialize a ChatAgent instance."""
         agent = cls(vector_store, config_manager, postgres_storage)
-        await agent.init_tools()
-        
-        available_tools = list(agent.tools_by_name.values()) if agent.tools_by_name else []
-        template_vars = {
-            "tools": "\n".join([f"- {tool.name}: {tool.description}" for tool in available_tools]) if available_tools else "No tools available",
-        }
-        agent.system_prompt = Prompts.get_template("supervisor_agent").render(template_vars)
-        
-        logger.debug(f"Agent initialized with {len(available_tools)} tools.")
+        agent.system_prompt_template = Prompts.get_template("supervisor_agent")
         agent.set_current_model(config_manager.get_selected_model())
+        logger.debug("Agent initialized with direct RAG pipeline.")
         return agent
 
-    async def init_tools(self) -> None:
-        """Initialize MCP client and tools with retry logic.
-        
-        Sets up the MCP client, retrieves available tools, converts them to OpenAI format,
-        and initializes specialized agents like the coding agent.
-        """
-        self.mcp_client = await MCPClient().init()
-        
-        base_delay, max_retries = 0.1, 10
-        mcp_tools = []
-        
-        for attempt in range(max_retries):
-            try:
-                mcp_tools = await self.mcp_client.get_tools()
-                break
-            except Exception as e:
-                logger.warning(f"MCP tools initialization attempt {attempt + 1} failed: {e}")
-                if attempt == max_retries - 1:
-                    logger.error(f"MCP servers not ready after {max_retries} attempts, continuing without MCP tools")
-                    mcp_tools = []
-                    break
-                wait_time = base_delay * (2 ** attempt)
-                await asyncio.sleep(wait_time)
-                logger.info(f"MCP servers not ready, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
-        
-        self.tools_by_name = {tool.name: tool for tool in mcp_tools}
-        logger.debug(f"Loaded {len(mcp_tools)} MCP tools: {list(self.tools_by_name.keys())}")
-        
-        if mcp_tools:
-            mcp_tools_openai = [convert_to_openai_tool(tool) for tool in mcp_tools]
-            logger.debug(f"MCP tools converted to OpenAI format: {mcp_tools_openai}")
-            
-            self.openai_tools = [
-                {"type": "function", "function": tool['function']} 
-                for tool in mcp_tools_openai
-            ]
-            logger.debug(f"Final OpenAI tools format: {self.openai_tools}")
-        else:
-            self.openai_tools = []
-            logger.warning("No MCP tools available - agent will run with limited functionality")
-
     def set_current_model(self, model_name: str) -> None:
-        """Set the current model for completions.
-
-        Creates a new AsyncOpenAI client with a bounded HTTP timeout to prevent
-        hung connections when the model service is slow or unreachable.
-        """
+        """Set the current model and create a new AsyncOpenAI client."""
         available_models = self.config_manager.get_available_models()
 
         if model_name not in available_models:
@@ -165,167 +84,64 @@ class ChatAgent:
             timeout=httpx.Timeout(LLM_REQUEST_TIMEOUT, connect=10.0),
         )
 
-    def should_continue(self, state: State) -> str:
-        """Determine whether to continue the tool calling loop.
-        
-        Args:
-            state: Current graph state
-            
-        Returns:
-            "end" if no more tool calls or max iterations reached, "continue" otherwise
-        """
-        messages = state.get("messages", [])
-        if not messages:
-            return "end"
-            
-        last_message = messages[-1]
-        iterations = state.get("iterations", 0)
-        has_tool_calls = bool(last_message.tool_calls) if hasattr(last_message, 'tool_calls') else False
-
-        logger.debug({
-            "message": "GRAPH: should_continue decision",
-            "chat_id": state.get("chat_id"),
-            "iterations": iterations,
-            "max_iterations": self.max_iterations,
-            "has_tool_calls": has_tool_calls,
-            "tool_calls_count": len(last_message.tool_calls) if has_tool_calls else 0
-        })
-
-        if iterations >= self.max_iterations:
-            logger.debug({
-                "message": "GRAPH: should_continue → END (max iterations reached)",
-                "chat_id": state.get("chat_id"),
-                "final_message_preview": str(last_message)[:100] + "..." if len(str(last_message)) > 100 else str(last_message)
-            })
-            return "end"
-
-        if not has_tool_calls:
-            logger.debug({"message": "GRAPH: should_continue → END (no tool calls)", "chat_id": state.get("chat_id")})
-            return "end"
-
-        logger.debug({"message": "GRAPH: should_continue → CONTINUE (has tool calls)", "chat_id": state.get("chat_id")})
-        return "continue"
-
-    async def tool_node(self, state: State) -> Dict[str, Any]:
-        """Execute tools from the last AI message's tool calls.
-        
-        Args:
-            state: Current graph state
-            
-        Returns:
-            Updated state with tool results and incremented iteration count
-        """
-        logger.debug({
-            "message": "GRAPH: ENTERING NODE - action/tool_node",
-            "chat_id": state.get("chat_id"),
-            "iterations": state.get("iterations", 0)
-        })
-        await self.stream_callback({'type': 'node_start', 'data': 'tool_node'})
-        
-        outputs = []
-        messages = state.get("messages", [])
-        last_message = messages[-1]
-        for i, tool_call in enumerate(last_message.tool_calls):
-            logger.debug(f'Executing tool {i+1}/{len(last_message.tool_calls)}: {tool_call["name"]} with args: {tool_call["args"]}')
-            await self.stream_callback({'type': 'tool_start', 'data': tool_call["name"]})
-            
-            try:
-                tool_result = await self.tools_by_name[tool_call["name"]].ainvoke(tool_call["args"])
-                if isinstance(tool_result, str):
-                    content = tool_result
-                else:
-                    content = json.dumps(tool_result)
-            except Exception as e:
-                logger.error(f'Error executing tool {tool_call["name"]}: {str(e)}', exc_info=True)
-                content = f"Error executing tool '{tool_call['name']}': {str(e)}"
-            
-            await self.stream_callback({'type': 'tool_end', 'data': tool_call["name"]})
-
-            outputs.append(
-                ToolMessage(
-                    content=content,
-                    name=tool_call["name"],
-                    tool_call_id=tool_call["id"],
-                )
-            )
-
-        state["iterations"] = state.get("iterations", 0) + 1
-        
-        logger.debug({
-            "message": "GRAPH: EXITING NODE - action/tool_node",
-            "chat_id": state.get("chat_id"),
-            "iterations": state.get("iterations"),
-            "tools_executed": len(outputs),
-            "next_step": "→ returning to generate"
-        })
-        await self.stream_callback({'type': 'node_end', 'data': 'tool_node'})
-        return {"messages": messages + outputs, "iterations": state.get("iterations", 0) + 1}
-
     async def generate(self, state: State) -> Dict[str, Any]:
-        """Generate AI response using the current model.
+        """Search documents and generate AI response in a single pass.
 
-        Args:
-            state: Current graph state
-
-        Returns:
-            Updated state with new AI message
+        Replaces the former two-iteration flow (generate→tool_node→generate)
+        with inline vector search followed by a single LLM call.
         """
-        iterations = state.get("iterations", 0)
-
-        # On iteration 0, skip the LLM call entirely and directly invoke
-        # search_documents with the user's query.  The old code forced
-        # tool_choice=search_documents which made the model spend ~10s
-        # generating a tool-call JSON that was completely deterministic.
-        if iterations == 0 and self.tools_by_name.get("search_documents"):
-            user_query = self._extract_user_query(state)
-            logger.debug({
-                "message": "GRAPH: fast-path — bypassing LLM for forced search_documents",
-                "chat_id": state.get("chat_id"),
-                "query": user_query[:100],
-            })
-            await self.stream_callback({'type': 'node_start', 'data': 'generate'})
-
-            tool_call_id = f"call_fast_{uuid.uuid4().hex[:8]}"
-            response = AIMessage(
-                content="",
-                tool_calls=[ToolCall(
-                    name="search_documents",
-                    args={"query": user_query},
-                    id=tool_call_id,
-                )],
-            )
-            await self.stream_callback({'type': 'node_end', 'data': 'generate'})
-            return {"messages": state.get("messages", []) + [response]}
-
-        messages = convert_langgraph_messages_to_openai(state.get("messages", []))
-        logger.debug({
-            "message": "GRAPH: ENTERING NODE - generate",
-            "chat_id": state.get("chat_id"),
-            "iterations": iterations,
-            "current_model": self.current_model,
-            "message_count": len(state.get("messages", []))
-        })
         await self.stream_callback({'type': 'node_start', 'data': 'generate'})
 
-        supports_tools = self.current_model in {"nemotron-nano", "nemotron-super-49b", "nemotron-70b", "qwen25-vl-7b"}
-        has_tools = supports_tools and self.openai_tools and len(self.openai_tools) > 0
-
+        user_query = self._extract_user_query(state)
         logger.debug({
-            "message": "Tool calling debug info",
+            "message": "GRAPH: generate — inline search + LLM",
             "chat_id": state.get("chat_id"),
-            "current_model": self.current_model,
-            "supports_tools": supports_tools,
-            "openai_tools_count": len(self.openai_tools) if self.openai_tools else 0,
-            "has_tools": has_tools,
+            "query": user_query[:100],
         })
 
-        tool_params = {}
-        if has_tools:
-            tool_params = {
-                "tools": self.openai_tools,
-                "tool_choice": "auto",
-            }
-        
+        # --- Document search (inline, replaces MCP subprocess) ---
+        config_obj = self.config_manager.read_config()
+        sources = config_obj.selected_sources or []
+
+        if sources:
+            retrieved_docs = await asyncio.to_thread(
+                self.vector_store.get_documents, user_query, 5, sources
+            )
+        else:
+            retrieved_docs = await asyncio.to_thread(
+                self.vector_store.get_documents, user_query
+            )
+
+        if not retrieved_docs and sources:
+            logger.info("No documents with source filter, retrying without filter")
+            retrieved_docs = await asyncio.to_thread(
+                self.vector_store.get_documents, user_query
+            )
+
+        # Format context string (same format as former rag.py MCP tool)
+        if retrieved_docs:
+            context_parts = []
+            for i, doc in enumerate(retrieved_docs, 1):
+                source = doc.metadata.get("source", "unknown")
+                content = doc.page_content.strip()
+                context_parts.append(f"[Document {i} - {source}]\n{content}")
+            context_str = "\n\n".join(context_parts)
+            logger.info({
+                "message": "Documents retrieved for RAG",
+                "doc_count": len(retrieved_docs),
+                "context_length": len(context_str),
+            })
+        else:
+            context_str = "No relevant documents found."
+            logger.warning({"message": "No documents retrieved", "query": user_query})
+
+        # --- LLM call with context baked into system prompt ---
+        system_prompt = self.system_prompt_template.render({"context": context_str})
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_query},
+        ]
+
         stream = await self.model_client.chat.completions.create(
             model=self.current_model,
             messages=messages,
@@ -334,71 +150,37 @@ class ChatAgent:
             stream=True,
             stream_options={"include_usage": True},
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
-            **tool_params
         )
 
-        llm_output_buffer, tool_calls_buffer, usage = await self._stream_response(stream, self.stream_callback)
+        llm_output_buffer, _, usage = await self._stream_response(stream, self.stream_callback)
 
         if usage:
             self._usage_accumulator["prompt_tokens"] += getattr(usage, "prompt_tokens", 0)
             self._usage_accumulator["completion_tokens"] += getattr(usage, "completion_tokens", 0)
             self._usage_accumulator["total_tokens"] += getattr(usage, "total_tokens", 0)
 
-        tool_calls = self._format_tool_calls(tool_calls_buffer)
         raw_output = "".join(llm_output_buffer)
 
-        if not tool_calls and self._usage_accumulator.get("total_tokens", 0) > 0:
+        if self._usage_accumulator.get("total_tokens", 0) > 0:
             await self.stream_callback({"type": "usage", "data": dict(self._usage_accumulator)})
-        
-        logger.debug({
-            "message": "Tool call generation results",
-            "chat_id": state.get("chat_id"),
-            "tool_calls_buffer": tool_calls_buffer,
-            "formatted_tool_calls": tool_calls,
-            "tool_calls_count": len(tool_calls),
-            "raw_output_length": len(raw_output),
-            "raw_output": raw_output[:200] + "..." if len(raw_output) > 200 else raw_output
-        })
-        
-        response = AIMessage(
-            content=raw_output,
-            **({"tool_calls": tool_calls} if tool_calls else {})
-        )
+
+        response = AIMessage(content=raw_output)
 
         logger.debug({
-            "message": "GRAPH: EXITING NODE - generate",
+            "message": "GRAPH: generate complete",
             "chat_id": state.get("chat_id"),
-            "iterations": state.get("iterations", 0),
-            "response_length": len(response.content) if response.content else 0,
-            "tool_calls_generated": len(tool_calls),
-            "tool_calls_names": [tc["name"] for tc in tool_calls] if tool_calls else [],
-            "next_step": "→ should_continue decision"
+            "response_length": len(raw_output),
         })
         await self.stream_callback({'type': 'node_end', 'data': 'generate'})
         return {"messages": state.get("messages", []) + [response]}
 
     def _build_graph(self) -> StateGraph:
-        """Build the LangGraph state machine for conversation flow.
-        
-        Returns:
-            Compiled StateGraph with nodes and conditional edges
-        """
+        """Build a single-node graph: START → generate → END."""
         workflow = StateGraph(State)
-
         workflow.add_node("generate", self.generate)
-        workflow.add_node("action", self.tool_node)
         workflow.add_edge(START, "generate")
-        workflow.add_conditional_edges(
-            "generate",
-            self.should_continue,
-            {
-                "continue": "action",
-                "end": END,
-            },
-        )
-        workflow.add_edge("action", "generate")
-
-        return workflow.compile(checkpointer=memory)
+        workflow.add_edge("generate", END)
+        return workflow.compile()
 
     @staticmethod
     def _extract_user_query(state: State) -> str:
@@ -407,35 +189,6 @@ class ChatAgent:
             if isinstance(msg, HumanMessage):
                 return msg.content
         return ""
-
-    def _format_tool_calls(self, tool_calls_buffer: Dict[int, Dict[str, str]]) -> List[ToolCall]:
-        """Parse streamed tool call buffer into ToolCall objects.
-        
-        Args:
-            tool_calls_buffer: Buffer of streamed tool call data
-            
-        Returns:
-            List of formatted ToolCall objects
-        """
-        if not tool_calls_buffer:
-            return []
-
-        tool_calls = []
-        for i in sorted(tool_calls_buffer):
-            item = tool_calls_buffer[i]
-            try:
-                parsed_args = json.loads(item["arguments"] or "{}")
-            except json.JSONDecodeError:
-                parsed_args = {}
-                
-            tool_calls.append(
-                ToolCall(
-                    name=item["name"],
-                    args=parsed_args,
-                    id=item["id"] or f"call_{i}",
-                )
-            )
-        return tool_calls
 
     async def _stream_response(self, stream, stream_callback: StreamCallback) -> tuple[List[str], Dict[int, Dict[str, str]], Any]:
         """Process streaming LLM response and extract content and tool calls.
@@ -559,25 +312,14 @@ class ChatAgent:
             "message": "GRAPH: STARTING EXECUTION",
             "chat_id": chat_id,
             "query": query_text[:100] + "..." if len(query_text) > 100 else query_text,
-            "graph_flow": "START → generate → should_continue → action → generate → END"
+            "graph_flow": "START → generate → END"
         })
 
-        # Use a unique thread_id per query so the checkpointer never leaks
-        # prior conversation context into the LLM — each question is isolated.
-        config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-
         try:
-            messages_to_process = [
-                SystemMessage(content=self.system_prompt),
-                HumanMessage(content=query_text),
-            ]
-
             initial_state = {
-                "iterations": 0,
                 "chat_id": chat_id,
-                "messages": messages_to_process,
+                "messages": [HumanMessage(content=query_text)],
             }
-            
 
             model_name = self.config_manager.get_selected_model()
             if self.current_model != model_name:
@@ -586,17 +328,14 @@ class ChatAgent:
             logger.debug({
                 "message": "GRAPH: LAUNCHING EXECUTION",
                 "chat_id": chat_id,
-                "initial_state": {
-                    "iterations": initial_state["iterations"],
-                    "message_count": len(initial_state["messages"]),
-                }
+                "message_count": len(initial_state["messages"]),
             })
 
             self.last_state = None
             self._usage_accumulator = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             token_q: asyncio.Queue[Any] = asyncio.Queue()
             self.stream_callback = lambda event: self._queue_writer(event, token_q)
-            runner = asyncio.create_task(self._run_graph(initial_state, config, chat_id, token_q))
+            runner = asyncio.create_task(self._run_graph(initial_state, chat_id, token_q))
 
             try:
                 while True:
@@ -613,7 +352,7 @@ class ChatAgent:
                 logger.debug({
                     "message": "GRAPH: EXECUTION COMPLETED",
                     "chat_id": chat_id,
-                    "final_iterations": self.last_state.get("iterations", 0) if self.last_state else 0
+                    "has_response": bool(self.last_state.get("messages")) if self.last_state else False
                 })
 
         except Exception as e:
@@ -630,19 +369,11 @@ class ChatAgent:
         """
         await token_q.put(event)
 
-    async def _run_graph(self, initial_state: Dict[str, Any], config: Dict[str, Any], chat_id: str, token_q: asyncio.Queue) -> None:
-        """Run the graph execution in background task.
-        
-        Args:
-            initial_state: Starting state for graph
-            config: LangGraph configuration
-            chat_id: Chat identifier
-            token_q: Queue for streaming events
-        """
+    async def _run_graph(self, initial_state: Dict[str, Any], chat_id: str, token_q: asyncio.Queue) -> None:
+        """Run the graph execution in background task."""
         try:
             async for final_state in self.graph.astream(
                 initial_state,
-                config=config,
                 stream_mode="values",
                 stream_writer=lambda event: self._queue_writer(event, token_q)
             ):

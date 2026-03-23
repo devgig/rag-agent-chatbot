@@ -36,7 +36,7 @@ The unified memory architecture means every byte used by the model is a byte una
 
 - **4.5 tok/s was painfully slow.** A 500-token RAG answer took ~110 seconds. Users would wait over a minute for every question.
 - **`--enforce-eager` was wasting performance.** It disabled CUDA graphs, which batch and replay GPU kernel launches. Removing it could improve throughput 20-40%.
-- **The first LLM call was wasted.** The agent forced `tool_choice=search_documents` on iteration 0, making the model spend ~10s generating a tool call that was completely deterministic. This was fixed by constructing the tool call directly in Python (fast-path bypass).
+- **The first LLM call was wasted.** The agent forced `tool_choice=search_documents` on iteration 0, making the model spend ~10s generating a tool call that was completely deterministic. This was later eliminated entirely by switching to a direct RAG pipeline (inline vector search + single LLM call).
 - **Milvus had no vector index.** The collection was using brute-force L2 search. Adding HNSW with COSINE metric fixed relevance scoring and improved search quality.
 
 ### Optimizations applied (kept through all phases)

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Spark Chat is a fully local RAG-powered chatbot built for DGX Spark. It uses a supervisor agent powered by Nemotron-Super-49B to orchestrate document retrieval and question-answering through MCP (Model Context Protocol) tool servers.
+Spark Chat is a fully local RAG-powered chatbot built for DGX Spark. It uses a direct RAG pipeline — inline vector search followed by a single LLM generation pass — to answer questions grounded in uploaded documents.
 
 The system focuses on document ingestion and retrieval-augmented generation (RAG), allowing users to upload documents and ask questions grounded in their content. All processing runs locally on DGX Spark hardware.
 
@@ -11,9 +11,7 @@ The system focuses on document ingestion and retrieval-augmented generation (RAG
 This project is designed to be customizable, serving as a framework that developers can extend.
 
 ## Key Features
-  - **MCP Server Integration**: Connects to custom MCP servers through a configurable multi-server client
-
-  - **Tool Calling**: Uses an agents-as-tools framework with a supervisor agent that decides when to invoke document search
+  - **Direct RAG Pipeline**: Inline vector search + single LLM call in one pass (~3s end-to-end)
 
   - **Swappable Models**: Models are served through the OpenAI API. Any OpenAI-compatible model can be integrated
 
@@ -68,7 +66,6 @@ Upload a document using the "Upload Documents" button in the sidebar under "Cont
 | `POSTGRES_HOST` | PostgreSQL hostname | `postgres` |
 | `MILVUS_ADDRESS` | Milvus connection URI | `tcp://milvus:19530` |
 
-### Adding MCP servers and tools
+### Customizing the RAG Pipeline
 
-1. Add MCP servers under [assets/backend/tools/mcp_servers](../assets/backend/tools/mcp_servers/) following existing examples.
-2. Register new servers in the server configs in [assets/backend/client.py](../assets/backend/client.py).
+The RAG search logic lives directly in `assets/backend/agent.py` in the `generate()` method. You can customize source filtering, context formatting, and prompt construction there.

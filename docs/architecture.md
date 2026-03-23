@@ -29,7 +29,7 @@ The RAG implementation enables the chatbot to answer questions using content fro
 |-----------|------------|---------|
 | Frontend | React 19 + Vite | User interface, document upload, chat |
 | Backend | FastAPI | REST API, WebSocket streaming |
-| Agent | LangGraph | Orchestrates tool calls and LLM interactions |
+| Agent | LangGraph | Orchestrates inline search + LLM generation |
 | Vector DB | Milvus | Stores and searches document embeddings |
 | Embedding | all-MiniLM-L6-v2 (22M, 384-dim) | Converts text to vectors |
 | LLM | Nemotron 3 Nano 30B MoE NVFP4 (vLLM, `llm` namespace) | Generates responses (~56 tok/s) |
@@ -135,40 +135,24 @@ When a user asks a question, here's what happens:
 2. WebSocket → FastAPI Backend
    │
    ▼
-3. LangGraph Agent (generate node — fast path)
+3. LangGraph Agent (generate node — single pass)
    │
-   ├─── Bypasses LLM: directly constructs search_documents tool call
-   │    (no LLM round-trip needed since retrieval is always forced)
-   │
-   ▼
-4. Tool Call: search_documents(query="user question")
-   │
-   ▼
-5. MCP RAG Server (runs Milvus search off event loop via asyncio.to_thread)
-   │
-   ├─── Get selected sources from config
+   ├─── Read selected sources from config
    ├─── Embed query → Qwen3-Embedding
    ├─── Vector search → Milvus HNSW/COSINE index (top-k=5 candidates)
    ├─── Filter by relevance score threshold (drop low-similarity chunks)
-   └─── Format results with source attribution
+   ├─── Format context with source attribution
+   ├─── Render system prompt with context
+   └─── Single LLM call: system prompt + user question → streamed response
    │
    ▼
-6. Tool Result → Agent
+4. Stream Response → WebSocket → Frontend
    │
    ▼
-7. LangGraph Agent (generate node, iteration 1)
-   │
-   ├─── Single LLM call: original question + retrieved context
-   └─── Generates grounded response
+5. Send Token Usage (prompt + completion totals) → Frontend
    │
    ▼
-8. Stream Response → WebSocket → Frontend
-   │
-   ▼
-9. Send Token Usage (prompt + completion totals) → Frontend
-   │
-   ▼
-10. Save to PostgreSQL
+6. Save to PostgreSQL
 ```
 
 ### Retrieval Details
@@ -201,38 +185,6 @@ def get_documents(self, query: str, k: int = 5, sources: List[str] = None):
 
 ---
 
-## MCP Tool Integration
-
-The RAG functionality is exposed as an MCP (Model Context Protocol) tool:
-
-```python
-# tools/mcp_servers/rag.py
-@mcp.tool()
-async def search_documents(query: str) -> str:
-    """Search indexed documents for relevant context."""
-
-    # Get user-selected sources
-    config = rag_agent.config_manager.read_config()
-    sources = config.selected_sources or []
-
-    # Retrieve documents
-    docs = vector_store.get_documents(query, sources=sources)
-
-    # Format with source attribution
-    context_parts = []
-    for i, doc in enumerate(docs, 1):
-        source = doc.metadata.get("source", "unknown")
-        context_parts.append(f"[Document {i} - {source}]\n{doc.page_content}")
-
-    return "\n\n".join(context_parts)
-```
-
-The LLM decides when to call this tool based on the user's question:
-- Questions about document content → calls `search_documents`
-- General questions → responds directly
-
----
-
 ## Source Selection
 
 Users can select which documents to include in RAG searches:
@@ -257,42 +209,32 @@ Selected sources are stored in `config.json` and used to filter Milvus queries:
 
 ---
 
-## Agent State Machine
+## Agent Graph
 
-The LangGraph agent manages the RAG workflow:
+The LangGraph agent runs the RAG workflow in a single node:
 
 ```
-                    ┌─────────────┐
-                    │    START    │
-                    └──────┬──────┘
-                           │
-                           ▼
-                    ┌─────────────┐
-              ┌────▶│  generate   │◀────┐
-              │     └──────┬──────┘     │
-              │            │            │
-              │            ▼            │
-              │     ┌─────────────┐     │
-              │     │  continue?  │     │
-              │     └──────┬──────┘     │
-              │            │            │
-              │      YES   │   NO       │
-              │            ▼            │
-              │     ┌─────────────┐     │
-              │     │  tool_node  │     │
-              │     └──────┬──────┘     │
-              │            │            │
-              └────────────┘            │
-                                        ▼
-                                 ┌─────────────┐
-                                 │     END     │
-                                 └─────────────┘
+    ┌─────────────┐
+    │    START    │
+    └──────┬──────┘
+           │
+           ▼
+    ┌─────────────┐
+    │  generate   │  ← inline vector search + LLM call
+    └──────┬──────┘
+           │
+           ▼
+    ┌─────────────┐
+    │     END     │
+    └─────────────┘
 ```
 
-**Loop control:**
-- Maximum 3 iterations
-- Exits when LLM has no more tool calls
-- Each iteration adds tool results to message history
+The `generate` node performs the full RAG pipeline in one pass:
+1. Read selected sources from config
+2. Query Milvus vector store (via `asyncio.to_thread`)
+3. Format retrieved context with source attribution
+4. Render system prompt with context
+5. Stream LLM response back to client
 
 ---
 
@@ -310,9 +252,8 @@ async for event in agent.query(query_text, chat_id):
 
 | Event | Description |
 |-------|-------------|
-| `node_start` | Agent node begins execution |
-| `tool_start` | Tool invocation begins |
-| `tool_end` | Tool invocation completes |
+| `node_start` | Generate node begins execution |
+| `node_end` | Generate node completes |
 | `token` | Streamed LLM token |
 | `usage` | Token usage stats (prompt, completion, total) |
 | `history` | Full conversation history |
@@ -404,31 +345,30 @@ fields = [
 - Overlap prevents losing information at boundaries
 - Fits multiple chunks in LLM context window
 
-### Why MCP for tools?
-- Clean separation between agent and tool implementations
-- Tools run as separate processes (isolation)
-- Easy to add new tools without modifying agent code
+### Why direct RAG pipeline instead of MCP tool calling?
+- Eliminates ~20s of overhead from MCP subprocess stdio, LangGraph checkpointing, and multi-iteration state serialization
+- Single-pass search + LLM call takes ~3s end-to-end
+- Simpler architecture with fewer failure modes
 
-### Why LangGraph over LangChain agents?
-- Explicit state machine control
-- Better streaming support
-- Clearer iteration limits
-- More predictable behavior
+### Why LangGraph?
+- Structured async execution with streaming support
+- Clean state management for conversation flow
+- Extensible if multi-step workflows are needed later
 
 ---
 
 ## Performance Considerations
 
-1. **Fast-path retrieval**: On iteration 0, the agent bypasses the LLM entirely and directly invokes `search_documents` — eliminates a ~10s round-trip to the 49B model
+1. **Direct RAG pipeline**: Inline vector search + single LLM call in one pass (~3s end-to-end), eliminating the former ~20s MCP subprocess overhead
 2. **Embedding latency**: Qwen3-Embedding runs locally, ~50-100ms per query
 3. **Vector search**: Milvus HNSW index with COSINE metric, <10ms for top-k retrieval
 4. **Async Milvus ops**: All synchronous pymilvus calls run in `asyncio.to_thread()` to avoid blocking the event loop
-5. **Single VectorStore instance**: The MCP RAG server reuses the VectorStore created by RAGAgent instead of creating a duplicate
+5. **No checkpointer overhead**: Graph runs without a MemorySaver since each query is stateless
 6. **Efficient history persistence**: `append_messages()` uses the LRU cache when warm, avoiding redundant DB fetches on every turn
 7. **Streaming**: Token-by-token delivery with `requestAnimationFrame`-based throttle for smooth rendering
 8. **Background ingestion**: Large uploads don't block the UI
 9. **Task cleanup**: Indexing task status entries are evicted after 1 hour to prevent unbounded memory growth
-10. **Usage tracking**: Token usage (prompt/completion/total) accumulated across tool-call iterations and reported after each response
+10. **Usage tracking**: Token usage (prompt/completion/total) reported after each response
 
 ---
 

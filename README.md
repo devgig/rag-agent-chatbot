@@ -20,8 +20,8 @@
 This project shows you how to use DGX Spark to prototype, build, and deploy a fully local RAG chatbot system.
 With 128GB of unified memory, DGX Spark can run LLMs locally with sufficient headroom for document retrieval workloads.
 
-At the core is a supervisor agent powered by Nemotron-Super-49B, orchestrating document retrieval through MCP (Model Context Protocol) tool servers.
-The system focuses on retrieval-augmented generation (RAG), enabling users to upload documents and ask questions grounded in their content.
+The system uses a direct RAG pipeline — inline vector search followed by a single LLM generation pass — to answer questions grounded in uploaded documents.
+Users can upload documents and ask questions, with responses generated exclusively from retrieved content.
 Thanks to DGX Spark's out-of-the-box support for popular AI frameworks and libraries, development and prototyping are fast and frictionless.
 
 ## Architecture
@@ -37,13 +37,8 @@ flowchart TB
     subgraph Backend["Backend (FastAPI)"]
         API[REST API<br/>Port 8000]
         WSHandler[WebSocket Handler]
-        Agent[LangGraph Agent]
+        Agent[LangGraph Agent<br/>generate node]
         VectorStore[Vector Store Client]
-        MCPClient[MCP Client]
-    end
-
-    subgraph MCPServers["MCP Tool Servers"]
-        RAG[search_documents<br/>RAG Tool]
     end
 
     subgraph Storage["Data Storage"]
@@ -52,8 +47,8 @@ flowchart TB
     end
 
     subgraph Models["Model Servers"]
-        LLM[Nemotron-Super-49B<br/>Supervisor LLM]
-        Embed[Qwen3-Embedding<br/>Embeddings]
+        LLM[Nemotron Nano 30B<br/>Chat LLM]
+        Embed[all-MiniLM-L6-v2<br/>Embeddings]
     end
 
     UI -->|REST API| API
@@ -62,11 +57,8 @@ flowchart TB
     WSHandler --> Agent
     API --> VectorStore
 
-    Agent <-->|stdio| MCPClient
-    MCPClient <--> RAG
-
+    Agent --> VectorStore
     Agent -->|Chat Completion| LLM
-    RAG --> VectorStore
     VectorStore -->|Similarity Search| Milvus
     VectorStore -->|Generate Embeddings| Embed
 
@@ -117,21 +109,16 @@ sequenceDiagram
     participant User
     participant Frontend
     participant Backend as Backend Agent
-    participant MCP as MCP Server
     participant Milvus
     participant LLM
 
     User->>Frontend: "What does the doc say about X?"
     Frontend->>Backend: WebSocket message
 
-    Backend->>LLM: Generate (with tools)
-    LLM-->>Backend: Tool call: search_documents
+    Backend->>Milvus: Similarity search (top-k=5)
+    Milvus-->>Backend: Relevant chunks
 
-    Backend->>MCP: Execute search_documents
-    MCP->>Milvus: Similarity search (top-k=8)
-    Milvus-->>MCP: Relevant chunks
-    MCP-->>Backend: Formatted context
-
+    Backend->>Backend: Format context into system prompt
     Backend->>LLM: Generate with context
 
     loop Streaming
@@ -149,12 +136,11 @@ sequenceDiagram
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | **Frontend** | React, Vite, Tailwind, nginx | Static web UI served by nginx |
-| **Backend** | FastAPI, LangGraph | API server, agent orchestration, WebSocket handler |
+| **Backend** | FastAPI, LangGraph | API server, RAG pipeline, WebSocket handler |
 | **Vector Store** | Milvus | Document embeddings, similarity search |
 | **Conversations** | PostgreSQL | Chat history, document sources |
-| **Supervisor LLM** | vLLM (Nemotron-Super-49B) | Main reasoning, tool selection |
-| **Embeddings** | vLLM (Qwen3-Embedding) | Document vectorization |
-| **MCP Servers** | Python (stdio) | Tool implementations |
+| **Chat LLM** | vLLM (Nemotron Nano 30B) | Response generation from retrieved context |
+| **Embeddings** | all-MiniLM-L6-v2 | Document vectorization |
 
 ## Getting Started
 
