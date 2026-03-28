@@ -84,7 +84,7 @@ resources:
 
 | Workload | GPU Memory | Purpose |
 |----------|-----------|---------|
-| vLLM (Nemotron Nano 30B) | ~15GB (`gpu-memory-utilization` at 0.55) | Primary LLM inference |
+| vLLM (Nemotron Nano 30B) | ~15GB (`gpu-memory-utilization` at 0.65) | Primary LLM inference |
 | Agent Tooling Model | ~30GB | Smaller model for tool-use/routing |
 | Embedding (GPU-accel) | ~8GB | Optional: move embedding to GPU |
 | Reserved/Headroom | ~40GB | Burst capacity or additional agents |
@@ -429,7 +429,7 @@ Each tool server is a lightweight CPU pod. Only the LLM inference touches the GP
 
 1. Create the time-slicing ConfigMap with `replicas: 4`
 2. Patch the GPU Operator ClusterPolicy
-3. Adjust vLLM `gpu-memory-utilization` as needed (currently 0.55)
+3. Adjust vLLM `gpu-memory-utilization` as needed (currently 0.65)
 4. Verify `nvidia.com/gpu: 4` on the node
 5. Existing workload continues unchanged (now uses 1 of 4 slices)
 
@@ -477,7 +477,7 @@ Total GPU Memory:           128 GB
 ├── OS/Driver Overhead:      ~4 GB
 ├── Available:              ~124 GB
 │
-├── Slot 1: Primary LLM     ~72 GB  (Nemotron Nano 30B at 0.55 utilization)
+├── Slot 1: Primary LLM     ~83 GB  (Nemotron Nano 30B at 0.65 utilization)
 ├── Slot 2: Agent Model      ~30 GB  (Qwen 3B or similar)
 ├── Slot 3: Embedding/Other  ~14 GB  (GPU-accelerated embedding or specialty model)
 └── Slot 4: Headroom         ~30 GB  (burst, experiments, new agents)

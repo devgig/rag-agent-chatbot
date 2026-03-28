@@ -3,7 +3,7 @@
 # NVIDIA Nemotron 3 Nano MoE model with NVFP4 quantization.
 # 30B total parameters, only 3B active per token — delivers ~56 tok/s (vLLM)
 # or ~70 tok/s (llama.cpp) on GB10. ~15GB VRAM for weights at NVFP4.
-# gpu-memory-utilization=0.55 allocates ~72Gi, leaving ~56Gi for OS/K3s.
+# gpu-memory-utilization=0.65 allocates ~83Gi, leaving ~45Gi for OS/K3s.
 #
 # Deployed in the "llm" namespace, separate from application workloads.
 #
@@ -52,7 +52,7 @@ spec:
         - "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
         - "--served-model-name=nemotron-nano"
         - "--tensor-parallel-size=1"
-        - "--gpu-memory-utilization=0.55"
+        - "--gpu-memory-utilization=0.65"
         - "--max-model-len=16384"
         - "--dtype=auto"
         - "--host=0.0.0.0"
@@ -75,7 +75,7 @@ spec:
         resources:
           requests:
             nvidia.com/gpu: 1
-            cpu: "4"
+            cpu: "2"
             memory: "32Gi"
           limits:
             nvidia.com/gpu: 1
@@ -107,7 +107,7 @@ spec:
         - name: dshm
           mountPath: /dev/shm
         - name: model-cache
-          mountPath: /root/.cache/huggingface
+          mountPath: /root/.cache
       volumes:
       - name: dshm
         emptyDir:

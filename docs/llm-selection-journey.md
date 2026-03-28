@@ -67,7 +67,7 @@ NVFP4 halves the weight size (50 GB to 25 GB), which halves the bytes read per t
 
 - Switched from FP8 to NVFP4 checkpoint
 - Removed `--enforce-eager` to enable CUDA graphs (additional 20-40% speedup)
-- Reduced `--gpu-memory-utilization` from 0.70 to 0.55 (less memory needed)
+- Reduced `--gpu-memory-utilization` from 0.70 to 0.65 (less memory needed)
 - Reduced `--max-model-len` from 32768 to 16384 (RAG context is ~4K tokens)
 
 ### What we learned
@@ -132,7 +132,7 @@ Nemotron Nano wins by **47% (vLLM)** to **84% (llama.cpp)** on the same hardware
 | New `llm` namespace | Dedicated namespace for shared model serving |
 | ExternalName service in `rag-agent` ns | Backend uses short name `http://nemotron-nano:8000/v1` — ExternalName resolves to `nemotron-nano.llm.svc.cluster.local` |
 | Tool call parser: `hermes` | Nemotron Nano supports the Hermes tool calling format |
-| `--gpu-memory-utilization=0.55` | NVFP4 is only ~15 GB — lower utilization leaves more system headroom |
+| `--gpu-memory-utilization=0.65` | NVFP4 is only ~15 GB — moderate utilization balances KV cache size with system headroom |
 
 ---
 

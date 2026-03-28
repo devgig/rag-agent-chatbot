@@ -53,7 +53,7 @@ This project is designed to be customizable, serving as a framework that develop
 | Nemotron 3 Nano 30B | NVFP4 | Chat (MoE) | ~15 GB | ~72 GB GPU, ~4 Gi RAM | `llm` |
 | all-MiniLM-L6-v2 | FP32 | Embedding (384d) | ~80 MB | ~332 Mi RAM (CPU only) | `rag-agent` |
 
-**GPU memory:** vLLM pre-allocates ~72 GB via `--gpu-memory-utilization=0.55` for weights + KV cache + CUDA graphs, leaving ~56 GB for OS/K3s. The embedding model runs entirely on CPU.
+**GPU memory:** vLLM pre-allocates ~83 GB via `--gpu-memory-utilization=0.65` for weights + KV cache + CUDA graphs, leaving ~45 GB for OS/K3s. The embedding model runs entirely on CPU.
 
 ### Inference Performance
 
