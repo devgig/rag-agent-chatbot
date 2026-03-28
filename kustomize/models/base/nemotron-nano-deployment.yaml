@@ -65,6 +65,8 @@ spec:
         - containerPort: 8000
           name: http
         env:
+        - name: HF_HOME
+          value: "/root/.cache"  # PVC mounts at /root/.cache — HF looks for hub/ there
         - name: HF_HUB_OFFLINE
           value: "1"  # Model cached on PVC — skip network checks for faster startup
         - name: HF_TOKEN
