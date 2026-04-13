@@ -15,7 +15,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from logger import logger
 
-JWT_ISSUER = "spark-chat"
+JWT_ISSUER = "bytecourier"
 JWT_ALGORITHM = "RS256"
 JWKS_URL = os.getenv(
     "JWKS_URL",
