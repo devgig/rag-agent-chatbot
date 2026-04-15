@@ -95,7 +95,8 @@ def decode_jwt_token(token: str) -> dict:
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError as first_err:
+        logger.warning("JWT decode failed (first attempt): %s: %s", type(first_err).__name__, first_err)
         # On invalid token, try refreshing JWKS once (key rotation)
         global _last_fetch
         _last_fetch = 0
@@ -107,7 +108,8 @@ def decode_jwt_token(token: str) -> dict:
                 algorithms=[JWT_ALGORITHM],
                 issuer=JWT_ISSUER,
             )
-        except jwt.InvalidTokenError:
+        except jwt.InvalidTokenError as retry_err:
+            logger.error("JWT decode failed (after JWKS refresh): %s: %s", type(retry_err).__name__, retry_err)
             raise HTTPException(status_code=401, detail="Invalid token")
 
 
