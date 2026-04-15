@@ -24,3 +24,5 @@ configMapGenerator:
   literals:
   - MODELS=nemotron-nano
   - LOG_LEVEL=DEBUG
+  - JWT_ISSUER=bytecourier
+  - JWT_AUDIENCE=sparkchat.bytecourier.com

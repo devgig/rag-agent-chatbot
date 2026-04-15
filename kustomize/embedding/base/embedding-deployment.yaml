@@ -46,6 +46,10 @@ spec:
       dnsPolicy: Default  # Bypass CoreDNS; iptables-nft broken on Rockchip storage nodes (kernel 6.1.0-1025)
       nodeSelector:
         node-type: storage  # Deploy on storage nodes (CPU-only)
+      tolerations:
+      - key: istio-ambient
+        operator: Exists
+        effect: NoSchedule
       containers:
       - name: embedding-server
         image: rag-agent-chatbot-embedding:latest

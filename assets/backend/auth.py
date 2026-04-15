@@ -15,8 +15,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from logger import logger
 
-JWT_ISSUER = "bytecourier"
-JWT_AUDIENCE = "sparkchat.bytecourier.com"
+JWT_ISSUER = os.getenv("JWT_ISSUER", "bytecourier")
+JWT_AUDIENCE = os.getenv("JWT_AUDIENCE", "sparkchat.bytecourier.com")
 JWT_ALGORITHM = "RS256"
 JWKS_URL = os.getenv(
     "JWKS_URL",
