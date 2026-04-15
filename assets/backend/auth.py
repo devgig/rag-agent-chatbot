@@ -16,6 +16,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from logger import logger
 
 JWT_ISSUER = "bytecourier"
+JWT_AUDIENCE = "sparkchat.bytecourier.com"
 JWT_ALGORITHM = "RS256"
 JWKS_URL = os.getenv(
     "JWKS_URL",
@@ -87,34 +88,30 @@ def decode_jwt_token(token: str) -> dict:
     if _public_key is None:
         raise HTTPException(status_code=500, detail="JWT verification not configured — JWKS unavailable")
 
-    # TODO: set JWT_AUDIENCE once we confirm the auth-service audience value,
-    # then replace verify_aud=False with audience=JWT_AUDIENCE.
-    decode_opts: dict = dict(
-        algorithms=[JWT_ALGORITHM],
-        issuer=JWT_ISSUER,
-        options={"verify_aud": False},
-    )
-
     try:
-        payload = jwt.decode(token, _public_key, **decode_opts)
-        if "aud" in payload:
-            logger.info("JWT audience claim: %s", payload["aud"])
-        return payload
+        return jwt.decode(
+            token,
+            _public_key,
+            algorithms=[JWT_ALGORITHM],
+            issuer=JWT_ISSUER,
+            audience=JWT_AUDIENCE,
+        )
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError as first_err:
-        logger.warning("JWT decode failed (first attempt): %s: %s", type(first_err).__name__, first_err)
+    except jwt.InvalidTokenError:
         # On invalid token, try refreshing JWKS once (key rotation)
         global _last_fetch
         _last_fetch = 0
         _ensure_public_key()
         try:
-            payload = jwt.decode(token, _public_key, **decode_opts)
-            if "aud" in payload:
-                logger.info("JWT audience claim: %s", payload["aud"])
-            return payload
-        except jwt.InvalidTokenError as retry_err:
-            logger.error("JWT decode failed (after JWKS refresh): %s: %s", type(retry_err).__name__, retry_err)
+            return jwt.decode(
+                token,
+                _public_key,
+                algorithms=[JWT_ALGORITHM],
+                issuer=JWT_ISSUER,
+                audience=JWT_AUDIENCE,
+            )
+        except jwt.InvalidTokenError:
             raise HTTPException(status_code=401, detail="Invalid token")
 
 
@@ -139,7 +136,7 @@ def verify_websocket_token(token: str) -> Optional[str]:
             _public_key,
             algorithms=[JWT_ALGORITHM],
             issuer=JWT_ISSUER,
-            options={"verify_aud": False},
+            audience=JWT_AUDIENCE,
         )
         return payload["sub"]
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
