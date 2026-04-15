@@ -19,7 +19,7 @@ spec:
       group: gateway.networking.k8s.io
       name: rag-agent-gateway
   jwtRules:
-    - issuer: "spark-chat"
+    - issuer: "bytecourier"
       jwksUri: "http://auth-backend.auth-service.svc.cluster.local:8000/.well-known/jwks.json"
       fromHeaders:
         - name: Authorization
