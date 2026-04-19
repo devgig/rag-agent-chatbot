@@ -3,14 +3,16 @@
 # Deploys vLLM model inference in the shared "llm" namespace for K3s/BYO GPU.
 #
 # ARCHITECTURE:
-# - Deployment: vLLM serving Nemotron 3 Nano 30B (MoE, NVFP4) in the "llm" namespace
+# - Deployment: vLLM serving Qwen3-Coder-Next 80B-A3B (MoE, FP8) in the "llm" namespace
 # - Service: ClusterIP exposing OpenAI-compatible API on port 8000
-# - ExternalName: alias in "rag-agent" namespace so backend resolves nemotron-nano:8000
+# - ExternalName: alias in "rag-agent" namespace so backend resolves qwen3-coder-next:8000
 # - ExternalSecret: HuggingFace token from Azure Key Vault
 #
 # MODEL SERVING:
-# The LLM runs in the "llm" namespace, separate from application workloads.
-# - rag-agent-chatbot: http://nemotron-nano:8000/v1 (via ExternalName in rag-agent ns)
+# The LLM runs in the "llm" namespace, separate from application workloads, and is
+# shared with the ai-agents platform (LiteLLM routes Claude Code CLI fallback to it).
+# - rag-agent-chatbot: http://qwen3-coder-next:8000/v1 (via ExternalName in rag-agent ns)
+# - ai-agents LiteLLM:  http://qwen3-coder-next.llm.svc.cluster.local:8000/v1
 #
 # Embedding service stays in rag-agent namespace (only used by rag-agent-chatbot).
 #
@@ -23,15 +25,15 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: nemotron-nano-llm
+  name: qwen3-coder-next-llm
 
 resources:
-  - llm-namespace.yaml                # Shared "llm" namespace
-  - acr-external-secret.yaml          # ACR pull credentials from Azure Key Vault
-  - hf-external-secret.yaml           # HuggingFace token from Azure Key Vault
-  - model-cache-pvc.yaml              # Persistent storage for HuggingFace model cache
-  - nemotron-nano-deployment.yaml            # Nemotron 3 Nano 30B MoE (NVFP4) in llm namespace
-  - nemotron-nano-service.yaml               # ClusterIP service in llm namespace
+  - llm-namespace.yaml                     # Shared "llm" namespace
+  - acr-external-secret.yaml               # ACR pull credentials from Azure Key Vault
+  - hf-external-secret.yaml                # HuggingFace token from Azure Key Vault
+  - model-cache-pvc.yaml                   # Persistent storage for HuggingFace model cache
+  - qwen3-coder-next-deployment.yaml       # Qwen3-Coder-Next 80B-A3B MoE (FP8) in llm namespace
+  - qwen3-coder-next-service.yaml          # ClusterIP service in llm namespace
   # ExternalName service and embedding resources deploy to rag-agent namespace
   # and are managed by the backend kustomization to avoid namespace conflicts.
 

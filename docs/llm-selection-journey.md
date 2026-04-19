@@ -102,7 +102,7 @@ We initially tried Qwen3.5-35B-A3B-FP8, but vLLM 26.02 (v0.15.1) doesn't support
 
 ---
 
-## Phase 4: Nemotron 3 Nano 30B-A3B NVFP4 (current)
+## Phase 4: Nemotron 3 Nano 30B-A3B NVFP4
 
 **Model:** `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4`
 **Throughput:** ~56 tok/s (vLLM), ~70 tok/s (llama.cpp)
@@ -136,30 +136,85 @@ Nemotron Nano wins by **47% (vLLM)** to **84% (llama.cpp)** on the same hardware
 
 ---
 
+## Phase 5: Qwen3-Coder-Next 80B-A3B FP8 (current)
+
+**Model:** `Qwen/Qwen3-Coder-Next`
+**Architecture:** MoE + hybrid attention (linear + standard). 80B total / 3B active per token.
+**Weight size:** ~80 GB (FP8, runtime-quantized from BF16)
+**Context:** 131,072 tokens (model supports 256K; we configure 128K to leave KV-cache headroom on a single GPU)
+
+### Why we switched
+
+The rag-agent-chatbot workload shifted from "general chat over documents" to also serving as the coding-agent fallback for the ai-agents platform (LiteLLM routes Claude Code CLI traffic to this model when the Max subscription budget is exhausted). That workload rewards agentic coding quality — SWE-Bench Verified, tool-use reliability, long-context reasoning — and Nemotron Nano, while fast and general, wasn't trained for it.
+
+| Benchmark | Qwen3-Coder-Next | Nemotron 3 Nano 30B |
+| --------- | ---------------- | ------------------- |
+| SWE-Bench Verified (agent scaffold) | **>70%** | Not reported |
+| SWE-Bench Pro | 44.3% (matches models 10-20× larger active) | — |
+| LiveCodeBench v6 | (not reported but positioned higher) | 68.3% |
+| HumanEval | — | 78.05% |
+| Agent/tool training | Purpose-built | Strong but general |
+| Active params / total | 3B / 80B | 3B / 30B |
+| Context | 256K native | 128K native |
+
+### Why Qwen3-Coder-Next over Nemotron Nano
+
+1. **SWE-Bench Verified >70%** means the model actually completes real GitHub-issue-style coding tasks — the metric that matters for a Claude Code fallback. HumanEval / LiveCodeBench test single-shot snippet generation; they don't predict agent success.
+2. **Sonnet 4.5-level on coding** with only 3B active params. Same throughput profile as Nemotron Nano (both 3B active) but substantially better code quality.
+3. **Shared deployment.** Both rag-agent-chatbot and the ai-agents LiteLLM route to the same `qwen3-coder-next.llm.svc.cluster.local:8000` endpoint — no duplicate deployments.
+4. **256K native context** (configured at 128K) vs. Nemotron's 128K native. Room to grow as Blackwell-native quantization (FP4/MXFP4) matures.
+
+### Architectural changes
+
+| Change | Rationale |
+| ------ | --------- |
+| Rename services: `nemotron-nano` → `qwen3-coder-next` | Matches the served model; avoids confusion for operators reading cluster state |
+| Image bump: `nvcr.io/nvidia/vllm:26.02-py3` → `26.03.post1-py3` | Required for vLLM ≥ 0.15 with the `qwen3_coder` tool parser. The `.post1` variant is confirmed loading on DGX Spark per NVIDIA developer forums |
+| Tool call parser: `hermes` → `qwen3_coder` | Qwen3-Coder-Next uses its own structured tool-call format |
+| Quantization: NVFP4 (native) → FP8 (runtime) | `Qwen/Qwen3-Coder-Next` ships BF16 (~160 GB); FP8 fits the 128 GB unified-memory budget with room for KV cache |
+| `--max-model-len=16384` → `131072` | Long-context is valuable for coding agents reading large files; 131K leaves ~20 GB for KV cache |
+| `--gpu-memory-utilization=0.65` → `0.85` | Larger weights (~80 GB) + longer context need more of the 128 GB budget |
+| Startup probe: max 62 min → 93 min | FP8 weight download is ~80 GB vs Nemotron's ~15 GB; generous threshold for first boot |
+
+### Trade-offs accepted
+
+- **Throughput drops**. Both models have 3B active params, but Qwen3-Coder-Next's 80B total footprint means more memory bandwidth per forward step — realistic expectation is ~40-50 tok/s on vLLM vs. Nemotron's ~56 tok/s, a ~20% regression in raw speed.
+- **Longer first-boot**. 80 GB FP8 weight download vs. 15 GB NVFP4. Migration window on a cold PVC is ~15-30 min before the pod Ready's.
+- **No native Blackwell quantization yet**. FP8 is fine for Blackwell but NVFP4 would be a step faster. Revisit when Qwen publishes an NVFP4 variant or the community builds one.
+
+---
+
 ## Performance Summary Across Phases
 
-| Phase | Model | Architecture | Active params | Weight size | Throughput (vLLM) | 500-token answer |
-| ----- | ----- | ------------ | ------------- | ----------- | ----------------- | ---------------- |
-| 1 | Nemotron-49B FP8 | Dense | 49B | ~50 GB | ~4.5 tok/s | ~110s |
-| 2 | Nemotron-49B NVFP4 | Dense | 49B | ~25 GB | ~8-12 tok/s | ~40-60s |
-| 3 | Qwen3-30B-A3B FP8 | MoE | 3B | ~30 GB | ~38 tok/s | ~13s |
-| **4** | **Nemotron 3 Nano 30B NVFP4** | **MoE** | **3B** | **~15 GB** | **~56 tok/s** | **~9s** |
+| Phase | Model | Architecture | Active params | Weight size | Throughput (vLLM) | Notes |
+| ----- | ----- | ------------ | ------------- | ----------- | ----------------- | ----- |
+| 1 | Nemotron-49B FP8 | Dense | 49B | ~50 GB | ~4.5 tok/s | Too slow for chat |
+| 2 | Nemotron-49B NVFP4 | Dense | 49B | ~25 GB | ~8-12 tok/s | Still slow |
+| 3 | Qwen3-30B-A3B FP8 | MoE | 3B | ~30 GB | ~38 tok/s | Fast but FP8 suboptimal |
+| 4 | Nemotron 3 Nano 30B NVFP4 | MoE | 3B | ~15 GB | ~56 tok/s | Fast, general-purpose |
+| **5** | **Qwen3-Coder-Next 80B-A3B FP8** | **MoE + hybrid** | **3B** | **~80 GB** | **~40-50 tok/s est.** | **Purpose-built for coding agents** |
 
 ---
 
 ## Future Considerations
 
-### TensorRT-LLM / NIM
+### Native Blackwell quantization (NVFP4 / MXFP4) for Qwen3-Coder-Next
 
-NVIDIA's blog shows TRT-LLM delivering better throughput than vLLM. A NIM container for Nemotron models on DGX Spark exists on NGC. Since we're now on an NVIDIA model with NVIDIA quantization, the path to NIM/TRT-LLM is straightforward and would likely push throughput even higher.
+FP8 runtime quantization fits the single-GPU budget but isn't Blackwell-native. A community or Qwen-published NVFP4 / MXFP4 variant would drop the footprint to ~40 GB and free budget for 256K context. Track the Qwen/Qwen3-Coder-Next HuggingFace repo for new quantization variants.
+
+### TensorRT-LLM
+
+NVIDIA's blog shows TRT-LLM delivering better throughput than vLLM for supported models. Qwen3-Coder-Next with hybrid attention is new architecture; TRT-LLM support likely lags vLLM for a release or two. Revisit when NVIDIA ships an optimized engine build.
 
 ### GPU Time-Slicing
 
-At only ~15 GB for weights, there's ~100 GB of headroom in unified memory. GPU time-slicing could run a second specialized model (e.g., a coder variant) alongside the general model for different task types.
+Runs ~80 GB of weights now (vs ~15 GB under Nemotron), leaving ~30 GB of headroom for KV cache and a tight operating margin. Adding a second model via time-slicing would require dropping `--max-model-len` or compressing further (NVFP4). Re-evaluate once Blackwell-native quantization is available.
 
-### Qwen3.5-35B-A3B-FP8 (when vLLM supports it)
+### Embedding Model
 
-If Qwen's FP8 performance improves and vLLM adds `qwen3_5_moe` support, this could be revisited as an alternative. But the NVFP4 + NVIDIA model advantage is significant enough that Qwen would need to close a large gap.
+The embedding model (all-MiniLM-L6-v2, 22M params, 384-dim) runs on CPU storage nodes and is deployed via its own pipeline (`azure-pipelines-embedding.yaml`), independent of the backend. An attempt to upgrade to Qwen3-Embedding-0.6B (600M params, 1024-dim) was reverted because the model OOM-killed on 16GB ARM64 storage nodes even with 8Gi memory limits. Future options:
+- **GPU-based embedding**: Tight now that Qwen3-Coder-Next occupies ~80 GB; not a near-term move.
+- **Smaller high-quality models**: Models like BAAI/bge-base-en-v1.5 (110M, 768-dim) offer better quality than MiniLM without the memory overhead of 0.6B+ models.
 
 ### Embedding Model
 

@@ -369,7 +369,7 @@ spec:
             - containerPort: 8000
           env:
             - name: LLM_ENDPOINT
-              value: "http://nemotron-nano.llm.svc.cluster.local:8000"
+              value: "http://qwen3-coder-next.llm.svc.cluster.local:8000"
             - name: PEER_AGENTS
               value: "http://agent-executor.rag-agent.svc.cluster.local:8000,http://agent-reviewer.rag-agent.svc.cluster.local:8000"
           resources:
@@ -397,8 +397,8 @@ from langchain_openai import ChatOpenAI
 
 # All agents share the same GPU-backed LLM endpoint
 llm = ChatOpenAI(
-    base_url="http://nemotron-nano.llm.svc.cluster.local:8000/v1",
-    model="nemotron-nano",
+    base_url="http://qwen3-coder-next.llm.svc.cluster.local:8000/v1",
+    model="qwen3-coder-next",
 )
 
 # Sub-agents as remote services (CPU pods)

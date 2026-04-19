@@ -47,7 +47,7 @@ flowchart TB
     end
 
     subgraph Models["Model Servers"]
-        LLM[Nemotron Nano 30B<br/>Chat LLM]
+        LLM[Qwen3-Coder-Next 80B-A3B<br/>Chat LLM]
         Embed[all-MiniLM-L6-v2<br/>Embeddings]
     end
 

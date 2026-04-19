@@ -1,23 +1,27 @@
-# Nemotron 3 Nano 30B-A3B Deployment for DGX Spark
-# =================================================
-# NVIDIA Nemotron 3 Nano MoE model with NVFP4 quantization.
-# 30B total parameters, only 3B active per token — delivers ~56 tok/s (vLLM)
-# or ~70 tok/s (llama.cpp) on GB10. ~15GB VRAM for weights at NVFP4.
-# gpu-memory-utilization=0.65 allocates ~83Gi, leaving ~45Gi for OS/K3s.
+# Qwen3-Coder-Next 80B-A3B Deployment for DGX Spark
+# ===================================================
+# Qwen3-Coder-Next: 80B total / 3B active MoE with hybrid attention.
+# Purpose-built for coding agents. SWE-Bench Verified ~70% with an agent scaffold,
+# comparable to Sonnet 4.5 on agentic coding.
 #
-# Deployed in the "llm" namespace, separate from application workloads.
+# Memory math on GB10 (128Gi unified, gpu-memory-utilization=0.85 → ~108Gi):
+#   weights (FP8 runtime quantization): ~80Gi
+#   KV cache at 128K context:          ~20-25Gi
+#   headroom:                          remainder
+# That's why --max-model-len=131072 is the ceiling on a single GPU. Bumping
+# to 256K requires a more aggressive quantization (e.g. AWQ/MXFP4) or TP=2.
 #
-# Consumers connect via: nemotron-nano.llm.svc.cluster.local:8000
-# (Service name kept as "nemotron-nano" for compatibility — model is Nemotron Nano)
+# Consumers connect via: qwen3-coder-next.llm.svc.cluster.local:8000
+# LiteLLM (ai-agents repo) and rag-agent-chatbot backend both use this endpoint.
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: nemotron-nano
+  name: qwen3-coder-next
   namespace: llm
   labels:
-    app: nemotron-nano
-    workspace: nemotron-nano
+    app: qwen3-coder-next
+    workspace: qwen3-coder-next
     component: model-inference
     managed-by: kustomize
 spec:
@@ -27,12 +31,12 @@ spec:
   progressDeadlineSeconds: 3600
   selector:
     matchLabels:
-      workspace: nemotron-nano
+      workspace: qwen3-coder-next
   template:
     metadata:
       labels:
-        workspace: nemotron-nano
-        app: nemotron-nano
+        workspace: qwen3-coder-next
+        app: qwen3-coder-next
         istio.io/dataplane-mode: none
       annotations:
         ambient.istio.io/redirection: disabled
@@ -46,29 +50,34 @@ spec:
         effect: NoSchedule
       containers:
       - name: vllm-inference
-        image: nvcr.io/nvidia/vllm:26.02-py3
+        # NVIDIA's April 2026 post-release container. Confirmed loading NVFP4 +
+        # running vLLM >= 0.15 on GB10. Required for `--tool-call-parser=qwen3_coder`.
+        image: nvcr.io/nvidia/vllm:26.03.post1-py3
         command: ["vllm", "serve"]
         args:
-        - "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
-        - "--served-model-name=nemotron-nano"
+        - "Qwen/Qwen3-Coder-Next"
+        - "--served-model-name=qwen3-coder-next"
         - "--tensor-parallel-size=1"
-        - "--gpu-memory-utilization=0.65"
-        - "--max-model-len=16384"
+        - "--gpu-memory-utilization=0.85"
+        - "--max-model-len=131072"
+        - "--quantization=fp8"
         - "--dtype=auto"
         - "--host=0.0.0.0"
         - "--port=8000"
         - "--trust-remote-code"
         - "--enable-auto-tool-choice"
-        - "--tool-call-parser=hermes"
+        - "--tool-call-parser=qwen3_coder"
         - "--enable-prefix-caching"
         ports:
         - containerPort: 8000
           name: http
         env:
         - name: HF_HOME
-          value: "/root/.cache"  # PVC mounts at /root/.cache — HF looks for hub/ there
-        - name: HF_HUB_OFFLINE
-          value: "1"  # Model cached on PVC — skip network checks for faster startup
+          value: "/root/.cache"
+        # First boot: DO NOT set HF_HUB_OFFLINE=1 -- the PVC is empty and needs
+        # to fetch ~80Gi of FP8 weights from HuggingFace (expect 10-30 min on
+        # the first pod). Re-add HF_HUB_OFFLINE=1 after the download completes
+        # to skip network checks on subsequent restarts.
         - name: HF_TOKEN
           valueFrom:
             secretKeyRef:
@@ -87,10 +96,11 @@ spec:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 120
+          # Generous: weight download + load + warmup can take 10-30 min on cold start.
+          initialDelaySeconds: 180
           periodSeconds: 30
           timeoutSeconds: 10
-          failureThreshold: 120
+          failureThreshold: 180
         livenessProbe:
           httpGet:
             path: /health

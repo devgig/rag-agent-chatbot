@@ -206,8 +206,9 @@ class ChatAgent:
         usage = None
         # State for stripping <think>...</think> blocks from streamed tokens.
         # Tokens arrive in arbitrary chunks so the tags may span multiple chunks.
-        # Models like Nemotron Nano may output <think> as the very first token
-        # or start reasoning without tags — we handle both cases.
+        # Qwen3-Coder-Next emits <think> blocks for reasoning; it may output the
+        # opening tag as the very first token or start reasoning without tags —
+        # we handle both cases.
         _in_think_block = False
         _seen_first_content = False
         _pending = ""  # buffered text that might be a partial <think> or </think> tag
