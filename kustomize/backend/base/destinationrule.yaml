@@ -1,0 +1,14 @@
+# Pin a user to a single backend pod across requests so their L1 (per-pod)
+# cache stays warm. Hashing on the Authorization header — which carries the
+# user's JWT — gives us per-user affinity without cookies. KEDA can still
+# scale the deployment freely; new pods just take traffic from new users.
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: rag-agent-backend
+spec:
+  host: rag-agent-backend.rag-agent.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpHeaderName: authorization

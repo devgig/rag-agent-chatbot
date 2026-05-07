@@ -97,26 +97,69 @@ export function getApiUrl(path: string): string {
   return `${backendUrl}${normalizedPath}`;
 }
 
-/**
- * Get WebSocket URL for real-time communication.
- * Token is NOT included in the URL — it is sent as the first message
- * after connection to avoid logging JWT in server/proxy access logs.
- * @param path - WebSocket path (e.g., '/ws/chat/123')
- * @returns WebSocket URL (without token)
- */
-export function getWebSocketUrl(path: string): string {
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+export interface ChatStreamEvent {
+  type: string;
+  // The backend uses both `data` (tokens, usage, node_start) and `messages`
+  // (history) and `content` (errors) — keep this loose.
+  [key: string]: unknown;
+}
 
-  const backendWsUrl = import.meta.env.VITE_BACKEND_WS_URL;
-  if (backendWsUrl) {
-    return `${backendWsUrl}${normalizedPath}`;
+/**
+ * Stream a chat query as Server-Sent Events.
+ *
+ * Uses fetch + ReadableStream rather than EventSource because EventSource
+ * cannot set Authorization headers and cannot send a POST body. The handler
+ * is called once per parsed SSE frame; callers should pass an AbortSignal
+ * to support cancellation.
+ */
+export async function streamChatQuery(
+  chatId: string,
+  message: string,
+  onEvent: (event: ChatStreamEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const res = await apiFetch(`/chat/${encodeURIComponent(chatId)}/query`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+    },
+    body: JSON.stringify({ message }),
+    signal,
+  });
+
+  if (!res.ok || !res.body) {
+    throw new Error(`Stream failed: ${res.status} ${res.statusText}`);
   }
 
-  const backendUrl = getBackendUrl();
-  const wsUrl = backendUrl
-    .replace('https://', 'wss://')
-    .replace('http://', 'ws://');
-  return `${wsUrl}${normalizedPath}`;
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // SSE frames are separated by blank lines. We only care about `data:`
+    // lines — the backend doesn't emit `event:` or `id:`.
+    let sep: number;
+    while ((sep = buffer.indexOf('\n\n')) !== -1) {
+      const frame = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      const dataLine = frame
+        .split('\n')
+        .filter((l) => l.startsWith('data:'))
+        .map((l) => l.slice(5).trimStart())
+        .join('\n');
+      if (!dataLine) continue;
+      try {
+        onEvent(JSON.parse(dataLine) as ChatStreamEvent);
+      } catch (e) {
+        console.warn('Failed to parse SSE frame', e, dataLine);
+      }
+    }
+  }
 }
 
 /**

@@ -4,7 +4,6 @@ import base64
 import os
 import threading
 import time
-from typing import Optional
 
 import jwt
 import requests
@@ -122,22 +121,3 @@ async def get_current_user(
     """Extract and validate JWT from Authorization header. Returns email."""
     payload = decode_jwt_token(credentials.credentials)
     return payload["sub"]
-
-
-# --- WebSocket auth ---
-def verify_websocket_token(token: str) -> Optional[str]:
-    """Validate JWT from WebSocket query param. Returns email or None."""
-    _ensure_public_key()
-    if _public_key is None:
-        return None
-    try:
-        payload = jwt.decode(
-            token,
-            _public_key,
-            algorithms=[JWT_ALGORITHM],
-            issuer=JWT_ISSUER,
-            audience=JWT_AUDIENCE,
-        )
-        return payload["sub"]
-    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
-        return None

@@ -22,8 +22,7 @@ import remarkGfm from 'remark-gfm'; // NEW
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"; // NEW
 import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism"; // NEW
 import WelcomeSection from "./WelcomeSection";
-import { getWebSocketUrl, apiFetch, triggerUnauthorized } from "@/lib/api";
-import { getToken } from "@/lib/auth";
+import { apiFetch, streamChatQuery, type ChatStreamEvent } from "@/lib/api";
 
 export function makeChatTheme(isDark: boolean) {
   const base = isDark ? oneDark : oneLight;
@@ -191,7 +190,7 @@ export default function QuerySection({
   const [showButtons, setShowButtons] = useState(false);
   const [showWelcome, setShowWelcome] = useState(true);
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
   const [toolOutput, setToolOutput] = useState("");
   const [graphStatus, setGraphStatus] = useState("");
   const [isPinnedToolOutputVisible, setPinnedToolOutputVisible] = useState(false);
@@ -206,10 +205,6 @@ export default function QuerySection({
   const pendingTokens = useRef<string>("");
   const rafId = useRef<number | null>(null);
 
-  // WebSocket reconnection state
-  const reconnectAttempts = useRef(0);
-  const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
-  const maxReconnectAttempts = 5;
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -235,206 +230,156 @@ export default function QuerySection({
     fetchSelectedSources();
   }, []);
 
+  // Load history when the active chat changes. Includes any partial response
+  // from a prior cancel/disconnect, marked with a "(stopped)" suffix so the
+  // user knows it's truncated.
   useEffect(() => {
     if (!currentChatId) return;
 
-    // Reset streaming refs so the incoming history message is accepted
     firstTokenReceived.current = false;
     hasAssistantContent.current = false;
 
-    let isEffectActive = true;
-    let ws: WebSocket | null = null;
+    let cancelled = false;
 
-    const initWebSocket = () => {
+    (async () => {
       try {
-        if (wsRef.current) {
-          wsRef.current.close();
-          wsRef.current = null;
+        const res = await apiFetch(`/chat/${encodeURIComponent(currentChatId)}/history`);
+        if (cancelled) return;
+        if (!res.ok) {
+          setConnectionError(`Failed to load history: ${res.status}`);
+          return;
         }
-
-        // Token is sent as first message after connection (not in URL)
-        const wsUrl = getWebSocketUrl(`/ws/chat/${currentChatId}?chatId=${currentChatId}`);
-        ws = new WebSocket(wsUrl);
-
-        ws.onopen = () => {
-          if (isEffectActive && ws) {
-            // First-message auth: send JWT before any chat messages
-            const token = getToken();
-            if (!token) {
-              ws.close();
-              triggerUnauthorized();
-              return;
-            }
-            ws.send(JSON.stringify({ type: "auth", token }));
-            wsRef.current = ws;
-            reconnectAttempts.current = 0;
-            setConnectionError(null);
-          } else if (ws) {
-            ws.close();
-          }
-        };
-
-        ws.onmessage = (event) => {
-          const msg = JSON.parse(event.data);
-          const type = msg.type;
-          const text = msg.data ?? msg.token ?? "";
-
-          switch (type) {
-            case "auth_ok":
-              break;
-            case "history": {
-              if (Array.isArray(msg.messages)) {
-                if (rafId.current) {
-                  cancelAnimationFrame(rafId.current);
-                  rafId.current = null;
-                }
-                // Always apply the full authoritative history from the backend.
-                // This covers both initial load (switching chats) and post-streaming
-                // updates, ensuring all conversation turns are displayed.
-                pendingTokens.current = "";
-                setResponse(JSON.stringify(msg.messages));
-                setIsStreaming(false);
-                setGraphStatus("");
-              }
-              break;
-            }
-            case "tool_token": {
-              if (text !== undefined && text !== "undefined") {
-                setToolOutput(prev => prev + text);
-              }
-              break;
-            }
-            case "token": {
-              if (!text) break;
-              if (!firstTokenReceived.current) {
-                firstTokenReceived.current = true;
-                hasAssistantContent.current = true;
-              }
-
-              pendingTokens.current += text;
-
-              if (!rafId.current) {
-                rafId.current = requestAnimationFrame(() => {
-                  rafId.current = null;
-                  const tokensToFlush = pendingTokens.current;
-                  pendingTokens.current = "";
-
-                  if (tokensToFlush) {
-                    setResponse(prev => {
-                      try {
-                        const messages = JSON.parse(prev);
-                        const last = messages[messages.length - 1];
-                        if (last && last.type === "AssistantMessage") {
-                          last.content = String(last.content || "") + tokensToFlush;
-                        } else {
-                          messages.push({ type: "AssistantMessage", content: tokensToFlush });
-                        }
-                        return JSON.stringify(messages);
-                      } catch {
-                        return String(prev || "") + tokensToFlush;
-                      }
-                    });
-                  }
-                });
-              }
-              break;
-            }
-            case "node_start": {
-              if (msg?.data === "generate") {
-                setGraphStatus("Thinking...");
-              }
-              break;
-            }
-            case "tool_start": {
-              setGraphStatus("Thinking...");
-              break;
-            }
-            case "usage": {
-              if (msg.data) {
-                setTokenUsage(msg.data);
-              }
-              break;
-            }
-            case "error": {
-              setConnectionError(msg.content || msg.data || "An error occurred");
-              setIsStreaming(false);
-              setGraphStatus("");
-              break;
-            }
-            case "tool_end":
-            case "node_end":
-            default:
-              break;
-          }
-        };
-
-        ws.onclose = (event) => {
-          if (!isEffectActive) return;
-          setIsStreaming(false);
-          setGraphStatus("");
-
-          // Auth failure — don't reconnect, log out
-          if (event.code === 4001) {
-            setConnectionError("Authentication failed. Please log in again.");
-            triggerUnauthorized();
-            return;
-          }
-
-          // Connection limit reached — don't reconnect
-          if (event.code === 4029) {
-            setConnectionError("Too many active connections. Close other tabs and refresh.");
-            return;
-          }
-
-          // Auto-reconnect on unexpected close (not user-initiated)
-          if (event.code !== 1000 && reconnectAttempts.current < maxReconnectAttempts) {
-            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 16000);
-            reconnectAttempts.current += 1;
-            setConnectionError(`Connection lost. Reconnecting (${reconnectAttempts.current}/${maxReconnectAttempts})...`);
-            reconnectTimeout.current = setTimeout(() => {
-              if (isEffectActive) initWebSocket();
-            }, delay);
-          } else if (reconnectAttempts.current >= maxReconnectAttempts) {
-            setConnectionError("Unable to connect. Please refresh the page.");
-          }
-        };
-
-        ws.onerror = () => {
-          if (isEffectActive) {
-            setIsStreaming(false);
-            setGraphStatus("");
-          }
-        };
-      } catch (error) {
-        console.error("Error initializing WebSocket:", error);
+        const { messages, partial } = await res.json();
+        const merged = Array.isArray(messages) ? [...messages] : [];
+        if (partial && typeof partial === "object" && partial.content) {
+          merged.push({
+            type: "AssistantMessage",
+            content: `${partial.content}\n\n_(stopped)_`,
+          });
+        }
+        if (rafId.current) {
+          cancelAnimationFrame(rafId.current);
+          rafId.current = null;
+        }
+        pendingTokens.current = "";
+        setResponse(JSON.stringify(merged));
         setIsStreaming(false);
-        setConnectionError("Failed to connect to server.");
+        setGraphStatus("");
+        setConnectionError(null);
+      } catch (e) {
+        if (!cancelled) {
+          console.error("Error loading chat history:", e);
+          setConnectionError("Failed to load chat history.");
+        }
       }
-    };
-
-    initWebSocket();
+    })();
 
     return () => {
-      isEffectActive = false;
-      if (reconnectTimeout.current) {
-        clearTimeout(reconnectTimeout.current);
-        reconnectTimeout.current = null;
-      }
+      cancelled = true;
       if (rafId.current) {
         cancelAnimationFrame(rafId.current);
         rafId.current = null;
       }
       pendingTokens.current = "";
-      reconnectAttempts.current = 0;
-      if (wsRef.current) {
-        wsRef.current.close(1000); // Normal closure prevents reconnect
-        wsRef.current = null;
-      }
-      if (ws && ws !== wsRef.current && ws.readyState === WebSocket.OPEN) {
-        ws.close(1000);
+      // Aborts any in-flight stream when switching chats.
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort();
+        streamAbortRef.current = null;
       }
     };
   }, [currentChatId]);
+
+  const handleStreamEvent = useCallback((msg: ChatStreamEvent) => {
+    const type = msg.type;
+    const text = (msg.data ?? msg.token ?? "") as string;
+
+    switch (type) {
+      case "history": {
+        if (Array.isArray(msg.messages)) {
+          if (rafId.current) {
+            cancelAnimationFrame(rafId.current);
+            rafId.current = null;
+          }
+          pendingTokens.current = "";
+          setResponse(JSON.stringify(msg.messages));
+          setGraphStatus("");
+        }
+        break;
+      }
+      case "done": {
+        setIsStreaming(false);
+        setGraphStatus("");
+        break;
+      }
+      case "tool_token": {
+        if (text !== undefined && text !== "undefined") {
+          setToolOutput(prev => prev + text);
+        }
+        break;
+      }
+      case "token": {
+        if (!text) break;
+        if (!firstTokenReceived.current) {
+          firstTokenReceived.current = true;
+          hasAssistantContent.current = true;
+        }
+
+        pendingTokens.current += text;
+
+        if (!rafId.current) {
+          rafId.current = requestAnimationFrame(() => {
+            rafId.current = null;
+            const tokensToFlush = pendingTokens.current;
+            pendingTokens.current = "";
+
+            if (tokensToFlush) {
+              setResponse(prev => {
+                try {
+                  const messages = JSON.parse(prev);
+                  const last = messages[messages.length - 1];
+                  if (last && last.type === "AssistantMessage") {
+                    last.content = String(last.content || "") + tokensToFlush;
+                  } else {
+                    messages.push({ type: "AssistantMessage", content: tokensToFlush });
+                  }
+                  return JSON.stringify(messages);
+                } catch {
+                  return String(prev || "") + tokensToFlush;
+                }
+              });
+            }
+          });
+        }
+        break;
+      }
+      case "node_start": {
+        if (msg?.data === "generate") {
+          setGraphStatus("Thinking...");
+        }
+        break;
+      }
+      case "tool_start": {
+        setGraphStatus("Thinking...");
+        break;
+      }
+      case "usage": {
+        if (msg.data) {
+          setTokenUsage(msg.data as {prompt_tokens: number, completion_tokens: number, total_tokens: number});
+        }
+        break;
+      }
+      case "error": {
+        setConnectionError((msg.content as string) || (msg.data as string) || "An error occurred");
+        setIsStreaming(false);
+        setGraphStatus("");
+        break;
+      }
+      case "tool_end":
+      case "node_end":
+      default:
+        break;
+    }
+  }, [setResponse, setIsStreaming]);
 
   useEffect(() => {
     try {
@@ -538,43 +483,59 @@ export default function QuerySection({
   const handleQuerySubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const currentQuery = query.trim();
-    if (!currentQuery || isStreaming || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    if (!currentQuery || isStreaming || !currentChatId) return;
 
     setQuery("");
     setIsStreaming(true);
     setTokenUsage(null);
+    setConnectionError(null);
     firstTokenReceived.current = false;
     hasAssistantContent.current = false;
 
+    setResponse(prev => {
+      try {
+        const messages = JSON.parse(prev);
+        // Drop any prior "(stopped)" partial — sending a new message
+        // invalidates it on the server too.
+        const filtered = messages.filter((m: { type: string; content: string }) =>
+          !(m.type === "AssistantMessage" && typeof m.content === "string" && m.content.endsWith("_(stopped)_"))
+        );
+        filtered.push({ type: "HumanMessage", content: currentQuery });
+        return JSON.stringify(filtered);
+      } catch {
+        return prev + `\n\nHuman: ${currentQuery}\n\nAssistant: `;
+      }
+    });
+
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+
     try {
-      wsRef.current.send(JSON.stringify({
-        message: currentQuery
-      }));
- 
-      setResponse(prev => {
-        try {
-          const messages = JSON.parse(prev);
-          messages.push({
-            type: "HumanMessage",
-            content: currentQuery
-          });
-          return JSON.stringify(messages);
-        } catch {
-          return prev + `\n\nHuman: ${currentQuery}\n\nAssistant: `;
-        }
-      });
+      await streamChatQuery(currentChatId, currentQuery, handleStreamEvent, controller.signal);
     } catch (error) {
-      console.error("Error sending message:", error);
+      if ((error as { name?: string })?.name === "AbortError") {
+        // User cancelled — backend persists the partial; we'll see it on
+        // next history load. Nothing to do here.
+      } else {
+        console.error("Error streaming chat:", error);
+        setConnectionError("Stream interrupted. Try again.");
+      }
+    } finally {
+      if (streamAbortRef.current === controller) {
+        streamAbortRef.current = null;
+      }
       setIsStreaming(false);
+      setGraphStatus("");
     }
   };
 
   const handleCancelStream = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-      setIsStreaming(false);
+    if (streamAbortRef.current) {
+      streamAbortRef.current.abort();
+      streamAbortRef.current = null;
     }
+    setIsStreaming(false);
+    setGraphStatus("");
   };
 
   // Memoize parsed messages to avoid re-parsing on every render

@@ -16,12 +16,11 @@
 #
 """FastAPI backend server for the chatbot application.
 
-This module provides the main HTTP API endpoints and WebSocket connections for:
-- Real-time chat via WebSocket
-- File upload and document ingestion
-- Configuration management (models, sources, chat settings)
-- Chat history management
-- Vector store operations
+Streams chat responses over Server-Sent Events. Pairs with an in-process L1
+cache (in ``postgres_storage.py``) and a Redis-backed L2 cache (in
+``cache.py``) so a user pinned to one pod via Istio consistent-hash sees
+warm L1 reads, while a cold pod still gets fast L2 reads instead of going
+all the way to PostgreSQL.
 """
 
 import asyncio
@@ -31,18 +30,25 @@ import time
 import uuid
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from typing import List, Optional, Dict, Set
+from typing import List, Optional, Dict
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.websockets import WebSocketState
+from fastapi.responses import StreamingResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from agent import ChatAgent
-from auth import get_current_user, verify_websocket_token
+from auth import get_current_user
+from cache import (
+    CACHE_L2_TTL_SECONDS,
+    clear_partial_response,
+    get_partial_response,
+    redis_cache,
+    save_partial_response,
+)
 from config import ConfigManager
 from logger import logger, log_request, log_response, log_error
-from models import ChatIdRequest, ChatRenameRequest, SelectedModelRequest
+from models import ChatIdRequest, ChatRenameRequest, QueryRequest, SelectedModelRequest
 from postgres_storage import PostgreSQLConversationStorage
 from utils import process_and_ingest_files_background
 from vector_store import create_vector_store_with_config
@@ -57,13 +63,14 @@ CONFIG_PATH = os.getenv("CONFIG_PATH", "./config.json")
 MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
 MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 MAX_TOTAL_UPLOAD_BYTES = int(os.getenv("MAX_TOTAL_UPLOAD_MB", "200")) * 1024 * 1024
-MAX_WS_MESSAGE_BYTES = int(os.getenv("MAX_WS_MESSAGE_BYTES", str(64 * 1024)))  # 64KB
-MAX_WS_CONNECTIONS_PER_USER = int(os.getenv("MAX_WS_CONNECTIONS_PER_USER", "5"))
-WS_AUTH_TIMEOUT = int(os.getenv("WS_AUTH_TIMEOUT", "10"))  # seconds
+MAX_QUERY_BYTES = int(os.getenv("MAX_QUERY_BYTES", str(64 * 1024)))  # 64KB
+MAX_STREAMS_PER_USER = int(os.getenv("MAX_STREAMS_PER_USER", "5"))
 ALLOWED_UPLOAD_EXTENSIONS = {'.pdf', '.txt', '.docx', '.doc', '.md', '.rtf', '.csv', '.json', '.html'}
 
-# WebSocket connection tracking
-_ws_connections: Dict[str, Set[str]] = defaultdict(set)  # email -> set of connection IDs
+# Per-user concurrent SSE stream tracking. Per-pod; with Istio consistent-hash
+# affinity each user maps to a single pod so this is effectively per-user.
+_active_streams: Dict[str, int] = defaultdict(int)
+_streams_lock = asyncio.Lock()
 
 config_manager = ConfigManager(CONFIG_PATH)
 
@@ -97,11 +104,12 @@ def _record_task(task_id: str, status: str) -> None:
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup and shutdown tasks."""
     global agent
-    logger.debug("Initializing PostgreSQL storage and agent...")
-    
+    logger.debug("Initializing PostgreSQL storage, Redis cache, and agent...")
+
     try:
         await postgres_storage.init_pool()
         logger.info("PostgreSQL storage initialized successfully")
+        await redis_cache.connect()
         logger.debug("Initializing ChatAgent...")
         agent = await ChatAgent.create(
             vector_store=vector_store,
@@ -115,12 +123,17 @@ async def lifespan(app: FastAPI):
         raise
 
     yield
-    
+
     try:
         await postgres_storage.close()
         logger.debug("PostgreSQL storage closed successfully")
     except Exception as e:
         logger.error(f"Error closing PostgreSQL storage: {e}")
+
+    try:
+        await redis_cache.close()
+    except Exception as e:
+        logger.error(f"Error closing Redis cache: {e}")
 
 
 app = FastAPI(
@@ -156,100 +169,97 @@ async def health_check():
     return {"status": "healthy"}
 
 
-# --- WebSocket (first-message auth) ---
-
-def _validate_ws_origin(websocket: WebSocket) -> bool:
-    """Validate WebSocket Origin header against allowed origins."""
-    origin = websocket.headers.get("origin", "")
-    if not origin:
-        return True  # Allow missing origin (non-browser clients)
-    return any(origin == o for o in CORS_ORIGINS)
+# --- Chat: SSE streaming + history ---
 
 
-@app.websocket("/ws/chat/{chat_id}")
-async def websocket_endpoint(websocket: WebSocket, chat_id: str):
-    """WebSocket endpoint for real-time chat communication.
+def _sse(event: dict) -> str:
+    """Serialize an event to SSE wire format."""
+    return f"data: {json.dumps(event)}\n\n"
 
-    Uses first-message authentication: client connects, sends
-    {"type": "auth", "token": "<jwt>"} as the first message,
-    and receives {"type": "auth_ok"} on success.
+
+@app.get("/chat/{chat_id}/history")
+async def get_chat_history(chat_id: str, current_user: str = Depends(get_current_user)):
+    """Return committed conversation history plus any saved partial.
+
+    The committed history comes from PostgreSQL (via L1/L2 cache). The
+    partial — if any — is the prefix of an answer the user saw before
+    cancelling or losing the connection; it lives in Redis with an 8h TTL.
     """
-    # Validate origin header
-    if not _validate_ws_origin(websocket):
-        await websocket.close(code=4003, reason="Origin not allowed")
-        return
+    history_messages = await postgres_storage.get_messages(chat_id)
+    history = [postgres_storage._message_to_dict(msg) for msg in history_messages]
+    partial = await get_partial_response(chat_id)
+    return {"messages": history, "partial": partial}
 
-    conn_id = str(uuid.uuid4())
-    user_email: Optional[str] = None
 
-    try:
-        await websocket.accept()
+@app.post("/chat/{chat_id}/query")
+async def stream_chat_query(
+    chat_id: str,
+    body: QueryRequest,
+    request: Request,
+    current_user: str = Depends(get_current_user),
+):
+    """Stream an LLM response over SSE.
 
-        # Wait for auth message with timeout
+    Per-user concurrency is bounded by ``MAX_STREAMS_PER_USER``. On clean
+    completion the partial buffer is cleared. On client disconnect or
+    cancel mid-stream, the buffered tokens are saved to Redis with TTL so
+    the user sees them on reconnect.
+    """
+    if not body.message or not body.message.strip():
+        raise HTTPException(status_code=400, detail="message is required")
+    if len(body.message.encode("utf-8")) > MAX_QUERY_BYTES:
+        raise HTTPException(status_code=413, detail="Message too large")
+
+    async with _streams_lock:
+        if _active_streams[current_user] >= MAX_STREAMS_PER_USER:
+            raise HTTPException(status_code=429, detail="Too many active streams")
+        _active_streams[current_user] += 1
+
+    async def event_stream():
+        partial_buffer: List[str] = []
+        completed = False
         try:
-            data = await asyncio.wait_for(
-                websocket.receive_text(),
-                timeout=WS_AUTH_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
-            await websocket.close(code=4001, reason="Authentication timeout")
-            return
-
-        try:
-            auth_msg = json.loads(data)
-        except json.JSONDecodeError:
-            await websocket.close(code=4001, reason="Invalid auth message")
-            return
-
-        if auth_msg.get("type") != "auth" or not auth_msg.get("token"):
-            await websocket.close(code=4001, reason="Expected auth message")
-            return
-
-        user_email = verify_websocket_token(auth_msg["token"])
-        if not user_email:
-            await websocket.close(code=4001, reason="Invalid or expired token")
-            return
-
-        # Enforce per-user connection limit
-        if len(_ws_connections[user_email]) >= MAX_WS_CONNECTIONS_PER_USER:
-            await websocket.close(code=4029, reason="Too many connections")
-            return
-
-        _ws_connections[user_email].add(conn_id)
-
-        await websocket.send_json({"type": "auth_ok"})
-        logger.debug(f"WebSocket authenticated for chat_id: {chat_id}")
-
-        history_messages = await postgres_storage.get_messages(chat_id)
-        history = [postgres_storage._message_to_dict(msg) for msg in history_messages]
-        await websocket.send_json({"type": "history", "messages": history})
-
-        while True:
-            data = await websocket.receive_text()
-            if len(data.encode("utf-8")) > MAX_WS_MESSAGE_BYTES:
-                await websocket.send_json({"type": "error", "content": "Message too large"})
-                continue
-            client_message = json.loads(data)
-            new_message = client_message.get("message")
-
+            # Any prior partial is being replaced by this new query.
+            await clear_partial_response(chat_id)
             try:
-                async for event in agent.query(query_text=new_message, chat_id=chat_id):
-                    await websocket.send_json(event)
+                async for event in agent.query(query_text=body.message, chat_id=chat_id):
+                    if event.get("type") == "token":
+                        partial_buffer.append(event.get("data", "") or "")
+                    yield _sse(event)
+                    if await request.is_disconnected():
+                        # Treat client hangup like an explicit cancel.
+                        raise asyncio.CancelledError()
+                completed = True
+            except asyncio.CancelledError:
+                raise
             except Exception as query_error:
-                logger.error(f"Error in agent.query: {str(query_error)}", exc_info=True)
-                await websocket.send_json({"type": "error", "content": "An error occurred processing your request"})
+                logger.error(f"Error in agent.query: {query_error}", exc_info=True)
+                yield _sse({"type": "error", "content": "An error occurred processing your request"})
 
-            final_messages = await postgres_storage.get_messages(chat_id)
-            final_history = [postgres_storage._message_to_dict(msg) for msg in final_messages]
-            await websocket.send_json({"type": "history", "messages": final_history})
+            if completed:
+                final_messages = await postgres_storage.get_messages(chat_id)
+                final_history = [postgres_storage._message_to_dict(msg) for msg in final_messages]
+                yield _sse({"type": "history", "messages": final_history})
+                yield _sse({"type": "done"})
+        except asyncio.CancelledError:
+            partial = "".join(partial_buffer)
+            if partial:
+                await save_partial_response(chat_id, partial)
+                logger.debug(f"Saved partial response for chat {chat_id} ({len(partial)} chars, TTL {CACHE_L2_TTL_SECONDS}s)")
+            raise
+        finally:
+            async with _streams_lock:
+                _active_streams[current_user] = max(0, _active_streams[current_user] - 1)
 
-    except WebSocketDisconnect:
-        logger.debug(f"Client disconnected from chat {chat_id}")
-    except Exception as e:
-        logger.error(f"WebSocket error for chat {chat_id}: {str(e)}", exc_info=True)
-    finally:
-        if user_email:
-            _ws_connections[user_email].discard(conn_id)
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",  # nginx + some L7 proxies
+            "Connection": "keep-alive",
+        },
+    )
 
 
 

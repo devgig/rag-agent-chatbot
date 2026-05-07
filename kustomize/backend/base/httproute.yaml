@@ -20,6 +20,12 @@ spec:
             path:
               type: ReplacePrefixMatch
               replacePrefixMatch: /
+      # SSE streams can run for the duration of an LLM response. Default
+      # Envoy route timeout is 15s, which is too short — set request and
+      # backend timeouts wide enough for long generations.
+      timeouts:
+        request: 600s
+        backendRequest: 600s
       backendRefs:
         - name: rag-agent-backend
           port: 8000

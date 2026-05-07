@@ -33,3 +33,6 @@ class ChatRenameRequest(BaseModel):
 
 class SelectedModelRequest(BaseModel):
     model: str
+
+class QueryRequest(BaseModel):
+    message: str

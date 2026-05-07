@@ -36,13 +36,14 @@ flowchart TB
 
     subgraph Backend["Backend (FastAPI)"]
         API[REST API<br/>Port 8000]
-        WSHandler[WebSocket Handler]
+        SSE[SSE Stream Handler<br/>POST /chat/.../query]
         Agent[LangGraph Agent<br/>generate node]
         VectorStore[Vector Store Client]
     end
 
     subgraph Storage["Data Storage"]
         Postgres[(PostgreSQL<br/>Conversations & Sources)]
+        Redis[(Redis<br/>L2 Cache + Partials)]
         Milvus[(Milvus<br/>Vector Embeddings)]
     end
 
@@ -52,9 +53,9 @@ flowchart TB
     end
 
     UI -->|REST API| API
-    UI <-->|WebSocket| WSHandler
+    UI -->|POST + SSE stream| SSE
 
-    WSHandler --> Agent
+    SSE --> Agent
     API --> VectorStore
 
     Agent --> VectorStore
@@ -63,6 +64,7 @@ flowchart TB
     VectorStore -->|Generate Embeddings| Embed
 
     Agent -->|Save Messages| Postgres
+    Agent -->|L2 read/write + partials| Redis
     VectorStore -->|Save Sources| Postgres
 ```
 
@@ -113,7 +115,8 @@ sequenceDiagram
     participant LLM
 
     User->>Frontend: "What does the doc say about X?"
-    Frontend->>Backend: WebSocket message
+    Frontend->>Backend: POST /chat/{id}/query (Authorization: Bearer ...)
+    Backend-->>Frontend: 200 OK, Content-Type: text/event-stream
 
     Backend->>Milvus: Similarity search (top-k=5)
     Milvus-->>Backend: Relevant chunks
@@ -123,12 +126,12 @@ sequenceDiagram
 
     loop Streaming
         LLM-->>Backend: Token
-        Backend-->>Frontend: WebSocket: token
+        Backend-->>Frontend: SSE: data: {"type":"token","data":"..."}
         Frontend-->>User: Display token
     end
 
-    Backend->>Backend: Save to PostgreSQL
-    Backend-->>Frontend: WebSocket: history
+    Backend->>Backend: Save to PostgreSQL + write-through L2
+    Backend-->>Frontend: SSE: history + done
 ```
 
 ### Component Details
@@ -136,10 +139,11 @@ sequenceDiagram
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | **Frontend** | React, Vite, Tailwind, nginx | Static web UI served by nginx |
-| **Backend** | FastAPI, LangGraph | API server, RAG pipeline, WebSocket handler |
+| **Backend** | FastAPI, LangGraph | API server, RAG pipeline, SSE token streaming |
 | **Vector Store** | Milvus | Document embeddings, similarity search |
 | **Conversations** | PostgreSQL | Chat history, document sources |
-| **Chat LLM** | vLLM (Nemotron Nano 30B) | Response generation from retrieved context |
+| **L2 Cache / Partials** | Redis (Bitnami HA + Sentinel) | Cross-pod cache, partial-response store on cancel |
+| **Chat LLM** | vLLM (Qwen3-Coder-Next 80B-A3B) | Response generation from retrieved context |
 | **Embeddings** | all-MiniLM-L6-v2 | Document vectorization |
 
 ## Getting Started
@@ -186,4 +190,6 @@ Upload a document using the "Upload Documents" button in the sidebar under "Cont
 |---------|--------|-----|
 | `ImagePullBackOff` | Container registry credentials not configured | Check image pull secrets in the namespace |
 | Pod not ready | Backend dependencies (PostgreSQL, Milvus) unreachable | Check pod logs with `kubectl logs -l app=rag-agent-backend -n rag-agent` |
-| WebSocket errors | Auth token expired or missing | Check browser console for 401 responses |
+| 401 on `/chat/.../query` | Auth token expired or missing | Check browser console for 401 responses |
+| SSE stream cuts off near 15s | HTTPRoute timeout misconfigured | Confirm `httproute.yaml` sets `timeouts.request: 600s` |
+| Slow chat after a deploy | L1 cache cold on new pods | Expected — L2 (Redis) catches the next read; full warm-up follows session affinity |

@@ -361,28 +361,42 @@ class PostgreSQLConversationStorage:
             return result
 
     async def get_messages(self, chat_id: str, limit: Optional[int] = None) -> List[BaseMessage]:
-        """Retrieve messages for a chat session with caching."""
+        """Retrieve messages for a chat session.
+
+        Lookup order: L1 (per-process LRU) → L2 (Redis) → PostgreSQL. Each
+        miss warms the layer above it so subsequent reads on the same pod
+        skip Redis entirely.
+        """
         cached_messages = self._get_cached_messages(chat_id)
         if cached_messages is not None:
             return cached_messages[-limit:] if limit else cached_messages
-        
+
+        # L2: Redis. Fall through silently on any failure.
+        from cache import redis_cache  # local import avoids module load cycle
+        l2 = await redis_cache.get_json("messages", chat_id)
+        if l2 is not None:
+            messages = [self._dict_to_message(d) for d in l2]
+            self._cache_messages(chat_id, messages)
+            return messages[-limit:] if limit else messages
+
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT messages FROM conversations WHERE chat_id = $1",
                 chat_id
             )
             self._db_operations += 1
-            
+
             if not row:
                 return []
-            
+
             messages_data = row['messages']
             if isinstance(messages_data, str):
                 messages_data = json.loads(messages_data)
             messages = [self._dict_to_message(msg_data) for msg_data in messages_data]
-            
+
             self._cache_messages(chat_id, messages)
-            
+            await redis_cache.set_json("messages", chat_id, messages_data)
+
             return messages[-limit:] if limit else messages
 
     async def save_messages(self, chat_id: str, messages: List[BaseMessage]) -> None:
@@ -395,21 +409,26 @@ class PostgreSQLConversationStorage:
     async def save_messages_immediate(self, chat_id: str, messages: List[BaseMessage]) -> None:
         """Save messages immediately without batching - for critical operations."""
         serialized_messages = [self._message_to_dict(msg) for msg in messages]
-        
+
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO conversations (chat_id, messages, message_count)
                 VALUES ($1, $2, $3)
                 ON CONFLICT (chat_id)
-                DO UPDATE SET 
+                DO UPDATE SET
                     messages = EXCLUDED.messages,
                     message_count = EXCLUDED.message_count,
                     updated_at = CURRENT_TIMESTAMP
             """, chat_id, json.dumps(serialized_messages), len(messages))
             self._db_operations += 1
-        
+
         self._cache_messages(chat_id, messages)
         self._chat_list_cache = None
+
+        # Write-through to L2 so other pods see fresh data on cache miss.
+        from cache import redis_cache
+        await redis_cache.set_json("messages", chat_id, serialized_messages)
+        await redis_cache.delete("chats_list", "_all")
 
     async def _batch_save_worker(self) -> None:
         """Background worker to batch save operations."""
@@ -443,6 +462,12 @@ class PostgreSQLConversationStorage:
                 if saves_to_process:
                     logger.debug(f"Batch saved {len(saves_to_process)} conversations")
                     self._chat_list_cache = None
+                    # Write-through to L2 so peer pods see fresh data.
+                    from cache import redis_cache
+                    for chat_id, messages in saves_to_process.items():
+                        serialized = [self._message_to_dict(msg) for msg in messages]
+                        await redis_cache.set_json("messages", chat_id, serialized)
+                    await redis_cache.delete("chats_list", "_all")
                     
             except asyncio.CancelledError:
                 break
@@ -472,18 +497,32 @@ class PostgreSQLConversationStorage:
                     chat_id
                 )
                 self._db_operations += 1
-                
+
                 self._invalidate_cache(chat_id)
-                
+
+                from cache import redis_cache
+                await redis_cache.delete("messages", chat_id)
+                await redis_cache.delete("partial", chat_id)
+                await redis_cache.delete("chats_list", "_all")
+
                 return "DELETE 1" in result
         except Exception as e:
             logger.error(f"Error deleting conversation {chat_id}: {e}")
             return False
 
     async def list_conversations(self) -> List[str]:
-        """List all conversation IDs with caching."""
+        """List all conversation IDs.
+
+        Lookup order: L1 (per-process) → L2 (Redis) → PostgreSQL.
+        """
         if self._chat_list_cache and not self._chat_list_cache.is_expired():
             return self._chat_list_cache.data
+
+        from cache import redis_cache
+        l2 = await redis_cache.get_json("chats_list", "_all")
+        if l2 is not None:
+            self._chat_list_cache = CacheEntry(data=l2, timestamp=time.time(), ttl=60)
+            return l2
 
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -498,6 +537,7 @@ class PostgreSQLConversationStorage:
                 timestamp=time.time(),
                 ttl=60
             )
+            await redis_cache.set_json("chats_list", "_all", chat_ids, ttl_seconds=60)
 
             return chat_ids
 

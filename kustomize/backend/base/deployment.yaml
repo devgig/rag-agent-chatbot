@@ -22,7 +22,8 @@ spec:
         app: rag-agent-backend
         istio.io/dataplane-mode: none
       annotations:
-        # Graceful shutdown for WebSocket connections
+        # Avoid disrupting in-flight SSE streams when the autoscaler tries to
+        # bin-pack — only relevant for cluster-autoscaler, not KEDA.
         cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
         ambient.istio.io/redirection: disabled
         prometheus.io/scrape: "true"
@@ -102,6 +103,21 @@ spec:
           value: "/tmp/uploads"
         - name: JWKS_URL
           value: "http://auth-backend.auth-service.svc.cluster.local:8000/.well-known/jwks.json"
+        - name: REDIS_HOST
+          valueFrom:
+            secretKeyRef:
+              name: redis-credentials
+              key: host
+        - name: REDIS_PORT
+          valueFrom:
+            secretKeyRef:
+              name: redis-credentials
+              key: port
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-credentials
+              key: password
         volumeMounts:
         - name: tmp-volume
           mountPath: /tmp

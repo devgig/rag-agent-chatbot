@@ -8,7 +8,9 @@ resources:
   - deployment.yaml
   - service.yaml
   - postgres-external-secret.yaml
+  - redis-external-secret.yaml
   - acr-external-secret.yaml
+  - destinationrule.yaml
   - httproute.yaml
   # KEDA autoscaling
   - keda-scaledobject.yaml

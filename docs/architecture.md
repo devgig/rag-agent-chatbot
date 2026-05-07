@@ -28,12 +28,13 @@ The RAG implementation enables the chatbot to answer questions using content fro
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | Frontend | React 19 + Vite | User interface, document upload, chat |
-| Backend | FastAPI | REST API, WebSocket streaming |
+| Backend | FastAPI | REST API, SSE token streaming |
 | Agent | LangGraph | Orchestrates inline search + LLM generation |
 | Vector DB | Milvus | Stores and searches document embeddings |
 | Embedding | all-MiniLM-L6-v2 (22M, 384-dim) | Converts text to vectors |
-| LLM | Nemotron 3 Nano 30B MoE NVFP4 (vLLM, `llm` namespace) | Generates responses (~56 tok/s) |
+| LLM | Qwen3-Coder-Next 80B-A3B (vLLM, `llm` namespace) | Generates responses |
 | Storage | PostgreSQL | Chat history, document metadata |
+| Cache | Redis (Bitnami HA + Sentinel, shared cluster) | L2 cache and partial-response store on cancel |
 
 ---
 
