@@ -136,7 +136,7 @@ Nemotron Nano wins by **47% (vLLM)** to **84% (llama.cpp)** on the same hardware
 
 ---
 
-## Phase 5: Qwen3-Coder-Next 80B-A3B FP8 (current)
+## Phase 5: Qwen3-Coder-Next 80B-A3B FP8 (attempted, reverted)
 
 **Model:** `Qwen/Qwen3-Coder-Next`
 **Architecture:** MoE + hybrid attention (linear + standard). 80B total / 3B active per token.
@@ -184,6 +184,40 @@ The rag-agent-chatbot workload shifted from "general chat over documents" to als
 
 ---
 
+## Phase 6: Back to Nemotron 3 Nano 30B NVFP4 (current)
+
+**Model:** `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4`
+**Architecture:** MoE. 30B total / 3B active per token.
+**Weight size:** ~15 GB (NVFP4, native)
+**Context:** 16,384 tokens configured (model supports 128K)
+
+### Why we reverted
+
+The Phase 5 switch was code-and-manifest only — it never actually took effect at the cluster level. The DGX Spark GPU operator only allows one LLM pod on the node, and the Nemotron Nano deployment was already holding the `nvidia.com/gpu` resource. The new Qwen `qwen3-coder-next` Deployment sat in `Pending` with `Insufficient nvidia.com/gpu` for ~28 days — its pod never scheduled, so backends configured with `selected_model=qwen3-coder-next` were resolving the ExternalName but landing on a Service with no endpoints. Meanwhile, the still-running Nemotron Nano pod kept the LLM endpoint functional under its original `nemotron-nano.llm.svc.cluster.local:8000` name.
+
+Rather than carry out the actual cutover (delete the running Nemotron Nano pod, wait ~30 min for Qwen FP8 weights to download, then verify), we're formalizing what's been true the whole time: this cluster runs on Nemotron 3 Nano. The Qwen experiment stays in the journey for future reference, but the source-of-truth manifests, code defaults, and docs now match the live deployment.
+
+### Architectural changes (reversing Phase 5)
+
+| Change | Rationale |
+| ------ | --------- |
+| Restore `nemotron-nano-{deployment,service,externalname-service}.yaml`; delete `qwen3-coder-next-*.yaml` | Match the running cluster state |
+| Backend default model: `qwen3-coder-next` → `nemotron-nano` | Match the working ExternalName resolution |
+| Tool call parser: back to `hermes` | Nemotron Nano's native format |
+| Image: back to `nvcr.io/nvidia/vllm:26.02-py3` | Qwen3-Coder-specific image not needed |
+| `--quantization=fp8` / `--max-model-len=131072` removed | Nemotron Nano ships NVFP4 natively; 16K context fits the original budget |
+| `--gpu-memory-utilization=0.85` → `0.65` | NVFP4 only needs ~15 GB |
+| Restore `HF_HUB_OFFLINE=1` | Model cache PVC is already populated |
+| Startup probe threshold: 93 min → 62 min (`failureThreshold: 120`) | NVFP4 weights are already on the PVC; fast cold-start |
+
+### Trade-offs accepted (returning to Nemotron)
+
+- **Coding-agent quality drops back to a general-purpose model.** The original justification for Phase 5 (Claude Code CLI fallback for the ai-agents platform) is no longer driving model choice. If/when that workload comes online, a TP=2 setup on a second GPU is a cleaner answer than retrying a single-GPU cutover.
+- **Lose the 128K configured context.** Back to 16K. None of the current rag-agent-chatbot retrieval flows need more.
+- **rag-agent-chatbot becomes the sole consumer again.** ai-agents LiteLLM no longer routes here.
+
+---
+
 ## Performance Summary Across Phases
 
 | Phase | Model | Architecture | Active params | Weight size | Throughput (vLLM) | Notes |
@@ -192,29 +226,24 @@ The rag-agent-chatbot workload shifted from "general chat over documents" to als
 | 2 | Nemotron-49B NVFP4 | Dense | 49B | ~25 GB | ~8-12 tok/s | Still slow |
 | 3 | Qwen3-30B-A3B FP8 | MoE | 3B | ~30 GB | ~38 tok/s | Fast but FP8 suboptimal |
 | 4 | Nemotron 3 Nano 30B NVFP4 | MoE | 3B | ~15 GB | ~56 tok/s | Fast, general-purpose |
-| **5** | **Qwen3-Coder-Next 80B-A3B FP8** | **MoE + hybrid** | **3B** | **~80 GB** | **~40-50 tok/s est.** | **Purpose-built for coding agents** |
+| 5 | Qwen3-Coder-Next 80B-A3B FP8 | MoE + hybrid | 3B | ~80 GB | (never scheduled) | Pod stayed `Pending` on insufficient GPU; reverted |
+| **6** | **Nemotron 3 Nano 30B NVFP4** | **MoE** | **3B** | **~15 GB** | **~56 tok/s** | **Same as Phase 4; current** |
 
 ---
 
 ## Future Considerations
 
-### Native Blackwell quantization (NVFP4 / MXFP4) for Qwen3-Coder-Next
+### Coding-agent model on a second GPU
 
-FP8 runtime quantization fits the single-GPU budget but isn't Blackwell-native. A community or Qwen-published NVFP4 / MXFP4 variant would drop the footprint to ~40 GB and free budget for 256K context. Track the Qwen/Qwen3-Coder-Next HuggingFace repo for new quantization variants.
+If/when the ai-agents Claude Code CLI fallback comes back into scope, Qwen3-Coder-Next (or whatever the current SOTA is) is the right model — but on a second GPU, not displacing the rag-agent chat model. Single-GPU cutovers between models with different weight footprints are operationally painful (cold-start ~30 min on FP8 weight download).
 
 ### TensorRT-LLM
 
-NVIDIA's blog shows TRT-LLM delivering better throughput than vLLM for supported models. Qwen3-Coder-Next with hybrid attention is new architecture; TRT-LLM support likely lags vLLM for a release or two. Revisit when NVIDIA ships an optimized engine build.
+NVIDIA's blog shows TRT-LLM delivering better throughput than vLLM for supported models. Nemotron Nano on vLLM is fine for current load; revisit if/when chat latency becomes a bottleneck.
 
 ### GPU Time-Slicing
 
-Runs ~80 GB of weights now (vs ~15 GB under Nemotron), leaving ~30 GB of headroom for KV cache and a tight operating margin. Adding a second model via time-slicing would require dropping `--max-model-len` or compressing further (NVFP4). Re-evaluate once Blackwell-native quantization is available.
-
-### Embedding Model
-
-The embedding model (all-MiniLM-L6-v2, 22M params, 384-dim) runs on CPU storage nodes and is deployed via its own pipeline (`azure-pipelines-embedding.yaml`), independent of the backend. An attempt to upgrade to Qwen3-Embedding-0.6B (600M params, 1024-dim) was reverted because the model OOM-killed on 16GB ARM64 storage nodes even with 8Gi memory limits. Future options:
-- **GPU-based embedding**: Tight now that Qwen3-Coder-Next occupies ~80 GB; not a near-term move.
-- **Smaller high-quality models**: Models like BAAI/bge-base-en-v1.5 (110M, 768-dim) offer better quality than MiniLM without the memory overhead of 0.6B+ models.
+Nemotron Nano at NVFP4 only uses ~15 GB of the 128 GB unified memory budget, leaving room for a second LLM via GPU time-slicing. Worth considering when a second model becomes necessary (e.g. a dedicated coding-agent model).
 
 ### Embedding Model
 
