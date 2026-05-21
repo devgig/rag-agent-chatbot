@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 */
-import { HTMLAttributes } from 'react';
+import { HTMLAttributes, useState } from 'react';
 import styles from '@/styles/DocumentIngestion.module.css';
 import { apiFetch } from '@/lib/api';
 
@@ -24,6 +24,8 @@ declare module 'react' {
     directory?: string;
   }
 }
+
+type Visibility = "private" | "public";
 
 interface DocumentIngestionProps {
   files: FileList | null;
@@ -44,6 +46,8 @@ export default function DocumentIngestion({
   setIsIngesting,
   onSuccessfulIngestion,
 }: DocumentIngestionProps) {
+  const [visibility, setVisibility] = useState<Visibility>("private");
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFiles(e.target.files);
   };
@@ -59,16 +63,16 @@ export default function DocumentIngestion({
         for (let i = 0; i < files.length; i++) {
           formData.append("files", files[i]);
         }
+        formData.append("visibility", visibility);
 
-        // Send directly to backend via external DNS
         const res = await apiFetch("/ingest", {
           method: "POST",
           body: formData,
         });
-        
+
         const data = await res.json();
         setIngestMessage(data.message);
-        
+
         if (res.ok && onSuccessfulIngestion) {
           onSuccessfulIngestion();
         }
@@ -123,9 +127,45 @@ export default function DocumentIngestion({
             Select files or drag and drop them here
           </p>
         </div>
-        
-        <button 
-          type="submit" 
+
+        <fieldset className={styles.visibilityFieldset}>
+          <legend>Visibility</legend>
+          <label className={styles.visibilityOption}>
+            <input
+              type="radio"
+              name="visibility"
+              value="private"
+              checked={visibility === "private"}
+              onChange={() => setVisibility("private")}
+              disabled={isIngesting}
+            />
+            <span>
+              <strong>Private</strong>
+              <span className={styles.visibilityHelp}>
+                Only you can search these documents
+              </span>
+            </span>
+          </label>
+          <label className={styles.visibilityOption}>
+            <input
+              type="radio"
+              name="visibility"
+              value="public"
+              checked={visibility === "public"}
+              onChange={() => setVisibility("public")}
+              disabled={isIngesting}
+            />
+            <span>
+              <strong>Public</strong>
+              <span className={styles.visibilityHelp}>
+                Everyone can search these documents
+              </span>
+            </span>
+          </label>
+        </fieldset>
+
+        <button
+          type="submit"
           disabled={isIngesting || !files}
           className={styles.ingestButton}
         >
@@ -140,4 +180,4 @@ export default function DocumentIngestion({
       )}
     </div>
   );
-} 
+}

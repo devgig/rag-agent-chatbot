@@ -16,6 +16,11 @@
 #
 """FastAPI backend server for the chatbot application.
 
+Multi-tenant: every endpoint takes the JWT ``sub`` as ``current_user`` and
+scopes its reads/writes by that value. Cross-user reads/writes/deletes are
+impossible through the public API; chat IDs and source names are not enough
+to access another user's data.
+
 Streams chat responses over Server-Sent Events. Pairs with an in-process L1
 cache (in ``postgres_storage.py``) and a Redis-backed L2 cache (in
 ``cache.py``) so a user pinned to one pod via Istio consistent-hash sees
@@ -32,7 +37,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict
 
-from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, BackgroundTasks
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -87,17 +92,30 @@ vector_store = create_vector_store_with_config(config_manager, uri=MILVUS_ADDRES
 agent: ChatAgent | None = None
 
 TASK_TTL_SECONDS = 3600  # 1 hour
-indexing_tasks: Dict[str, tuple] = {}  # task_id -> (status, timestamp)
+# task_id -> (status, timestamp, owner_user_id) — owner gate so other users
+# can't read your ingestion progress
+indexing_tasks: Dict[str, tuple] = {}
 
 
-def _record_task(task_id: str, status: str) -> None:
+def _record_task(task_id: str, status: str, owner: str) -> None:
     """Record a task status and evict entries older than TASK_TTL_SECONDS."""
     now = time.time()
-    # Evict stale entries
-    stale = [tid for tid, (_, ts) in indexing_tasks.items() if now - ts > TASK_TTL_SECONDS]
+    stale = [
+        tid for tid, entry in indexing_tasks.items()
+        if now - entry[1] > TASK_TTL_SECONDS
+    ]
     for tid in stale:
         del indexing_tasks[tid]
-    indexing_tasks[task_id] = (status, now)
+    indexing_tasks[task_id] = (status, now, owner)
+
+
+def _update_task_status(task_id: str, status: str) -> None:
+    """Update an existing task's status, preserving its owner."""
+    entry = indexing_tasks.get(task_id)
+    if entry is None:
+        return
+    _, _, owner = entry
+    indexing_tasks[task_id] = (status, time.time(), owner)
 
 
 @asynccontextmanager
@@ -181,13 +199,12 @@ def _sse(event: dict) -> str:
 async def get_chat_history(chat_id: str, current_user: str = Depends(get_current_user)):
     """Return committed conversation history plus any saved partial.
 
-    The committed history comes from PostgreSQL (via L1/L2 cache). The
-    partial — if any — is the prefix of an answer the user saw before
-    cancelling or losing the connection; it lives in Redis with an 8h TTL.
+    Returns an empty history if the chat is owned by a different user — same
+    response shape as a nonexistent chat so we don't leak existence.
     """
-    history_messages = await postgres_storage.get_messages(chat_id)
+    history_messages = await postgres_storage.get_messages(current_user, chat_id)
     history = [postgres_storage._message_to_dict(msg) for msg in history_messages]
-    partial = await get_partial_response(chat_id)
+    partial = await get_partial_response(current_user, chat_id)
     return {"messages": history, "partial": partial}
 
 
@@ -200,15 +217,28 @@ async def stream_chat_query(
 ):
     """Stream an LLM response over SSE.
 
-    Per-user concurrency is bounded by ``MAX_STREAMS_PER_USER``. On clean
-    completion the partial buffer is cleared. On client disconnect or
-    cancel mid-stream, the buffered tokens are saved to Redis with TTL so
-    the user sees them on reconnect.
+    Caller must own ``chat_id``. On first query against a fresh chat_id we
+    create it under the caller; subsequent queries verify ownership.
     """
     if not body.message or not body.message.strip():
         raise HTTPException(status_code=400, detail="message is required")
     if len(body.message.encode("utf-8")) > MAX_QUERY_BYTES:
         raise HTTPException(status_code=413, detail="Message too large")
+
+    # If the chat exists, it must be owned by this user. If it doesn't, we'll
+    # create it on first save in the agent runner (save_messages_immediate has
+    # an INSERT path).
+    exists = await postgres_storage.exists(current_user, chat_id)
+    if not exists:
+        # Check whether some other user owns this chat_id (UUID collision /
+        # squatting attempt) — refuse to create under the wrong owner.
+        async with postgres_storage.pool.acquire() as conn:
+            other_owner = await conn.fetchval(
+                "SELECT user_id FROM conversations WHERE chat_id = $1",
+                chat_id,
+            )
+        if other_owner and other_owner != current_user:
+            raise HTTPException(status_code=404, detail="Chat not found")
 
     async with _streams_lock:
         if _active_streams[current_user] >= MAX_STREAMS_PER_USER:
@@ -219,15 +249,17 @@ async def stream_chat_query(
         partial_buffer: List[str] = []
         completed = False
         try:
-            # Any prior partial is being replaced by this new query.
-            await clear_partial_response(chat_id)
+            await clear_partial_response(current_user, chat_id)
             try:
-                async for event in agent.query(query_text=body.message, chat_id=chat_id):
+                async for event in agent.query(
+                    query_text=body.message,
+                    chat_id=chat_id,
+                    user_id=current_user,
+                ):
                     if event.get("type") == "token":
                         partial_buffer.append(event.get("data", "") or "")
                     yield _sse(event)
                     if await request.is_disconnected():
-                        # Treat client hangup like an explicit cancel.
                         raise asyncio.CancelledError()
                 completed = True
             except asyncio.CancelledError:
@@ -237,15 +269,18 @@ async def stream_chat_query(
                 yield _sse({"type": "error", "content": "An error occurred processing your request"})
 
             if completed:
-                final_messages = await postgres_storage.get_messages(chat_id)
+                final_messages = await postgres_storage.get_messages(current_user, chat_id)
                 final_history = [postgres_storage._message_to_dict(msg) for msg in final_messages]
                 yield _sse({"type": "history", "messages": final_history})
                 yield _sse({"type": "done"})
         except asyncio.CancelledError:
             partial = "".join(partial_buffer)
             if partial:
-                await save_partial_response(chat_id, partial)
-                logger.debug(f"Saved partial response for chat {chat_id} ({len(partial)} chars, TTL {CACHE_L2_TTL_SECONDS}s)")
+                await save_partial_response(current_user, chat_id, partial)
+                logger.debug(
+                    f"Saved partial response for chat {chat_id} (user={current_user}, "
+                    f"{len(partial)} chars, TTL {CACHE_L2_TTL_SECONDS}s)"
+                )
             raise
         finally:
             async with _streams_lock:
@@ -256,29 +291,39 @@ async def stream_chat_query(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache, no-transform",
-            "X-Accel-Buffering": "no",  # nginx + some L7 proxies
+            "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
         },
     )
 
 
-
 @app.post("/ingest")
-async def ingest_files(files: Optional[List[UploadFile]] = File(None), background_tasks: BackgroundTasks = None, current_user: str = Depends(get_current_user)):
+async def ingest_files(
+    files: Optional[List[UploadFile]] = File(None),
+    visibility: str = Form("private"),
+    background_tasks: BackgroundTasks = None,
+    current_user: str = Depends(get_current_user),
+):
     """Ingest documents for vector search and RAG.
-    
-    Args:
-        files: List of uploaded files to process
-        background_tasks: FastAPI background tasks manager
-        
-    Returns:
-        Task information for tracking ingestion progress
+
+    Uploads are tagged with the uploader (``user_id``) and a ``visibility``
+    of either ``"public"`` (visible to all users) or ``"private"`` (visible
+    only to the uploader, the default).
     """
     try:
         if not files:
             raise HTTPException(status_code=400, detail="No files provided")
 
-        log_request({"file_count": len(files)}, "/ingest")
+        if visibility not in ("public", "private"):
+            raise HTTPException(
+                status_code=400,
+                detail="visibility must be 'public' or 'private'",
+            )
+
+        log_request(
+            {"file_count": len(files), "visibility": visibility, "user": current_user},
+            "/ingest",
+        )
 
         task_id = str(uuid.uuid4())
 
@@ -307,29 +352,31 @@ async def ingest_files(files: Optional[List[UploadFile]] = File(None), backgroun
                 "filename": file.filename,
                 "content": content
             })
-        
-        _record_task(task_id, "queued")
+
+        _record_task(task_id, "queued", current_user)
 
         background_tasks.add_task(
             process_and_ingest_files_background,
             file_info,
             vector_store,
-            config_manager,
+            current_user,
+            visibility,
             task_id,
             indexing_tasks,
-            postgres_storage
+            postgres_storage,
         )
-        
+
         response = {
             "message": f"Files queued for processing. Indexing {len(files)} files in the background.",
             "files": [file.filename for file in files],
             "status": "queued",
-            "task_id": task_id
+            "task_id": task_id,
+            "visibility": visibility,
         }
-        
+
         log_response(response, "/ingest")
         return response
-            
+
     except Exception as e:
         log_error(e, "/ingest")
         raise HTTPException(
@@ -341,25 +388,28 @@ async def ingest_files(files: Optional[List[UploadFile]] = File(None), backgroun
 @app.get("/ingest/status/{task_id}")
 async def get_indexing_status(task_id: str, current_user: str = Depends(get_current_user)):
     """Get the status of a file ingestion task.
-    
-    Args:
-        task_id: Unique task identifier
-        
-    Returns:
-        Current task status
+
+    Only the task owner can read its status. Other users get 404 (not 403)
+    so we don't leak task existence.
     """
-    if task_id in indexing_tasks:
-        status, _ = indexing_tasks[task_id]
-        return {"status": status}
-    else:
+    entry = indexing_tasks.get(task_id)
+    if entry is None:
         raise HTTPException(status_code=404, detail="Task not found")
+    status, _, owner = entry
+    if owner != current_user:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {"status": status}
 
 
 @app.get("/sources")
 async def get_sources(current_user: str = Depends(get_current_user)):
-    """Get all available document sources from PostgreSQL."""
+    """Return sources visible to the caller (public + their own).
+
+    Each entry has ``source_name`` and ``ownership`` ("public" or "yours")
+    so the frontend can badge sources accordingly.
+    """
     try:
-        sources = await postgres_storage.get_source_names()
+        sources = await postgres_storage.get_visible_sources(current_user)
         return {"sources": sources}
     except Exception as e:
         logger.error(f"Unhandled error: {e}", exc_info=True)
@@ -368,39 +418,43 @@ async def get_sources(current_user: str = Depends(get_current_user)):
 
 @app.delete("/sources/{source_name}")
 async def delete_source(source_name: str, current_user: str = Depends(get_current_user)):
-    """Delete a document source and its embeddings from Milvus.
+    """Delete a document source that the caller owns.
 
-    Args:
-        source_name: Name of the source to delete
-
-    Returns:
-        Deletion result with count of removed embeddings
+    Public sources owned by other users (or legacy NULL-owner sources)
+    return 404 — they require admin tooling to remove.
     """
     try:
-        # Delete embeddings from Milvus (sync pymilvus call — run off event loop)
-        deleted_count = await asyncio.to_thread(vector_store.delete_documents_by_source, source_name)
+        # Verify ownership before touching Milvus
+        deleted_record = await postgres_storage.delete_document_source(
+            source_name, current_user
+        )
+        if not deleted_record:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Source '{source_name}' not found or not owned by you",
+            )
 
+        deleted_count = await asyncio.to_thread(
+            vector_store.delete_documents_by_source, source_name, current_user
+        )
         if deleted_count < 0:
-            raise HTTPException(status_code=500, detail=f"Error deleting embeddings for source: {source_name}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error deleting embeddings for source: {source_name}",
+            )
 
-        # Delete source record from PostgreSQL
-        source_deleted = await postgres_storage.delete_document_source(source_name)
-
-        # Also remove from config if present (for backwards compatibility)
-        config = config_manager.read_config()
-        if source_name in config.sources:
-            config.sources.remove(source_name)
-            config_manager.write_config(config)
-        if source_name in config.selected_sources:
-            config.selected_sources.remove(source_name)
-            config_manager.write_config(config)
+        # Drop from this user's selected_sources if present
+        prefs = await postgres_storage.get_user_preferences(current_user)
+        selected = prefs.get("selected_sources") or []
+        if source_name in selected:
+            selected.remove(source_name)
+            await postgres_storage.update_user_selected_sources(current_user, selected)
 
         return {
             "status": "success",
             "message": f"Deleted source '{source_name}' with {deleted_count} embeddings",
             "source_name": source_name,
             "embeddings_deleted": deleted_count,
-            "source_record_deleted": source_deleted
         }
     except HTTPException:
         raise
@@ -411,25 +465,33 @@ async def delete_source(source_name: str, current_user: str = Depends(get_curren
 
 @app.get("/selected_sources")
 async def get_selected_sources(current_user: str = Depends(get_current_user)):
-    """Get currently selected document sources for RAG."""
+    """Get this user's currently selected document sources."""
     try:
-        config = config_manager.read_config()
-        return {"sources": config.selected_sources}
+        prefs = await postgres_storage.get_user_preferences(current_user)
+        return {"sources": prefs.get("selected_sources") or []}
     except Exception as e:
         logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="An internal error occurred")
 
 
 @app.post("/selected_sources")
-async def update_selected_sources(selected_sources: List[str], current_user: str = Depends(get_current_user)):
-    """Update the selected document sources for RAG.
-    
-    Args:
-        selected_sources: List of source names to use for retrieval
+async def update_selected_sources(
+    selected_sources: List[str],
+    current_user: str = Depends(get_current_user),
+):
+    """Update this user's selected sources for RAG.
+
+    Only sources visible to the caller (public + their own) may be selected;
+    anything else is silently dropped so the user can't pin private sources
+    they don't own.
     """
     try:
-        config_manager.updated_selected_sources(selected_sources)
-        return {"status": "success", "message": "Selected sources updated successfully"}
+        visible = set(
+            await postgres_storage.get_visible_source_names(current_user)
+        )
+        filtered = [s for s in selected_sources if s in visible]
+        await postgres_storage.update_user_selected_sources(current_user, filtered)
+        return {"status": "success", "selected_sources": filtered}
     except Exception as e:
         logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="An internal error occurred")
@@ -437,7 +499,7 @@ async def update_selected_sources(selected_sources: List[str], current_user: str
 
 @app.get("/selected_model")
 async def get_selected_model(current_user: str = Depends(get_current_user)):
-    """Get the currently selected LLM model."""
+    """Get the currently selected LLM model (server-wide)."""
     try:
         model = config_manager.get_selected_model()
         return {"model": model}
@@ -448,10 +510,10 @@ async def get_selected_model(current_user: str = Depends(get_current_user)):
 
 @app.post("/selected_model")
 async def update_selected_model(request: SelectedModelRequest, current_user: str = Depends(get_current_user)):
-    """Update the selected LLM model.
-    
-    Args:
-        request: Model selection request with model name
+    """Update the selected LLM model (server-wide).
+
+    Note: this is currently shared across users. Per-user model selection is
+    out of scope for PR 1.
     """
     try:
         logger.debug(f"Updating selected model to: {request.model}")
@@ -475,9 +537,9 @@ async def get_available_models(current_user: str = Depends(get_current_user)):
 
 @app.get("/chats")
 async def list_chats(current_user: str = Depends(get_current_user)):
-    """Get list of all chat conversations."""
+    """Get list of the caller's chat conversations."""
     try:
-        chat_ids = await postgres_storage.list_conversations()
+        chat_ids = await postgres_storage.list_conversations(current_user)
         return {"chats": chat_ids}
     except Exception as e:
         logger.error(f"Unhandled error: {e}", exc_info=True)
@@ -486,28 +548,22 @@ async def list_chats(current_user: str = Depends(get_current_user)):
 
 @app.get("/chat_id")
 async def get_chat_id(current_user: str = Depends(get_current_user)):
-    """Get the current active chat ID, creating a conversation if it doesn't exist."""
+    """Get the caller's last-active chat ID, creating one if missing."""
     try:
-        config = config_manager.read_config()
-        current_chat_id = config.current_chat_id
-        
-        if current_chat_id and await postgres_storage.exists(current_chat_id):
-            return {
-                "status": "success",
-                "chat_id": current_chat_id
-            }
-        
+        prefs = await postgres_storage.get_user_preferences(current_user)
+        current_chat_id = prefs.get("current_chat_id")
+
+        if current_chat_id and await postgres_storage.exists(current_user, current_chat_id):
+            return {"status": "success", "chat_id": current_chat_id}
+
         new_chat_id = str(uuid.uuid4())
-        
-        await postgres_storage.save_messages_immediate(new_chat_id, [])
-        await postgres_storage.set_chat_metadata(new_chat_id, f"Chat {new_chat_id[:8]}")
-        
-        config_manager.updated_current_chat_id(new_chat_id)
-        
-        return {
-            "status": "success",
-            "chat_id": new_chat_id
-        }
+        await postgres_storage.save_messages_immediate(current_user, new_chat_id, [])
+        await postgres_storage.set_chat_metadata(
+            current_user, new_chat_id, f"Chat {new_chat_id[:8]}"
+        )
+        await postgres_storage.update_user_current_chat_id(current_user, new_chat_id)
+
+        return {"status": "success", "chat_id": new_chat_id}
     except Exception as e:
         logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(
@@ -518,18 +574,21 @@ async def get_chat_id(current_user: str = Depends(get_current_user)):
 
 @app.post("/chat_id")
 async def update_chat_id(request: ChatIdRequest, current_user: str = Depends(get_current_user)):
-    """Update the current active chat ID.
-    
-    Args:
-        request: Chat ID update request
+    """Update the caller's last-active chat ID.
+
+    Only succeeds if the caller owns the chat; otherwise 404.
     """
     try:
-        config_manager.updated_current_chat_id(request.chat_id)
+        if not await postgres_storage.exists(current_user, request.chat_id):
+            raise HTTPException(status_code=404, detail="Chat not found")
+        await postgres_storage.update_user_current_chat_id(current_user, request.chat_id)
         return {
             "status": "success",
             "message": f"Current chat ID updated to {request.chat_id}",
-            "chat_id": request.chat_id
+            "chat_id": request.chat_id,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(
@@ -540,16 +599,9 @@ async def update_chat_id(request: ChatIdRequest, current_user: str = Depends(get
 
 @app.get("/chat/{chat_id}/metadata")
 async def get_chat_metadata(chat_id: str, current_user: str = Depends(get_current_user)):
-    """Get metadata for a specific chat.
-    
-    Args:
-        chat_id: Unique chat identifier
-        
-    Returns:
-        Chat metadata including name
-    """
+    """Get metadata for a chat the caller owns."""
     try:
-        metadata = await postgres_storage.get_chat_metadata(chat_id)
+        metadata = await postgres_storage.get_chat_metadata(current_user, chat_id)
         return metadata
     except Exception as e:
         logger.error(f"Unhandled error: {e}", exc_info=True)
@@ -561,17 +613,19 @@ async def get_chat_metadata(chat_id: str, current_user: str = Depends(get_curren
 
 @app.post("/chat/rename")
 async def rename_chat(request: ChatRenameRequest, current_user: str = Depends(get_current_user)):
-    """Rename a chat conversation.
-    
-    Args:
-        request: Chat rename request with chat_id and new_name
-    """
+    """Rename a chat conversation the caller owns."""
     try:
-        await postgres_storage.set_chat_metadata(request.chat_id, request.new_name)
+        if not await postgres_storage.exists(current_user, request.chat_id):
+            raise HTTPException(status_code=404, detail="Chat not found")
+        await postgres_storage.set_chat_metadata(
+            current_user, request.chat_id, request.new_name
+        )
         return {
             "status": "success",
             "message": f"Chat {request.chat_id} renamed to {request.new_name}"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(
@@ -582,14 +636,14 @@ async def rename_chat(request: ChatRenameRequest, current_user: str = Depends(ge
 
 @app.post("/chat/new")
 async def create_new_chat(current_user: str = Depends(get_current_user)):
-    """Create a new chat conversation and set it as current."""
+    """Create a new chat conversation for the caller and set it current."""
     try:
         new_chat_id = str(uuid.uuid4())
-        await postgres_storage.save_messages_immediate(new_chat_id, [])
-        await postgres_storage.set_chat_metadata(new_chat_id, f"Chat {new_chat_id[:8]}")
-        
-        config_manager.updated_current_chat_id(new_chat_id)
-        
+        await postgres_storage.save_messages_immediate(current_user, new_chat_id, [])
+        await postgres_storage.set_chat_metadata(
+            current_user, new_chat_id, f"Chat {new_chat_id[:8]}"
+        )
+        await postgres_storage.update_user_current_chat_id(current_user, new_chat_id)
         return {
             "status": "success",
             "message": "New chat created",
@@ -605,14 +659,10 @@ async def create_new_chat(current_user: str = Depends(get_current_user)):
 
 @app.delete("/chat/{chat_id}")
 async def delete_chat(chat_id: str, current_user: str = Depends(get_current_user)):
-    """Delete a specific chat and its messages.
-    
-    Args:
-        chat_id: Unique chat identifier to delete
-    """
+    """Delete a chat the caller owns. 404 on not-owned/not-found."""
     try:
-        success = await postgres_storage.delete_conversation(chat_id)
-        
+        success = await postgres_storage.delete_conversation(current_user, chat_id)
+
         if success:
             return {
                 "status": "success",
@@ -623,6 +673,8 @@ async def delete_chat(chat_id: str, current_user: str = Depends(get_current_user
                 status_code=404,
                 detail=f"Chat {chat_id} not found"
             )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Unhandled error: {e}", exc_info=True)
         raise HTTPException(
@@ -633,21 +685,25 @@ async def delete_chat(chat_id: str, current_user: str = Depends(get_current_user
 
 @app.delete("/chats/clear")
 async def clear_all_chats(current_user: str = Depends(get_current_user)):
-    """Clear all chat conversations and create a new default chat."""
+    """Clear the caller's chats and create a fresh empty one as current.
+
+    Only the caller's chats are affected — never another user's data.
+    """
     try:
-        chat_ids = await postgres_storage.list_conversations()
+        chat_ids = await postgres_storage.list_conversations(current_user)
         cleared_count = 0
-        
+
         for chat_id in chat_ids:
-            if await postgres_storage.delete_conversation(chat_id):
+            if await postgres_storage.delete_conversation(current_user, chat_id):
                 cleared_count += 1
-        
+
         new_chat_id = str(uuid.uuid4())
-        await postgres_storage.save_messages_immediate(new_chat_id, [])
-        await postgres_storage.set_chat_metadata(new_chat_id, f"Chat {new_chat_id[:8]}")
-        
-        config_manager.updated_current_chat_id(new_chat_id)
-        
+        await postgres_storage.save_messages_immediate(current_user, new_chat_id, [])
+        await postgres_storage.set_chat_metadata(
+            current_user, new_chat_id, f"Chat {new_chat_id[:8]}"
+        )
+        await postgres_storage.update_user_current_chat_id(current_user, new_chat_id)
+
         return {
             "status": "success",
             "message": f"Cleared {cleared_count} chats and created new chat",
@@ -662,22 +718,11 @@ async def clear_all_chats(current_user: str = Depends(get_current_user)):
         )
 
 
-@app.delete("/collections/{collection_name}")
-async def delete_collection(collection_name: str, current_user: str = Depends(get_current_user)):
-    """Delete a document collection from the vector store.
-    
-    Args:
-        collection_name: Name of the collection to delete
-    """
-    try:
-        success = await asyncio.to_thread(vector_store.delete_collection, collection_name)
-        if success:
-            return {"status": "success", "message": f"Collection '{collection_name}' deleted successfully"}
-        else:
-            raise HTTPException(status_code=404, detail=f"Collection '{collection_name}' not found or could not be deleted")
-    except Exception as e:
-        logger.error(f"Unhandled error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+# NOTE: The previous DELETE /collections/{collection_name} endpoint was removed
+# as part of PR 1. It allowed any authenticated user to drop arbitrary Milvus
+# collections, including the shared ``context`` collection that backs RAG for
+# every user. Per-user source deletion goes through DELETE /sources/{name}
+# which is ownership-scoped via Postgres + Milvus user_id filters.
 
 
 if __name__ == "__main__":

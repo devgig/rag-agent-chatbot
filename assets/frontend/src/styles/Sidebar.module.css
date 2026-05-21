@@ -618,6 +618,37 @@ input:checked + .toggleSlider:before {
   color: #e5e7eb;
 }
 
+.sourceBadge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.sourceBadgeYours {
+  background-color: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
+}
+
+.sourceBadgePublic {
+  background-color: rgba(107, 114, 128, 0.15);
+  color: #4b5563;
+}
+
+:global(.dark) .sourceBadgeYours {
+  background-color: rgba(96, 165, 250, 0.18);
+  color: #93c5fd;
+}
+
+:global(.dark) .sourceBadgePublic {
+  background-color: rgba(156, 163, 175, 0.18);
+  color: #d1d5db;
+}
+
 .deleteSourceButton {
   background: none;
   border: none;

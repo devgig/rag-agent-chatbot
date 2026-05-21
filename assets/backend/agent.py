@@ -39,6 +39,7 @@ LLM_REQUEST_TIMEOUT = 120.0
 class State(TypedDict, total=False):
     messages: List[AnyMessage]
     chat_id: Optional[str]
+    user_id: Optional[str]
 
 
 class ChatAgent:
@@ -93,29 +94,33 @@ class ChatAgent:
         await self.stream_callback({'type': 'node_start', 'data': 'generate'})
 
         user_query = self._extract_user_query(state)
+        user_id = state.get("user_id")
+        if not user_id:
+            raise ValueError("agent.generate requires user_id in state")
         logger.debug({
             "message": "GRAPH: generate — inline search + LLM",
             "chat_id": state.get("chat_id"),
+            "user_id": user_id,
             "query": user_query[:100],
         })
 
         # --- Document search (inline, replaces MCP subprocess) ---
-        config_obj = self.config_manager.read_config()
-        sources = config_obj.selected_sources or []
+        prefs = await self.conversation_store.get_user_preferences(user_id)
+        sources = prefs.get("selected_sources") or []
 
         if sources:
             retrieved_docs = await asyncio.to_thread(
-                self.vector_store.get_documents, user_query, 5, sources
+                self.vector_store.get_documents, user_query, user_id, 5, sources
             )
         else:
             retrieved_docs = await asyncio.to_thread(
-                self.vector_store.get_documents, user_query
+                self.vector_store.get_documents, user_query, user_id
             )
 
         if not retrieved_docs and sources:
             logger.info("No documents with source filter, retrying without filter")
             retrieved_docs = await asyncio.to_thread(
-                self.vector_store.get_documents, user_query
+                self.vector_store.get_documents, user_query, user_id
             )
 
         # Format context string (same format as former rag.py MCP tool)
@@ -298,12 +303,15 @@ class ChatAgent:
 
         return llm_output_buffer, tool_calls_buffer, usage
 
-    async def query(self, query_text: str, chat_id: str) -> AsyncIterator[Dict[str, Any]]:
+    async def query(
+        self, query_text: str, chat_id: str, user_id: str
+    ) -> AsyncIterator[Dict[str, Any]]:
         """Process user query and stream response tokens.
 
         Args:
             query_text: User's input text
             chat_id: Unique chat identifier
+            user_id: Authenticated user (from JWT sub)
 
         Yields:
             Streaming events and tokens
@@ -311,6 +319,7 @@ class ChatAgent:
         logger.debug({
             "message": "GRAPH: STARTING EXECUTION",
             "chat_id": chat_id,
+            "user_id": user_id,
             "query": query_text[:100] + "..." if len(query_text) > 100 else query_text,
             "graph_flow": "START → generate → END"
         })
@@ -318,6 +327,7 @@ class ChatAgent:
         try:
             initial_state = {
                 "chat_id": chat_id,
+                "user_id": user_id,
                 "messages": [HumanMessage(content=query_text)],
             }
 
@@ -335,7 +345,7 @@ class ChatAgent:
             self._usage_accumulator = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             token_q: asyncio.Queue[Any] = asyncio.Queue()
             self.stream_callback = lambda event: self._queue_writer(event, token_q)
-            runner = asyncio.create_task(self._run_graph(initial_state, chat_id, token_q))
+            runner = asyncio.create_task(self._run_graph(initial_state, chat_id, user_id, token_q))
 
             try:
                 while True:
@@ -369,7 +379,13 @@ class ChatAgent:
         """
         await token_q.put(event)
 
-    async def _run_graph(self, initial_state: Dict[str, Any], chat_id: str, token_q: asyncio.Queue) -> None:
+    async def _run_graph(
+        self,
+        initial_state: Dict[str, Any],
+        chat_id: str,
+        user_id: str,
+        token_q: asyncio.Queue,
+    ) -> None:
         """Run the graph execution in background task."""
         try:
             async for final_state in self.graph.astream(
@@ -382,22 +398,33 @@ class ChatAgent:
             try:
                 if self.last_state and self.last_state.get("messages"):
                     try:
-                        logger.debug(f'Saving messages to conversation store for chat: {chat_id}')
-                        # Append this turn's non-system messages and save
-                        # immediately so the history sent to the frontend
-                        # right after is always up to date.
+                        logger.debug(
+                            f'Saving messages to conversation store for chat: {chat_id} '
+                            f'(user={user_id})'
+                        )
                         new_messages = [
                             msg for msg in self.last_state["messages"]
                             if not isinstance(msg, SystemMessage)
                         ]
-                        cached = self.conversation_store._get_cached_messages(chat_id)
+                        cached = self.conversation_store._get_cached_messages(
+                            user_id, chat_id
+                        )
                         if cached is not None:
                             combined = cached + new_messages
                         else:
-                            existing = await self.conversation_store.get_messages(chat_id)
+                            existing = await self.conversation_store.get_messages(
+                                user_id, chat_id
+                            )
                             combined = existing + new_messages
-                        await self.conversation_store.save_messages_immediate(chat_id, combined)
+                        await self.conversation_store.save_messages_immediate(
+                            user_id, chat_id, combined
+                        )
                     except Exception as save_err:
-                        logger.warning({"message": "Failed to persist conversation", "chat_id": chat_id, "error": str(save_err)})
+                        logger.warning({
+                            "message": "Failed to persist conversation",
+                            "chat_id": chat_id,
+                            "user_id": user_id,
+                            "error": str(save_err),
+                        })
             finally:
                 await token_q.put(SENTINEL)

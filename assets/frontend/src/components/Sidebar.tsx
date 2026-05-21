@@ -17,6 +17,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import styles from '@/styles/Sidebar.module.css';
 import { apiFetch } from '@/lib/api';
+import type { Source } from '@/types/config';
 
 interface Model {
   id: string;
@@ -49,7 +50,7 @@ export default function Sidebar({
   const [isClosing, setIsClosing] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["config", "history"]));
   const [isLoading, setIsLoading] = useState(false);
-  const [availableSources, setAvailableSources] = useState<string[]>([]);
+  const [availableSources, setAvailableSources] = useState<Source[]>([]);
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [isLoadingSources, setIsLoadingSources] = useState(false);
@@ -87,13 +88,15 @@ export default function Sidebar({
         // Get available models
         await fetchAvailableModels();
 
-        // Get sources, then auto-select first if none selected
+        // Get sources, then auto-select first if none selected.
+        // Backend returns {sources: [{source_name, ownership, ...}]} after PR 1.
         const availResponse = await apiFetch("/sources");
         if (availResponse.ok) {
           const { sources: avail } = await availResponse.json();
-          setAvailableSources(avail || []);
-          if (currentSelected.length === 0 && avail && avail.length > 0) {
-            const autoSelected = [avail[0]];
+          const sourceList: Source[] = avail || [];
+          setAvailableSources(sourceList);
+          if (currentSelected.length === 0 && sourceList.length > 0) {
+            const autoSelected = [sourceList[0].source_name];
             setSelectedSources(autoSelected);
             await apiFetch("/selected_sources", {
               method: "POST",
@@ -158,7 +161,7 @@ export default function Sidebar({
 
       const data = await response.json();
       console.log("Sources fetched:", data.sources);
-      setAvailableSources(data.sources || []);
+      setAvailableSources((data.sources as Source[]) || []);
     } catch (error) {
       console.error("Error fetching sources:", error);
       setAvailableSources([]);
@@ -592,38 +595,52 @@ export default function Sidebar({
                     {availableSources.length === 0 ? (
                       <div className={styles.noSources}>No sources available</div>
                     ) : (
-                      availableSources.map(source => (
-                        <div key={source} className={styles.sourceItem}>
-                          <input
-                            type="checkbox"
-                            id={`source-${source}`}
-                            checked={selectedSources.includes(source)}
-                            onChange={() => handleSourceToggle(source)}
-                          />
-                          <label htmlFor={`source-${source}`} className={styles.sourceLabel}>{source}</label>
-                          <button
-                            className={styles.deleteSourceButton}
-                            onClick={(e) => handleDeleteSource(source, e)}
-                            title={`Delete ${source}`}
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              width="14"
-                              height="14"
+                      availableSources.map(source => {
+                        const name = source.source_name;
+                        const isOwn = source.ownership === "yours";
+                        return (
+                          <div key={name} className={styles.sourceItem}>
+                            <input
+                              type="checkbox"
+                              id={`source-${name}`}
+                              checked={selectedSources.includes(name)}
+                              onChange={() => handleSourceToggle(name)}
+                            />
+                            <label htmlFor={`source-${name}`} className={styles.sourceLabel}>
+                              {name}
+                            </label>
+                            <span
+                              className={`${styles.sourceBadge} ${isOwn ? styles.sourceBadgeYours : styles.sourceBadgePublic}`}
+                              title={isOwn ? "You uploaded this" : "Public — visible to all users"}
                             >
-                              <path d="M3 6h18" />
-                              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                            </svg>
-                          </button>
-                        </div>
-                      ))
+                              {isOwn ? "yours" : "public"}
+                            </span>
+                            {isOwn && (
+                              <button
+                                className={styles.deleteSourceButton}
+                                onClick={(e) => handleDeleteSource(name, e)}
+                                title={`Delete ${name}`}
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  width="14"
+                                  height="14"
+                                >
+                                  <path d="M3 6h18" />
+                                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                   <div className={styles.buttonGroup}>

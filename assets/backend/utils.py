@@ -31,21 +31,25 @@ from vector_store import VectorStore
 async def process_and_ingest_files_background(
     file_info: List[dict],
     vector_store: VectorStore,
-    config_manager,
+    user_id: str,
+    visibility: str,
     task_id: str,
     indexing_tasks: Dict[str, str],
-    postgres_storage=None
+    postgres_storage=None,
 ) -> None:
     """Process and ingest files in the background.
 
     Args:
         file_info: List of file dictionaries with 'filename' and 'content' keys
         vector_store: VectorStore instance for document indexing
-        config_manager: ConfigManager instance for updating sources
+        user_id: Authenticated uploader (JWT sub)
+        visibility: 'public' or 'private' — controls who can retrieve the chunks
         task_id: Unique identifier for this processing task
         indexing_tasks: Dictionary to track task status
         postgres_storage: PostgreSQL storage for persisting source metadata
     """
+    if visibility not in ("public", "private"):
+        raise ValueError(f"Invalid visibility: {visibility!r}")
     try:
         logger.debug({
             "message": "Starting background file processing",
@@ -104,42 +108,32 @@ async def process_and_ingest_files_background(
             })
             
             indexing_tasks[task_id] = ("indexing_documents", time.time())
-            await asyncio.to_thread(vector_store.index_documents, documents)
+            await asyncio.to_thread(
+                vector_store.index_documents, documents, user_id, visibility
+            )
 
-            # Save sources to PostgreSQL for persistence
+            # Save sources to PostgreSQL with user_id + visibility scoping
             if file_names and postgres_storage:
                 for idx, file_name in enumerate(file_names):
                     file_path = file_paths[idx] if idx < len(file_paths) else None
-                    chunk_count = len([d for d in documents if d.metadata.get("filename") == file_name])
+                    chunk_count = len(
+                        [d for d in documents if d.metadata.get("filename") == file_name]
+                    )
                     await postgres_storage.add_document_source(
                         source_name=file_name,
+                        user_id=user_id,
+                        visibility=visibility,
                         file_path=file_path,
                         task_id=task_id,
-                        chunk_count=chunk_count
+                        chunk_count=chunk_count,
                     )
                 logger.debug({
                     "message": "Saved sources to PostgreSQL",
                     "task_id": task_id,
-                    "sources": file_names
+                    "sources": file_names,
+                    "user_id": user_id,
+                    "visibility": visibility,
                 })
-
-            # Also update config for backwards compatibility
-            if file_names:
-                config = config_manager.read_config()
-
-                config_updated = False
-                for file_name in file_names:
-                    if file_name not in config.sources:
-                        config.sources.append(file_name)
-                        config_updated = True
-
-                if config_updated:
-                    config_manager.write_config(config)
-                    logger.debug({
-                        "message": "Updated config with new sources",
-                        "task_id": task_id,
-                        "sources": config.sources
-                    })
             
             indexing_tasks[task_id] = ("completed", time.time())
             logger.debug({

@@ -14,6 +14,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 */
+export type SourceOwnership = "public" | "yours";
+
+export interface Source {
+  source_name: string;
+  ownership: SourceOwnership;
+  chunk_count?: number;
+  created_at?: string | null;
+}
+
 export interface ChatConfig {
   id: string;
   name: string;
@@ -24,7 +33,7 @@ export interface ChatConfig {
 export interface AppConfig {
   currentChatId: string;
   chats: ChatConfig[];
-  sources: string[];
+  sources: Source[];
 }
 
 export const DEFAULT_CONFIG: AppConfig = {

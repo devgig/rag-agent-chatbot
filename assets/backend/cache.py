@@ -127,18 +127,27 @@ redis_cache = RedisCache()
 _PARTIAL_NS = "partial"
 
 
-async def save_partial_response(chat_id: str, content: str) -> None:
-    """Persist a partial assistant response keyed by chat_id."""
+def _partial_key(user_id: str, chat_id: str) -> str:
+    """User-scoped partial key. `|` is safe because neither value can contain it."""
+    return f"{user_id}|{chat_id}"
+
+
+async def save_partial_response(user_id: str, chat_id: str, content: str) -> None:
+    """Persist a partial assistant response keyed by user + chat."""
     if not content:
         return
-    await redis_cache.set_json(_PARTIAL_NS, chat_id, {"content": content, "truncated": True})
+    await redis_cache.set_json(
+        _PARTIAL_NS,
+        _partial_key(user_id, chat_id),
+        {"content": content, "truncated": True},
+    )
 
 
-async def get_partial_response(chat_id: str) -> Optional[dict]:
+async def get_partial_response(user_id: str, chat_id: str) -> Optional[dict]:
     """Return ``{'content': str, 'truncated': True}`` or ``None``."""
-    return await redis_cache.get_json(_PARTIAL_NS, chat_id)
+    return await redis_cache.get_json(_PARTIAL_NS, _partial_key(user_id, chat_id))
 
 
-async def clear_partial_response(chat_id: str) -> None:
+async def clear_partial_response(user_id: str, chat_id: str) -> None:
     """Remove any saved partial — call on stream completion or new query."""
-    await redis_cache.delete(_PARTIAL_NS, chat_id)
+    await redis_cache.delete(_PARTIAL_NS, _partial_key(user_id, chat_id))

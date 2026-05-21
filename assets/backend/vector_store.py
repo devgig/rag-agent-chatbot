@@ -15,17 +15,13 @@
 # limitations under the License.
 #
 import glob
-from typing import List, Tuple
+from typing import List, Optional, Callable
 import os
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_milvus import Milvus
 from langchain_core.documents import Document
-from typing_extensions import List
-from langchain_openai import OpenAIEmbeddings
 from langchain_unstructured import UnstructuredLoader
-from dotenv import load_dotenv
 from logger import logger
-from typing import Optional, Callable
 import requests
 
 
@@ -75,10 +71,28 @@ def _sanitize_milvus_string(value: str) -> str:
     return value.replace('\\', '\\\\').replace('"', '\\"')
 
 
+def _build_visibility_filter(user_id: str) -> str:
+    """Build a Milvus filter expression that limits results to chunks visible
+    to the given user — i.e. public chunks plus chunks the user uploaded.
+
+    Legacy chunks indexed before user-scoping have no ``visibility`` / ``user_id``
+    metadata at all; ``langchain_milvus`` writes those fields as empty string
+    when missing from a document's metadata. We treat empty visibility as public,
+    matching the Postgres-side legacy semantics.
+    """
+    safe_user = _sanitize_milvus_string(user_id)
+    return (
+        f'(visibility == "public" || visibility == "" || user_id == "{safe_user}")'
+    )
+
+
 class VectorStore:
     """Vector store for document embedding and retrieval.
 
-    Decoupled from ConfigManager - uses optional callbacks for source management.
+    Document chunks carry per-user metadata so each user only sees public
+    chunks and their own. The Milvus ``context`` collection has dynamic fields
+    enabled, so adding new metadata keys (``user_id``, ``visibility``) doesn't
+    require a schema migration on the Milvus side.
     """
 
     def __init__(
@@ -103,7 +117,7 @@ class VectorStore:
         except Exception as e:
             logger.error({"message": "Error initializing VectorStore", "error": str(e)}, exc_info=True)
             raise
-    
+
     def _ensure_milvus_connection(self) -> None:
         """Ensure a persistent Milvus connection exists, reconnecting if needed."""
         from pymilvus import connections
@@ -117,6 +131,7 @@ class VectorStore:
             collection_name="context",
             connection_args={"uri": self.uri},
             auto_id=True,
+            enable_dynamic_field=True,  # allow user_id + visibility without schema migration
             index_params={
                 "metric_type": "COSINE",
                 "index_type": "HNSW",
@@ -133,11 +148,11 @@ class VectorStore:
             "collection": "context"
         })
 
-    def _load_documents(self, file_paths: List[str] = None, input_dir: str = None) -> List[str]:
+    def _load_documents(self, file_paths: List[str] = None, input_dir: str = None) -> List[Document]:
         try:
             documents = []
             source_name = None
-            
+
             if input_dir:
                 source_name = os.path.basename(os.path.normpath(input_dir))
                 logger.debug({
@@ -147,25 +162,23 @@ class VectorStore:
                 })
                 file_paths = glob.glob(os.path.join(input_dir, "**"), recursive=True)
                 file_paths = [f for f in file_paths if os.path.isfile(f)]
-            
+
             logger.info(f"Processing {len(file_paths)} files: {file_paths}")
-            
+
             for file_path in file_paths:
                 try:
                     if not source_name:
                         source_name = os.path.basename(file_path)
                         logger.info(f"Using filename as source: {source_name}")
-                    
+
                     logger.info(f"Loading file: {file_path}")
-                    
+
                     file_ext = os.path.splitext(file_path)[1].lower()
                     logger.info(f"File extension: {file_ext}")
-                    
+
                     docs = None
                     file_text = None
 
-                    # For PDFs, use PyPDF first — it's faster and more
-                    # reliable than UnstructuredLoader on ARM64.
                     if file_ext == ".pdf":
                         logger.info("Loading PDF with PyPDF")
                         try:
@@ -183,7 +196,6 @@ class VectorStore:
                         except Exception as pypdf_error:
                             logger.info(f"PyPDF failed: {pypdf_error}")
 
-                    # For non-PDFs (or if PyPDF failed), try UnstructuredLoader
                     if not file_text and docs is None:
                         try:
                             loader = UnstructuredLoader(file_path)
@@ -192,7 +204,6 @@ class VectorStore:
                         except Exception as unstructured_error:
                             logger.error(f'UnstructuredLoader failed: {unstructured_error}')
 
-                    # Final fallback: raw text read
                     if not file_text and docs is None:
                         logger.info("Falling back to raw text read of file contents")
                         try:
@@ -202,7 +213,6 @@ class VectorStore:
                             logger.info(f"Fallback read failed: {read_error}")
                             file_text = ""
 
-                    # Convert extracted text to a Document if we don't have docs yet
                     if docs is None:
                         if file_text and file_text.strip():
                             docs = [Document(
@@ -223,19 +233,14 @@ class VectorStore:
                                     "filename": os.path.basename(file_path),
                                 }
                             )]
-                    
+
                     for doc in docs:
                         if not doc.metadata:
                             doc.metadata = {}
-
-                        # Only include metadata fields that are in the Milvus schema
-                        # The 'context' collection has dynamic fields disabled and only accepts:
-                        # source, file_path, filename
                         cleaned_metadata = {}
                         cleaned_metadata["source"] = source_name
                         cleaned_metadata["file_path"] = file_path
                         cleaned_metadata["filename"] = os.path.basename(file_path)
-
                         doc.metadata = cleaned_metadata
                     documents.extend(docs)
                     logger.debug({
@@ -253,7 +258,7 @@ class VectorStore:
 
             logger.info(f"Total documents loaded: {len(documents)}")
             return documents
-            
+
         except Exception as e:
             logger.error({
                 "message": "Error loading documents",
@@ -261,25 +266,44 @@ class VectorStore:
             }, exc_info=True)
             raise
 
-    def index_documents(self, documents: List[Document]) -> List[Document]:
+    def index_documents(
+        self,
+        documents: List[Document],
+        user_id: str,
+        visibility: str = "private",
+    ) -> None:
+        """Index documents with per-user ownership.
+
+        Every chunk carries ``user_id`` (uploader) and ``visibility``
+        ("public" or "private"). Retrieval filters by these fields so
+        private chunks only surface for their owner.
+        """
+        if visibility not in ("public", "private"):
+            raise ValueError(f"Invalid visibility: {visibility!r}")
         try:
             logger.debug({
                 "message": "Starting document indexing",
-                "document_count": len(documents)
+                "document_count": len(documents),
+                "user_id": user_id,
+                "visibility": visibility,
             })
-            
+
             splits = self.text_splitter.split_documents(documents)
+            for chunk in splits:
+                if chunk.metadata is None:
+                    chunk.metadata = {}
+                chunk.metadata["user_id"] = user_id
+                chunk.metadata["visibility"] = visibility
+
             logger.debug({
                 "message": "Split documents into chunks",
                 "chunk_count": len(splits)
             })
-            
+
             self._store.add_documents(splits)
             self.flush_store()
-            
-            logger.debug({
-                "message": "Document indexing completed"
-            })            
+
+            logger.debug({"message": "Document indexing completed"})
         except Exception as e:
             logger.error({
                 "message": "Error during document indexing",
@@ -298,32 +322,40 @@ class VectorStore:
             self._milvus_connected = False
             logger.error({"message": "Error flushing Milvus store", "error": str(e)}, exc_info=True)
 
+    def get_documents(
+        self,
+        query: str,
+        user_id: str,
+        k: int = 5,
+        sources: Optional[List[str]] = None,
+    ) -> List[Document]:
+        """Retrieve documents visible to this user, filtered by similarity.
 
-    def get_documents(self, query: str, k: int = 5, sources: List[str] = None) -> List[Document]:
-        """
-        Get relevant documents filtered by similarity score threshold.
-
-        Uses similarity_search_with_relevance_scores to get normalized [0, 1]
-        scores (1 = most relevant) and drops chunks below RELEVANCE_SCORE_THRESHOLD.
+        Visibility filter: ``visibility == "public" OR user_id == <user>``.
+        Source filter (if provided) is AND-ed with the visibility filter.
+        Chunks below ``RELEVANCE_SCORE_THRESHOLD`` are dropped.
         """
         try:
-            kwargs = {}
-
+            visibility_expr = _build_visibility_filter(user_id)
             if sources:
                 if len(sources) == 1:
-                    filter_expr = f'source == "{_sanitize_milvus_string(sources[0])}"'
+                    source_expr = f'source == "{_sanitize_milvus_string(sources[0])}"'
                 else:
-                    source_conditions = [f'source == "{_sanitize_milvus_string(s)}"' for s in sources]
-                    filter_expr = " || ".join(source_conditions)
+                    source_expr = " || ".join(
+                        f'source == "{_sanitize_milvus_string(s)}"' for s in sources
+                    )
+                filter_expr = f"({source_expr}) && {visibility_expr}"
+            else:
+                filter_expr = visibility_expr
 
-                kwargs["expr"] = filter_expr
-                logger.debug({
-                    "message": "Retrieving with filter",
-                    "filter": filter_expr
-                })
+            logger.debug({
+                "message": "Retrieving with filter",
+                "filter": filter_expr,
+                "user_id": user_id,
+            })
 
             results_with_scores = self._store.similarity_search_with_relevance_scores(
-                query, k=k, **kwargs
+                query, k=k, expr=filter_expr
             )
 
             for doc, score in results_with_scores:
@@ -345,7 +377,8 @@ class VectorStore:
                 "query": query[:80],
                 "total_candidates": len(results_with_scores),
                 "above_threshold": len(filtered),
-                "threshold": RELEVANCE_SCORE_THRESHOLD
+                "threshold": RELEVANCE_SCORE_THRESHOLD,
+                "user_id": user_id,
             })
 
             return [doc for doc, score in filtered]
@@ -356,41 +389,16 @@ class VectorStore:
             }, exc_info=True)
             return []
 
-    def delete_collection(self, collection_name: str) -> bool:
-        """Delete a collection from Milvus."""
-        try:
-            from pymilvus import Collection, utility
-            self._ensure_milvus_connection()
+    def delete_documents_by_source(
+        self, source_name: str, user_id: str
+    ) -> int:
+        """Delete the caller's chunks for a given source.
 
-            if utility.has_collection(collection_name):
-                collection = Collection(name=collection_name)
-
-                collection.drop()
-
-                if self.on_source_deleted:
-                    self.on_source_deleted(collection_name)
-
-                logger.debug({
-                    "message": "Collection deleted successfully",
-                    "collection_name": collection_name
-                })
-                return True
-            else:
-                logger.warning({
-                    "message": "Collection not found",
-                    "collection_name": collection_name
-                })
-                return False
-        except Exception as e:
-            logger.error({
-                "message": "Error deleting collection",
-                "collection_name": collection_name,
-                "error": str(e)
-            }, exc_info=True)
-            return False
-
-    def delete_documents_by_source(self, source_name: str) -> int:
-        """Delete all documents with a specific source from Milvus."""
+        Only chunks where ``user_id == <caller>`` are deleted. Legacy
+        chunks (``user_id`` empty / NULL, ``visibility = "public"``) and
+        chunks owned by other users are left in place — returns the count
+        of chunks the caller actually owned and deleted.
+        """
         try:
             from pymilvus import Collection, utility
             self._ensure_milvus_connection()
@@ -406,22 +414,22 @@ class VectorStore:
             collection = Collection(name=collection_name)
             collection.load()
 
-            delete_expr = f'source == "{_sanitize_milvus_string(source_name)}"'
-
-            # First count how many will be deleted
-            results = collection.query(
-                expr=delete_expr,
-                output_fields=["pk"]
+            safe_source = _sanitize_milvus_string(source_name)
+            safe_user = _sanitize_milvus_string(user_id)
+            delete_expr = (
+                f'source == "{safe_source}" && user_id == "{safe_user}"'
             )
+
+            results = collection.query(expr=delete_expr, output_fields=["pk"])
             count = len(results)
 
             if count > 0:
                 collection.delete(delete_expr)
                 collection.flush()
-
                 logger.debug({
                     "message": "Deleted documents by source",
                     "source_name": source_name,
+                    "user_id": user_id,
                     "deleted_count": count
                 })
 
@@ -431,12 +439,13 @@ class VectorStore:
             logger.error({
                 "message": "Error deleting documents by source",
                 "source_name": source_name,
+                "user_id": user_id,
                 "error": str(e)
             }, exc_info=True)
             return -1
 
-    def get_sources_from_milvus(self) -> List[str]:
-        """Get list of unique sources from Milvus collection."""
+    def get_sources_visible_to(self, user_id: str) -> List[str]:
+        """List unique source names in Milvus visible to this user."""
         try:
             from pymilvus import Collection, utility
             self._ensure_milvus_connection()
@@ -448,18 +457,19 @@ class VectorStore:
             collection = Collection(name=collection_name)
             collection.load()
 
-            # Query all unique sources
+            expr = _build_visibility_filter(user_id)
             results = collection.query(
-                expr="pk >= 0",  # Match all
+                expr=expr,
                 output_fields=["source"],
-                limit=10000
+                limit=10000,
             )
 
-            sources = list(set(r.get("source", "") for r in results if r.get("source")))
+            sources = list({r.get("source", "") for r in results if r.get("source")})
 
             logger.debug({
                 "message": "Retrieved sources from Milvus",
-                "source_count": len(sources)
+                "source_count": len(sources),
+                "user_id": user_id,
             })
 
             return sources
@@ -472,24 +482,14 @@ class VectorStore:
             return []
 
 
-def create_vector_store_with_config(config_manager, uri: str = "http://milvus.milvus-system.svc.cluster.local:19530") -> VectorStore:
-    """Factory function to create a VectorStore with ConfigManager integration.
-    
-    Args:
-        config_manager: ConfigManager instance for source management
-        uri: Milvus connection URI
-        
-    Returns:
-        VectorStore instance with source deletion callback
+def create_vector_store_with_config(
+    config_manager,
+    uri: str = "http://milvus.milvus-system.svc.cluster.local:19530",
+) -> VectorStore:
+    """Factory function to create a VectorStore.
+
+    The ``config_manager`` argument is retained for API stability but is no
+    longer used for source-list mutation — the source registry is owned by
+    PostgreSQL with per-user scoping after PR 1.
     """
-    def handle_source_deleted(source_name: str):
-        """Handle source deletion by updating config."""
-        config = config_manager.read_config()
-        if hasattr(config, 'sources') and source_name in config.sources:
-            config.sources.remove(source_name)
-            config_manager.write_config(config)
-    
-    return VectorStore(
-        uri=uri,
-        on_source_deleted=handle_source_deleted
-    )
+    return VectorStore(uri=uri)

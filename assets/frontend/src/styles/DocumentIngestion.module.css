@@ -133,4 +133,43 @@
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   background-color: #f7fafc;
+}
+
+.visibilityFieldset {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.visibilityFieldset legend {
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0 0.5rem;
+  color: #4a5568;
+}
+
+.visibilityOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  cursor: pointer;
+}
+
+.visibilityOption input[type="radio"] {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.visibilityOption > span {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.visibilityHelp {
+  font-size: 0.75rem;
+  color: #718096;
+  margin-top: 2px;
 } 
