@@ -106,7 +106,11 @@ class VectorStore:
             self.uri = uri
             self.on_source_deleted = on_source_deleted
             self._milvus_connected = False
-            self._migrate_collection_if_needed()
+            # Migration is gated lazily inside _migration_done — if Milvus is
+            # unreachable at startup the backend should still come up healthy
+            # and serve non-RAG endpoints. The migration runs on the first
+            # vector operation once Milvus is reachable.
+            self._migration_done = False
             self._initialize_store()
 
             self.text_splitter = RecursiveCharacterTextSplitter(
@@ -118,6 +122,30 @@ class VectorStore:
         except Exception as e:
             logger.error({"message": "Error initializing VectorStore", "error": str(e)}, exc_info=True)
             raise
+
+    def _ensure_migrated(self) -> bool:
+        """Lazy guard called from every Milvus-touching method.
+
+        Returns True if the collection is ready to query, False if Milvus is
+        unreachable or migration failed (caller should fail gracefully).
+        Idempotent and cheap once migration is complete.
+        """
+        if self._migration_done:
+            return True
+        try:
+            self._migrate_collection_if_needed()
+            self._migration_done = True
+            return True
+        except Exception as e:
+            logger.warning({
+                "message": (
+                    "Milvus migration deferred — server unreachable or errored. "
+                    "Will retry on next vector operation."
+                ),
+                "error": str(e),
+            })
+            self._milvus_connected = False
+            return False
 
     def _migrate_collection_if_needed(self) -> None:
         """Migrate the legacy ``context`` collection to the user-scoped schema.
@@ -406,6 +434,10 @@ class VectorStore:
         """
         if visibility not in ("public", "private"):
             raise ValueError(f"Invalid visibility: {visibility!r}")
+        if not self._ensure_migrated():
+            raise RuntimeError(
+                "Milvus is unavailable or migration pending — cannot index documents"
+            )
         try:
             logger.debug({
                 "message": "Starting document indexing",
@@ -461,6 +493,12 @@ class VectorStore:
         Source filter (if provided) is AND-ed with the visibility filter.
         Chunks below ``RELEVANCE_SCORE_THRESHOLD`` are dropped.
         """
+        if not self._ensure_migrated():
+            logger.warning({
+                "message": "Milvus unavailable — returning empty retrieval result",
+                "user_id": user_id,
+            })
+            return []
         try:
             visibility_expr = _build_visibility_filter(user_id)
             if sources:
@@ -525,6 +563,8 @@ class VectorStore:
         chunks owned by other users are left in place — returns the count
         of chunks the caller actually owned and deleted.
         """
+        if not self._ensure_migrated():
+            return -1
         try:
             from pymilvus import Collection, utility
             self._ensure_milvus_connection()
@@ -572,6 +612,8 @@ class VectorStore:
 
     def get_sources_visible_to(self, user_id: str) -> List[str]:
         """List unique source names in Milvus visible to this user."""
+        if not self._ensure_migrated():
+            return []
         try:
             from pymilvus import Collection, utility
             self._ensure_milvus_connection()
