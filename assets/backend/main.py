@@ -37,6 +37,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict
 
+import filetype
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -70,7 +71,65 @@ MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 MAX_TOTAL_UPLOAD_BYTES = int(os.getenv("MAX_TOTAL_UPLOAD_MB", "200")) * 1024 * 1024
 MAX_QUERY_BYTES = int(os.getenv("MAX_QUERY_BYTES", str(64 * 1024)))  # 64KB
 MAX_STREAMS_PER_USER = int(os.getenv("MAX_STREAMS_PER_USER", "5"))
+UPLOAD_READ_CHUNK_BYTES = 64 * 1024  # how much we slurp per read() from the request stream
+
 ALLOWED_UPLOAD_EXTENSIONS = {'.pdf', '.txt', '.docx', '.doc', '.md', '.rtf', '.csv', '.json', '.html'}
+
+# Magic-byte → extension matrix used to detect spoofed filenames. The
+# ``filetype`` library doesn't recognise plain-text formats (no reliable
+# magic), so for those we just guard against binary content in disguise.
+_EXT_TO_MIME = {
+    '.pdf': {'application/pdf'},
+    '.docx': {'application/vnd.openxmlformats-officedocument.wordprocessingml.document'},
+    '.doc': {'application/msword'},
+    '.rtf': {'application/rtf', 'text/rtf'},
+}
+_TEXT_LIKE_EXTENSIONS = {'.txt', '.md', '.csv', '.json', '.html'}
+
+
+def _sanitize_filename(name: Optional[str]) -> str:
+    """Strip path separators, control chars, and leading dots/hyphens.
+
+    Returns ``upload`` if the result would be empty. Caller still must use
+    realpath + parent-dir startswith to fully guard against traversal.
+    """
+    if not name:
+        return "upload"
+    base = os.path.basename(name)
+    base = "".join(c for c in base if ord(c) >= 0x20 and c not in "/\\")
+    base = base.lstrip(".-")
+    return base or "upload"
+
+
+def _validate_magic_bytes(path: str, ext: str) -> Optional[str]:
+    """Return ``None`` on success, an error string on mismatch.
+
+    Binary formats (pdf, docx, doc, rtf) are matched via ``filetype``.
+    Text formats are accepted iff the first 8 KB is valid UTF-8 with no
+    NUL bytes — sufficient to reject EXE/binary-renamed-to-.txt attempts.
+    """
+    if ext in _TEXT_LIKE_EXTENSIONS:
+        with open(path, "rb") as f:
+            head = f.read(8192)
+        if b"\x00" in head:
+            return f"content appears binary, expected {ext}"
+        try:
+            head.decode("utf-8")
+        except UnicodeDecodeError:
+            return f"content is not valid UTF-8, expected {ext}"
+        return None
+
+    expected = _EXT_TO_MIME.get(ext)
+    if expected is None:
+        # Shouldn't happen — caller already filtered by ALLOWED_UPLOAD_EXTENSIONS
+        return None
+
+    detected = filetype.guess(path)
+    if detected is None:
+        return f"magic bytes unrecognised, expected {ext}"
+    if detected.mime not in expected:
+        return f"magic bytes ({detected.mime}) don't match extension {ext}"
+    return None
 
 # Per-user concurrent SSE stream tracking. Per-pod; with Istio consistent-hash
 # affinity each user maps to a single pod so this is effectively per-user.
@@ -309,7 +368,16 @@ async def ingest_files(
     Uploads are tagged with the uploader (``user_id``) and a ``visibility``
     of either ``"public"`` (visible to all users) or ``"private"`` (visible
     only to the uploader, the default).
+
+    Streaming: each file is read in 64 KB chunks straight to per-task disk
+    so a malicious large upload can't OOM the backend. Size limits are
+    checked mid-stream and the partial file is unlinked on overflow.
     """
+    task_id = str(uuid.uuid4())
+    uploads_base = os.getenv("UPLOADS_DIR", "uploads")
+    permanent_dir = os.path.join(uploads_base, task_id)
+    saved_paths: List[str] = []
+
     try:
         if not files:
             raise HTTPException(status_code=400, detail="No files provided")
@@ -325,39 +393,74 @@ async def ingest_files(
             "/ingest",
         )
 
-        task_id = str(uuid.uuid4())
+        os.makedirs(permanent_dir, exist_ok=True)
+        permanent_dir_real = os.path.realpath(permanent_dir)
 
-        file_info = []
         total_size = 0
-        for file in files:
-            ext = os.path.splitext(file.filename or "")[1].lower()
+        for upload in files:
+            ext = os.path.splitext(upload.filename or "")[1].lower()
             if ext not in ALLOWED_UPLOAD_EXTENSIONS:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"File type '{ext}' not allowed. Allowed: {', '.join(sorted(ALLOWED_UPLOAD_EXTENSIONS))}"
+                    detail=f"File type '{ext}' not allowed. Allowed: {', '.join(sorted(ALLOWED_UPLOAD_EXTENSIONS))}",
                 )
-            content = await file.read()
-            if len(content) > MAX_UPLOAD_SIZE_BYTES:
+
+            safe_name = _sanitize_filename(upload.filename)
+            dest_path = os.path.join(permanent_dir, safe_name)
+
+            # Defense in depth against a maliciously crafted filename that
+            # somehow slipped past _sanitize_filename — verify the resolved
+            # path is still inside permanent_dir.
+            real_dest = os.path.realpath(dest_path)
+            if not real_dest.startswith(permanent_dir_real + os.sep):
                 raise HTTPException(
-                    status_code=413,
-                    detail=f"File '{file.filename}' exceeds maximum size of {MAX_UPLOAD_SIZE_MB}MB"
+                    status_code=400,
+                    detail=f"Invalid filename: {upload.filename!r}",
                 )
-            total_size += len(content)
-            if total_size > MAX_TOTAL_UPLOAD_BYTES:
+
+            file_size = 0
+            with open(dest_path, "wb") as out:
+                while True:
+                    chunk = await upload.read(UPLOAD_READ_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    file_size += len(chunk)
+                    if file_size > MAX_UPLOAD_SIZE_BYTES:
+                        out.close()
+                        os.unlink(dest_path)
+                        raise HTTPException(
+                            status_code=413,
+                            detail=(
+                                f"File '{upload.filename}' exceeds maximum size of "
+                                f"{MAX_UPLOAD_SIZE_MB}MB"
+                            ),
+                        )
+                    if total_size + file_size > MAX_TOTAL_UPLOAD_BYTES:
+                        out.close()
+                        os.unlink(dest_path)
+                        raise HTTPException(
+                            status_code=413,
+                            detail="Total upload size exceeds limit",
+                        )
+                    out.write(chunk)
+
+            total_size += file_size
+            saved_paths.append(dest_path)
+
+            magic_error = _validate_magic_bytes(dest_path, ext)
+            if magic_error:
+                os.unlink(dest_path)
+                saved_paths.pop()
                 raise HTTPException(
-                    status_code=413,
-                    detail="Total upload size exceeds limit"
+                    status_code=400,
+                    detail=f"File '{upload.filename}' rejected: {magic_error}",
                 )
-            file_info.append({
-                "filename": file.filename,
-                "content": content
-            })
 
         _record_task(task_id, "queued", current_user)
 
         background_tasks.add_task(
             process_and_ingest_files_background,
-            file_info,
+            saved_paths,
             vector_store,
             current_user,
             visibility,
@@ -368,7 +471,7 @@ async def ingest_files(
 
         response = {
             "message": f"Files queued for processing. Indexing {len(files)} files in the background.",
-            "files": [file.filename for file in files],
+            "files": [os.path.basename(p) for p in saved_paths],
             "status": "queued",
             "task_id": task_id,
             "visibility": visibility,
@@ -377,11 +480,33 @@ async def ingest_files(
         log_response(response, "/ingest")
         return response
 
+    except HTTPException:
+        # Clean up any partial uploads on a legitimate 4xx — don't leave
+        # disk turds from rejected files behind. Re-raise so the client
+        # sees the original status code instead of a remapped 500.
+        for p in saved_paths:
+            try:
+                if os.path.exists(p):
+                    os.unlink(p)
+            except OSError:
+                pass
+        try:
+            if os.path.isdir(permanent_dir) and not os.listdir(permanent_dir):
+                os.rmdir(permanent_dir)
+        except OSError:
+            pass
+        raise
     except Exception as e:
         log_error(e, "/ingest")
+        for p in saved_paths:
+            try:
+                if os.path.exists(p):
+                    os.unlink(p)
+            except OSError:
+                pass
         raise HTTPException(
             status_code=500,
-            detail="An internal error occurred"
+            detail="An internal error occurred",
         )
 
 

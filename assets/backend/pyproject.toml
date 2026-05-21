@@ -24,4 +24,5 @@ dependencies = [
     "PyJWT[crypto]>=2.8.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
     "redis>=5.0.0",
+    "filetype>=1.2.0",
 ]

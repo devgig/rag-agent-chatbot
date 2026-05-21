@@ -29,7 +29,7 @@ from vector_store import VectorStore
 
 
 async def process_and_ingest_files_background(
-    file_info: List[dict],
+    file_paths: List[str],
     vector_store: VectorStore,
     user_id: str,
     visibility: str,
@@ -37,10 +37,15 @@ async def process_and_ingest_files_background(
     indexing_tasks: Dict[str, str],
     postgres_storage=None,
 ) -> None:
-    """Process and ingest files in the background.
+    """Index already-saved files into the vector store.
+
+    The /ingest endpoint streams uploads to disk under the per-task directory
+    and validates magic bytes before queuing this task. By the time we run,
+    every file in ``file_paths`` is already on disk at its final location,
+    so this function just loads + chunks + indexes them.
 
     Args:
-        file_info: List of file dictionaries with 'filename' and 'content' keys
+        file_paths: Absolute paths to already-saved uploaded files
         vector_store: VectorStore instance for document indexing
         user_id: Authenticated uploader (JWT sub)
         visibility: 'public' or 'private' — controls who can retrieve the chunks
@@ -50,72 +55,38 @@ async def process_and_ingest_files_background(
     """
     if visibility not in ("public", "private"):
         raise ValueError(f"Invalid visibility: {visibility!r}")
+
     try:
         logger.debug({
-            "message": "Starting background file processing",
+            "message": "Starting background file indexing",
             "task_id": task_id,
-            "file_count": len(file_info)
+            "file_count": len(file_paths),
+            "user_id": user_id,
+            "visibility": visibility,
         })
 
-        indexing_tasks[task_id] = ("saving_files", time.time())
-
-        uploads_base = os.getenv("UPLOADS_DIR", "uploads")
-        permanent_dir = os.path.join(uploads_base, task_id)
-        os.makedirs(permanent_dir, exist_ok=True)
-        
-        file_paths = []
-        file_names = []
-        
-        for info in file_info:
-            try:
-                file_name = os.path.basename(info["filename"])
-                content = info["content"]
-
-                file_path = os.path.join(permanent_dir, file_name)
-                real_path = os.path.realpath(file_path)
-                if not real_path.startswith(os.path.realpath(permanent_dir)):
-                    raise ValueError(f"Invalid filename: {info['filename']}")
-
-                with open(file_path, "wb") as f:
-                    f.write(content)
-
-                file_paths.append(file_path)
-                file_names.append(file_name)
-
-                logger.debug({
-                    "message": "Saved file",
-                    "task_id": task_id,
-                    "filename": file_name
-                })
-            except Exception as e:
-                logger.error({
-                    "message": f"Error saving file {info['filename']}",
-                    "task_id": task_id,
-                    "filename": info['filename'],
-                    "error": str(e)
-                }, exc_info=True)
-        
         indexing_tasks[task_id] = ("loading_documents", time.time())
         logger.debug({"message": "Loading documents", "task_id": task_id})
-        
+
         try:
-            documents = await asyncio.to_thread(vector_store._load_documents, file_paths)
-            
+            documents = await asyncio.to_thread(
+                vector_store._load_documents, file_paths
+            )
+
             logger.debug({
                 "message": "Documents loaded, starting indexing",
                 "task_id": task_id,
-                "document_count": len(documents)
+                "document_count": len(documents),
             })
-            
+
             indexing_tasks[task_id] = ("indexing_documents", time.time())
             await asyncio.to_thread(
                 vector_store.index_documents, documents, user_id, visibility
             )
 
-            # Save sources to PostgreSQL with user_id + visibility scoping
-            if file_names and postgres_storage:
-                for idx, file_name in enumerate(file_names):
-                    file_path = file_paths[idx] if idx < len(file_paths) else None
+            if file_paths and postgres_storage:
+                for file_path in file_paths:
+                    file_name = os.path.basename(file_path)
                     chunk_count = len(
                         [d for d in documents if d.metadata.get("filename") == file_name]
                     )
@@ -130,39 +101,39 @@ async def process_and_ingest_files_background(
                 logger.debug({
                     "message": "Saved sources to PostgreSQL",
                     "task_id": task_id,
-                    "sources": file_names,
+                    "sources": [os.path.basename(p) for p in file_paths],
                     "user_id": user_id,
                     "visibility": visibility,
                 })
-            
+
             indexing_tasks[task_id] = ("completed", time.time())
             logger.debug({
-                "message": "Background processing and indexing completed successfully",
-                "task_id": task_id
+                "message": "Background indexing completed successfully",
+                "task_id": task_id,
             })
         except Exception as e:
             indexing_tasks[task_id] = (f"failed_during_indexing: {str(e)}", time.time())
             logger.error({
                 "message": "Error during document loading or indexing",
                 "task_id": task_id,
-                "error": str(e)
+                "error": str(e),
             }, exc_info=True)
-            
+
     except Exception as e:
         indexing_tasks[task_id] = (f"failed: {str(e)}", time.time())
         logger.error({
-            "message": "Error in background processing",
+            "message": "Error in background indexing task",
             "task_id": task_id,
-            "error": str(e)
+            "error": str(e),
         }, exc_info=True)
 
 
 def convert_langgraph_messages_to_openai(messages: List) -> List[Dict[str, Any]]:
     """Convert LangGraph message objects to OpenAI API format.
-    
+
     Args:
         messages: List of LangGraph message objects
-        
+
     Returns:
         List of dictionaries in OpenAI API format
     """
@@ -181,7 +152,7 @@ def convert_langgraph_messages_to_openai(messages: List) -> List[Dict[str, Any]]
             })
         elif isinstance(msg, AIMessage):
             openai_msg = {
-                "role": "assistant", 
+                "role": "assistant",
                 "content": msg.content or ""
             }
             if hasattr(msg, 'tool_calls') and msg.tool_calls:
@@ -202,5 +173,5 @@ def convert_langgraph_messages_to_openai(messages: List) -> List[Dict[str, Any]]
                 "content": msg.content,
                 "tool_call_id": msg.tool_call_id
             })
-    
+
     return openai_messages

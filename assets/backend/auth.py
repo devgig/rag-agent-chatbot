@@ -118,6 +118,17 @@ def decode_jwt_token(token: str) -> dict:
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> str:
-    """Extract and validate JWT from Authorization header. Returns email."""
+    """Extract and validate JWT from Authorization header. Returns the
+    ``sub`` claim (an email in this system).
+
+    Defends against the (unlikely) case of an issued token missing ``sub`` —
+    without this check the raw ``KeyError`` would surface as a 500 instead of
+    a 401, masking the real auth failure.
+    """
     payload = decode_jwt_token(credentials.credentials)
-    return payload["sub"]
+    sub = payload.get("sub")
+    if not sub or not isinstance(sub, str):
+        raise HTTPException(
+            status_code=401, detail="Token missing or invalid sub claim"
+        )
+    return sub
