@@ -19,12 +19,6 @@ kustomize/
 │   │   ├── embedding-service.yaml
 │   │   └── kustomization.yaml
 │   └── overlays/dev/
-├── models/                         # llm namespace + shared pull secret
-│   ├── base/                       # LLM serving itself is owned by KServe
-│   │   ├── llm-namespace.yaml      # (InferenceService lives in kserve ns,
-│   │   ├── acr-external-secret.yaml#  managed outside this repo)
-│   │   └── kustomization.yaml
-│   └── overlays/dev/
 ├── frontend/                       # React frontend (rag-agent namespace)
 │   ├── base/
 │   └── overlays/dev/
@@ -39,7 +33,6 @@ Each directory has its own Azure DevOps pipeline so changes deploy independently
 |----------|--------------|-----------|
 | `azure-pipelines-backend.yaml` | `assets/backend/**`, `kustomize/backend/**` | `rag-agent` |
 | `azure-pipelines-embedding.yaml` | `assets/embedding/**`, `kustomize/embedding/**` | `rag-agent` |
-| `azure-pipelines-models.yaml` | `kustomize/models/**` | `llm` |
 | `azure-pipelines-frontend.yaml` | `assets/frontend/**`, `kustomize/frontend/**` | `rag-agent` |
 | `azure-pipelines-gateway.yaml` | `kustomize/gateway/**` | `istio-ingress` |
 

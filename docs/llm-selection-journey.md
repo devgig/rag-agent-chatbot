@@ -242,7 +242,7 @@ KServe addresses both: the InferenceService is owned by the kserve namespace, ca
 | New `nemotron-kserve-externalname-service.yaml`: `nemotron-nano-8b` (rag-agent ns) → `nemotron.kserve.svc.cluster.local` | Backend constructs `http://{selected_model}:8000/v1`; ExternalName makes the short name resolve cross-namespace |
 | `MODELS=nemotron-nano` → `MODELS=nemotron-nano-8b` | Must match the KServe `served-model-name` so the chat request body addresses the right model |
 | Model: Nemotron 3 Nano 30B MoE NVFP4 → Llama-3.1-Nemotron-Nano-8B-v1 (dense) | What KServe is configured to serve on this cluster |
-| `kustomize/models/` reduced to just the `llm` namespace + ACR secret | The vLLM Deployment used to live here; with KServe owning it, this kustomization is mostly empty (kept around for the namespace itself and as a hook for future non-KServe model workloads) |
+| `kustomize/models/` directory and `azure-pipelines-models.yaml` removed entirely | The vLLM Deployment used to live there; with KServe owning serving, the directory had degraded to a `llm` namespace placeholder no pod consumed. Recreating a namespace later is a one-line PR if a non-KServe model workload ever needs one |
 
 ### Trade-offs accepted
 
