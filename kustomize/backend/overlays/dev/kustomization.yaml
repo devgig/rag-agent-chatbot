@@ -22,7 +22,7 @@ replicas:
 configMapGenerator:
 - name: backend-config
   literals:
-  - MODELS=nemotron-nano
+  - MODELS=nemotron-nano-8b
   - LOG_LEVEL=DEBUG
   - JWT_ISSUER=bytecourier
   - JWT_AUDIENCE=sparkchat.bytecourier.com

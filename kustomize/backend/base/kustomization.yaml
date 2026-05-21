@@ -14,8 +14,8 @@ resources:
   - httproute.yaml
   # KEDA autoscaling
   - keda-scaledobject.yaml
-  # ExternalName alias so backend resolves nemotron-nano:8000 → nemotron-nano.llm.svc
-  - nemotron-nano-externalname-service.yaml
+  # ExternalName alias so backend resolves nemotron-nano-8b:8000 → nemotron.kserve.svc
+  - nemotron-kserve-externalname-service.yaml
 
 patches:
   - target:

@@ -326,7 +326,7 @@ fields = [
 
 ```json
 {
-  "selected_model": "nemotron-nano",
+  "selected_model": "nemotron-nano-8b",
   "selected_sources": ["doc1.pdf", "doc2.pdf"]
 }
 ```

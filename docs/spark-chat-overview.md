@@ -182,7 +182,7 @@ Upload a document using the "Upload Documents" button in the sidebar under "Cont
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MODELS` | Comma-separated model names | `nemotron-nano` |
+| `MODELS` | Comma-separated model names | `nemotron-nano-8b` |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins | `http://localhost:3000` |
 | `MAX_UPLOAD_SIZE_MB` | Maximum file upload size in MB | `50` |
 | `MAX_TOTAL_UPLOAD_MB` | Total upload limit across all files | `200` |

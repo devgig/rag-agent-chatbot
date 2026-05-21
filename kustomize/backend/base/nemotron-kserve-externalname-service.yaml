@@ -1,0 +1,16 @@
+# ExternalName Service — makes the KServe-hosted Nemotron model resolvable
+# from the rag-agent namespace.
+#
+# Backend constructs URLs as http://{selected_model}:8000/v1, where
+# {selected_model} = MODELS env var (= "nemotron-nano-8b" in the dev overlay).
+# This alias makes that short name resolve to the KServe InferenceService
+# in the kserve namespace.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: nemotron-nano-8b
+  namespace: rag-agent
+spec:
+  type: ExternalName
+  externalName: nemotron.kserve.svc.cluster.local
