@@ -106,6 +106,7 @@ class VectorStore:
             self.uri = uri
             self.on_source_deleted = on_source_deleted
             self._milvus_connected = False
+            self._migrate_collection_if_needed()
             self._initialize_store()
 
             self.text_splitter = RecursiveCharacterTextSplitter(
@@ -117,6 +118,131 @@ class VectorStore:
         except Exception as e:
             logger.error({"message": "Error initializing VectorStore", "error": str(e)}, exc_info=True)
             raise
+
+    def _migrate_collection_if_needed(self) -> None:
+        """Migrate the legacy ``context`` collection to the user-scoped schema.
+
+        Pre-PR-1 collections were created with ``enable_dynamic_field=False``
+        and a fixed schema of ``(text, pk, vector, source, file_path, filename)``.
+        After PR 1 we need ``user_id`` and ``visibility`` metadata on every
+        chunk so the visibility filter can run — the legacy fixed schema makes
+        that impossible, so we copy the chunks into a fresh collection with
+        dynamic fields enabled and tag them as legacy public.
+
+        Idempotent: if the collection already has dynamic fields (or doesn't
+        exist yet), this is a no-op.
+        """
+        from pymilvus import Collection, utility
+        self._ensure_milvus_connection()
+
+        if not utility.has_collection("context"):
+            logger.debug("No 'context' collection — skipping migration")
+            return
+
+        coll = Collection("context")
+        if coll.schema.enable_dynamic_field or any(
+            f.name in ("user_id", "visibility") for f in coll.schema.fields
+        ):
+            logger.debug("Milvus 'context' collection already user-scoped")
+            return
+
+        coll.load()
+        chunk_count = coll.num_entities
+        logger.warning({
+            "message": (
+                "Migrating Milvus 'context' collection to user-scoped schema. "
+                "Legacy chunks will be tagged as public (user_id='', "
+                "visibility='public') and remain visible to all users."
+            ),
+            "chunks_to_migrate": chunk_count,
+        })
+
+        # Read all chunks from the legacy fixed-schema collection. We need
+        # text + vector to reconstruct them; metadata fields ride along.
+        results = coll.query(
+            expr="pk >= 0",
+            output_fields=["text", "vector", "source", "file_path", "filename"],
+            limit=max(chunk_count + 100, 1000),
+        )
+        logger.info(f"Read {len(results)} chunks from legacy 'context' collection")
+
+        # Drop the legacy collection before creating the new one with the
+        # same name. Milvus has no rename, so we have to recycle the name.
+        coll.drop()
+        logger.debug("Dropped legacy 'context' collection")
+
+        if not results:
+            logger.info("No chunks to migrate; new collection will be created lazily")
+            return
+
+        # Re-create with dynamic fields via the langchain wrapper. Insert via
+        # pymilvus directly to skip re-embedding (we already have vectors).
+        from pymilvus import (
+            CollectionSchema,
+            DataType,
+            FieldSchema,
+            Collection as PMCollection,
+        )
+
+        # Build the new schema mirroring langchain_milvus's defaults (pk, vector,
+        # text, plus the original source/file_path/filename string columns) with
+        # ``enable_dynamic_field=True`` so ``user_id`` and ``visibility`` ride in
+        # the dynamic JSON field. Filter expressions like
+        # ``visibility == "public"`` work transparently against dynamic-field
+        # values in Milvus 2.3+.
+        vector_dim = len(results[0]["vector"])
+        new_schema = CollectionSchema(
+            fields=[
+                FieldSchema(
+                    name="pk",
+                    dtype=DataType.INT64,
+                    is_primary=True,
+                    auto_id=True,
+                ),
+                FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=vector_dim),
+                FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
+                FieldSchema(name="source", dtype=DataType.VARCHAR, max_length=500),
+                FieldSchema(name="file_path", dtype=DataType.VARCHAR, max_length=1000),
+                FieldSchema(name="filename", dtype=DataType.VARCHAR, max_length=500),
+            ],
+            description="rag-agent context with per-user metadata in dynamic field",
+            enable_dynamic_field=True,
+        )
+        new_coll = PMCollection("context", schema=new_schema)
+        new_coll.create_index(
+            field_name="vector",
+            index_params={
+                "metric_type": "COSINE",
+                "index_type": "HNSW",
+                "params": {"M": 16, "efConstruction": 256},
+            },
+        )
+
+        # Re-insert preserving vectors + adding legacy public metadata
+        batch_size = 256
+        inserted = 0
+        for i in range(0, len(results), batch_size):
+            batch = results[i : i + batch_size]
+            entities = [
+                {
+                    "vector": list(r["vector"]),
+                    "text": r.get("text", "") or "",
+                    "source": r.get("source", "") or "",
+                    "file_path": r.get("file_path", "") or "",
+                    "filename": r.get("filename", "") or "",
+                    "user_id": "",  # legacy: no owner
+                    "visibility": "public",
+                }
+                for r in batch
+            ]
+            new_coll.insert(entities)
+            inserted += len(batch)
+        new_coll.flush()
+        new_coll.load()
+        logger.info({
+            "message": "Milvus migration complete",
+            "chunks_migrated": inserted,
+        })
 
     def _ensure_milvus_connection(self) -> None:
         """Ensure a persistent Milvus connection exists, reconnecting if needed."""
