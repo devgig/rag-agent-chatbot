@@ -218,6 +218,40 @@ Rather than carry out the actual cutover (delete the running Nemotron Nano pod, 
 
 ---
 
+## Phase 7: KServe-hosted Llama-3.1-Nemotron-Nano-8B (current)
+
+**Model:** `nvidia/Llama-3.1-Nemotron-Nano-8B-v1` (served as `nemotron-nano-8b`)
+**Architecture:** Dense, 8B
+**Context:** 16,384 tokens configured
+**Runtime owner:** KServe `InferenceService` at `nemotron.kserve.svc.cluster.local:8000`
+
+### Why we moved off the in-repo vLLM Deployment
+
+Phases 1–6 ran vLLM directly from a `Deployment` manifest in this repo, which created two operational problems:
+
+1. **Single-tenant GPU.** The Deployment claimed `nvidia.com/gpu: 1` outright, so no second model could ever schedule on the DGX Spark node. Phase 5 hit this directly — the Qwen pod sat in `Pending` for 28 days, masked by the still-running Nemotron pod.
+2. **Cluster-wide blast radius from app-level edits.** Any change to the Deployment spec triggered a ~7+ min reload of the model weights. Tuning resource requests, restart policies, or even labels became a production event.
+
+KServe addresses both: the InferenceService is owned by the kserve namespace, can scale-to-zero (or share the GPU with other InferenceServices via time-slicing/MPS once configured), and is operated independently of application repos. The rag-agent backend talks to it via the same OpenAI-compatible `/v1/chat/completions` shape — only the URL and served-model name change.
+
+### Architectural changes
+
+| Change | Rationale |
+| ------ | --------- |
+| Delete in-repo `nemotron-nano-{deployment,service,externalname-service}.yaml`, `model-cache-pvc.yaml`, `hf-external-secret.yaml` | KServe owns the runtime, weight cache, and credentials in its own namespace |
+| New `nemotron-kserve-externalname-service.yaml`: `nemotron-nano-8b` (rag-agent ns) → `nemotron.kserve.svc.cluster.local` | Backend constructs `http://{selected_model}:8000/v1`; ExternalName makes the short name resolve cross-namespace |
+| `MODELS=nemotron-nano` → `MODELS=nemotron-nano-8b` | Must match the KServe `served-model-name` so the chat request body addresses the right model |
+| Model: Nemotron 3 Nano 30B MoE NVFP4 → Llama-3.1-Nemotron-Nano-8B-v1 (dense) | What KServe is configured to serve on this cluster |
+| `kustomize/models/` reduced to just the `llm` namespace + ACR secret | The vLLM Deployment used to live here; with KServe owning it, this kustomization is mostly empty (kept around for the namespace itself and as a hook for future non-KServe model workloads) |
+
+### Trade-offs accepted
+
+- **Smaller, dense model.** 8B dense vs 30B-A3B MoE means lower peak quality on hard prompts; for current rag-agent retrieval-grounded chat this is fine.
+- **Model selection lives outside this repo now.** Switching the served model is a change in the kserve namespace, not a commit here. Faster iteration, but the audit trail moves with it.
+- **Runtime knobs moved out.** vLLM flags, weight cache config, and HF token handling are no longer visible from this repo; check the KServe InferenceService manifest for those.
+
+---
+
 ## Performance Summary Across Phases
 
 | Phase | Model | Architecture | Active params | Weight size | Throughput (vLLM) | Notes |
@@ -227,7 +261,8 @@ Rather than carry out the actual cutover (delete the running Nemotron Nano pod, 
 | 3 | Qwen3-30B-A3B FP8 | MoE | 3B | ~30 GB | ~38 tok/s | Fast but FP8 suboptimal |
 | 4 | Nemotron 3 Nano 30B NVFP4 | MoE | 3B | ~15 GB | ~56 tok/s | Fast, general-purpose |
 | 5 | Qwen3-Coder-Next 80B-A3B FP8 | MoE + hybrid | 3B | ~80 GB | (never scheduled) | Pod stayed `Pending` on insufficient GPU; reverted |
-| **6** | **Nemotron 3 Nano 30B NVFP4** | **MoE** | **3B** | **~15 GB** | **~56 tok/s** | **Same as Phase 4; current** |
+| 6 | Nemotron 3 Nano 30B NVFP4 | MoE | 3B | ~15 GB | ~56 tok/s | Same as Phase 4 |
+| **7** | **Llama-3.1-Nemotron-Nano-8B-v1 (KServe)** | **Dense** | **8B** | **~16 GB (BF16)** | **TBD** | **KServe-hosted; current** |
 
 ---
 

@@ -1,18 +1,18 @@
-# vLLM Model Inference Configuration
+# Model Serving Configuration
 # ==================================================================================================
-# Deploys vLLM model inference in the shared "llm" namespace for K3s/BYO GPU.
+# As of the KServe migration, application-side LLM serving is owned by KServe
+# (InferenceService at nemotron.kserve.svc.cluster.local:8000, served model:
+# nemotron-nano-8b — backed by nvidia/Llama-3.1-Nemotron-Nano-8B-v1 via vLLM).
+# KServe + its InferenceService live in the kserve namespace and are managed
+# outside this repo.
 #
-# ARCHITECTURE:
-# - Deployment: vLLM serving Nemotron 3 Nano 30B (MoE, NVFP4) in the "llm" namespace
-# - Service: ClusterIP exposing OpenAI-compatible API on port 8000
-# - ExternalName: alias in "rag-agent" namespace so backend resolves nemotron-nano:8000
-# - ExternalSecret: HuggingFace token from Azure Key Vault
+# What remains in this kustomization:
+# - The "llm" namespace, kept available for future model workloads that don't fit
+#   under KServe (deletion is a separate, manual cleanup if/when desired).
+# - ACR pull credentials in that namespace.
 #
-# MODEL SERVING:
-# The LLM runs in the "llm" namespace, separate from application workloads.
-# - rag-agent-chatbot: http://nemotron-nano:8000/v1 (via ExternalName in rag-agent ns)
-#
-# Embedding service stays in rag-agent namespace (only used by rag-agent-chatbot).
+# Client-side routing (ExternalName alias so the backend can reach KServe via the
+# short service name) lives in kustomize/backend/base/.
 #
 # AZURE DEVOPS:
 # Deploy via: kubectl apply -k kustomize/models/overlays/dev/
@@ -23,16 +23,8 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: nemotron-nano-llm
+  name: llm-namespace
 
 resources:
-  - llm-namespace.yaml                # Shared "llm" namespace
+  - llm-namespace.yaml                # Shared "llm" namespace (kept for future workloads)
   - acr-external-secret.yaml          # ACR pull credentials from Azure Key Vault
-  - hf-external-secret.yaml           # HuggingFace token from Azure Key Vault
-  - model-cache-pvc.yaml              # Persistent storage for HuggingFace model cache
-  - nemotron-nano-deployment.yaml            # Nemotron 3 Nano 30B MoE (NVFP4) in llm namespace
-  - nemotron-nano-service.yaml               # ClusterIP service in llm namespace
-  # ExternalName service and embedding resources deploy to rag-agent namespace
-  # and are managed by the backend kustomization to avoid namespace conflicts.
-
-  # Embedding image patch is now in the backend kustomization.

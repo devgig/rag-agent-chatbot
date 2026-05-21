@@ -107,7 +107,7 @@ class ConfigManager:
                     self.config = ChatConfig(
                         sources=[],
                         models=models,
-                        selected_model=models[0] if models else "nemotron-nano",
+                        selected_model=models[0] if models else "nemotron-nano-8b",
                         selected_sources=[],
                         current_chat_id="1"
                     )

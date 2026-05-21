@@ -2,10 +2,10 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 metadata:
-  name: nemotron-nano-llm-dev
+  name: llm-namespace-dev
 
-# No global namespace override — resources specify their own namespace
-# (llm for the model, rag-agent for the ExternalName service and embeddings)
+# No global namespace override — base resources specify their own namespace
+# (llm for the namespace + ACR pull secret).
 
 resources:
   - ../../base
