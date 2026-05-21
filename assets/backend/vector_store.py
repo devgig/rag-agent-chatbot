@@ -101,27 +101,33 @@ class VectorStore:
         uri: str = "http://milvus.milvus-system.svc.cluster.local:19530",
         on_source_deleted: Optional[Callable[[str], None]] = None
     ):
-        try:
-            self.embeddings = embeddings or CustomEmbeddings(model="all-MiniLM-L6-v2")
-            self.uri = uri
-            self.on_source_deleted = on_source_deleted
-            self._milvus_connected = False
-            # Migration is gated lazily inside _migration_done — if Milvus is
-            # unreachable at startup the backend should still come up healthy
-            # and serve non-RAG endpoints. The migration runs on the first
-            # vector operation once Milvus is reachable.
-            self._migration_done = False
-            self._initialize_store()
+        self.embeddings = embeddings or CustomEmbeddings(model="all-MiniLM-L6-v2")
+        self.uri = uri
+        self.on_source_deleted = on_source_deleted
+        self._milvus_connected = False
+        # Everything Milvus-touching is lazy. The backend pod must start
+        # cleanly even when Milvus is unreachable so non-RAG endpoints
+        # (chat without selected sources, chat list, auth) stay available.
+        self._migration_done = False
+        self._store = None  # populated by _get_store() on first vector op
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200
+        )
+        logger.debug({"message": "VectorStore constructed (lazy Milvus connection)"})
 
-            self.text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=200
-            )
+    def _get_store(self):
+        """Lazy-create the langchain_milvus wrapper.
 
-            logger.debug({"message": "VectorStore initialized successfully"})
-        except Exception as e:
-            logger.error({"message": "Error initializing VectorStore", "error": str(e)}, exc_info=True)
-            raise
+        langchain_milvus ≥ 2.6 connects to Milvus eagerly inside its
+        ``Milvus()`` constructor (through ``MilvusClient``), so building it at
+        VectorStore construction time would block the whole backend pod from
+        starting whenever Milvus is unreachable.
+        """
+        if self._store is not None:
+            return self._store
+        self._initialize_store()
+        return self._store
 
     def _ensure_migrated(self) -> bool:
         """Lazy guard called from every Milvus-touching method.
@@ -134,6 +140,10 @@ class VectorStore:
             return True
         try:
             self._migrate_collection_if_needed()
+            # Build the langchain wrapper only after migration completes —
+            # otherwise the wrapper would bind to the old fixed-schema
+            # collection and never use the new dynamic-field one.
+            self._get_store()
             self._migration_done = True
             return True
         except Exception as e:
@@ -145,6 +155,7 @@ class VectorStore:
                 "error": str(e),
             })
             self._milvus_connected = False
+            self._store = None
             return False
 
     def _migrate_collection_if_needed(self) -> None:
