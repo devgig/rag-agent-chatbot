@@ -48,7 +48,7 @@ flowchart TB
     end
 
     subgraph Models["Model Servers"]
-        LLM[Nemotron 3 Nano 30B-A3B<br/>Chat LLM]
+        LLM[Llama-3.1-Nemotron-Nano-8B-v1<br/>via KServe / vLLM]
         Embed[all-MiniLM-L6-v2<br/>Embeddings]
     end
 
@@ -143,7 +143,7 @@ sequenceDiagram
 | **Vector Store** | Milvus | Document embeddings, similarity search |
 | **Conversations** | PostgreSQL | Chat history, document sources |
 | **L2 Cache / Partials** | Redis (Bitnami HA + Sentinel) | Cross-pod cache, partial-response store on cancel |
-| **Chat LLM** | vLLM (Nemotron 3 Nano 30B-A3B, NVFP4) | Response generation from retrieved context |
+| **Chat LLM** | KServe `InferenceService` (vLLM runtime, `nvidia/Llama-3.1-Nemotron-Nano-8B-v1`) — served as `nemotron-nano-8b` | Response generation from retrieved context |
 | **Embeddings** | all-MiniLM-L6-v2 | Document vectorization |
 
 ## Getting Started

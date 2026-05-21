@@ -203,7 +203,7 @@ Backend Pod (FastAPI + uvicorn)
     │       Partials:    8h TTL, written on cancel only
     │
     ├──► Milvus (vector search)
-    └──► vLLM model server (token stream)
+    └──► KServe InferenceService (vLLM runtime, token stream)
 ```
 
 ---

@@ -88,7 +88,7 @@ Several architectural decisions prevent knowledge leakage:
 |-----------|---------------------|
 | **Embedding model** | all-MiniLM-L6-v2 running locally — no external API calls that could inject knowledge |
 | **Vector database** | Self-hosted Milvus — no shared/public collections |
-| **LLM inference** | Self-hosted via vLLM — no external knowledge augmentation |
+| **LLM inference** | Self-hosted via KServe (vLLM runtime) — no external knowledge augmentation |
 | **Single-pass pipeline** | `START → generate → END` — no iterative loops that could refine queries to escape grounding |
 | **No web access** | No search tools, no URL fetching — the model cannot access external information |
 

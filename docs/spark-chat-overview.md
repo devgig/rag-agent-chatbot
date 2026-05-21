@@ -41,27 +41,27 @@ This project is designed to be customizable, serving as a framework that develop
 | **Frontend** | React, Vite, Tailwind CSS, nginx | Chat UI with document upload, source selection, and real-time streaming |
 | **Backend** | Python 3.12, FastAPI, LangGraph | REST + WebSocket API handling RAG pipeline, ingestion, and chat management |
 | **Embedding** | sentence-transformers (CPU) | Generates vector embeddings for document chunks |
-| **LLM** | vLLM (GPU) | Serves the chat model via OpenAI-compatible API |
+| **LLM** | KServe `InferenceService` (vLLM runtime, GPU) | Serves the chat model via OpenAI-compatible API |
 | **Vector Store** | Milvus | HNSW-indexed vector storage with cosine similarity search |
 | **Database** | PostgreSQL | Conversation history, chat metadata, and source tracking |
 | **Service Mesh** | Istio Ambient Mesh | Traffic routing, gateway URL rewrite |
 
 ### Default Models
 
-| Model | Quantization | Model Type | Weights | Actual Usage | Namespace |
-|-------|--------------|------------|---------|--------------|-----------|
-| Nemotron 3 Nano 30B | NVFP4 | Chat (MoE) | ~15 GB | ~72 GB GPU, ~4 Gi RAM | `llm` |
-| all-MiniLM-L6-v2 | FP32 | Embedding (384d) | ~80 MB | ~332 Mi RAM (CPU only) | `rag-agent` |
+| Model | Precision | Model Type | Weights | Served by | Namespace |
+|-------|-----------|------------|---------|-----------|-----------|
+| Llama-3.1-Nemotron-Nano-8B-v1 | BF16 | Chat (Dense, 8B) | ~16 GB | KServe `InferenceService` (vLLM runtime) | `kserve` |
+| all-MiniLM-L6-v2 | FP32 | Embedding (384d) | ~80 MB | In-cluster `embedding` Deployment (CPU) | `rag-agent` |
 
-**GPU memory:** vLLM pre-allocates ~83 GB via `--gpu-memory-utilization=0.65` for weights + KV cache + CUDA graphs, leaving ~45 GB for OS/K3s. The embedding model runs entirely on CPU.
+**GPU memory:** Runtime tuning (`--gpu-memory-utilization`, KV cache sizing, etc.) is owned by the KServe InferenceService spec in the `kserve` namespace — not in this repo. The embedding model runs entirely on CPU.
 
 ### Inference Performance
 
-Metrics sourced from vLLM Prometheus endpoint (`/metrics`) on DGX Spark GB10.
+> **Note:** The figures below were measured against the previous Nemotron 3 Nano 30B-A3B NVFP4 deployment on this hardware. They're kept as a historical reference point. The current `Llama-3.1-Nemotron-Nano-8B-v1` (dense, 8B) has not been re-benchmarked in this doc; throughput and TTFT will differ — dense 8B is faster per-token but lacks the MoE sparsity advantage.
 
-#### Time to First Token (TTFT)
+Metrics sourced from the vLLM Prometheus endpoint (`/metrics`) on DGX Spark GB10.
 
-Time from request arrival to first generated token. Dominated by prompt prefill.
+#### Time to First Token (TTFT) — historical (30B-A3B)
 
 | Percentile | Latency |
 |------------|---------|
@@ -71,9 +71,7 @@ Time from request arrival to first generated token. Dominated by prompt prefill.
 
 The first request after a cold start may take 20–40s due to CUDA graph warmup.
 
-#### Token Generation Throughput (TPOT)
-
-Sustained output token rate during active generation.
+#### Token Generation Throughput (TPOT) — historical (30B-A3B)
 
 | Metric | Value |
 |--------|-------|
@@ -83,9 +81,7 @@ Sustained output token rate during active generation.
 
 vLLM logs report 10-second averaged throughput, which dilutes active generation across idle intervals and appears lower than the actual per-request rate.
 
-#### End-to-End Request Latency
-
-Total time from request arrival to final token delivered.
+#### End-to-End Request Latency — historical (30B-A3B)
 
 | Percentile | Latency |
 |------------|---------|
@@ -95,9 +91,9 @@ Total time from request arrival to final token delivered.
 
 Average request size: ~1,337 prompt tokens, ~150 generation tokens.
 
-#### Dynamic Batching
+#### Dynamic Batching — historical (30B-A3B)
 
-vLLM chunked prefill is enabled with `max_num_batched_tokens=2048`, allowing prompt processing and generation to be interleaved across concurrent requests.
+vLLM chunked prefill with `max_num_batched_tokens=2048` allowed prompt processing and generation to interleave across concurrent requests.
 
 | Metric | Value |
 |--------|-------|
@@ -105,7 +101,7 @@ vLLM chunked prefill is enabled with `max_num_batched_tokens=2048`, allowing pro
 | Max concurrent requests (at 16K context) | 184x |
 | Peak KV cache usage | 0.1% |
 
-#### Cache & Utilization
+#### Cache & Utilization — historical (30B-A3B)
 
 | Metric | Value |
 |--------|-------|
@@ -126,7 +122,7 @@ User Query (via WebSocket)
   │     └─ Jinja2 template injects retrieved documents into system prompt
   │
   └─ 3. Single LLM Call (streaming)
-        └─ OpenAI-compatible API → vLLM
+        └─ OpenAI-compatible API → KServe (vLLM runtime)
         └─ temperature=0, top_p=1, stream=True
         └─ Tokens streamed to frontend via WebSocket
   │
@@ -202,6 +198,6 @@ The RAG search logic lives directly in `assets/backend/agent.py` in the `generat
 | Namespace | Purpose |
 |-----------|---------|
 | `rag-agent` | Backend, embedding service, frontend |
-| `llm` | LLM model serving (vLLM) |
+| `kserve` | KServe controller + `InferenceService` for the chat LLM (managed outside this repo) |
 | `milvus-system` | Vector database |
 | `postgres-system` | PostgreSQL |

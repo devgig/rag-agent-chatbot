@@ -172,12 +172,12 @@ kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.14.1/kser
 **Define InferenceServices:**
 
 ```yaml
-# Primary LLM — Nemotron 70B via vLLM runtime
+# Primary chat LLM — Llama-3.1-Nemotron-Nano-8B-v1 via vLLM runtime
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
-  name: qwen-7b-llm
-  namespace: rag-agent
+  name: nemotron
+  namespace: kserve
 spec:
   predictor:
     minReplicas: 1          # Always warm for primary chat
@@ -186,7 +186,7 @@ spec:
       modelFormat:
         name: vllm
       runtime: kserve-vllm
-      storageUri: "hf://nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
+      storageUri: "hf://nvidia/Llama-3.1-Nemotron-Nano-8B-v1"
       resources:
         limits:
           nvidia.com/gpu: 1
@@ -272,7 +272,7 @@ If your agent models are fine-tuned variants of the same base, vLLM can serve mu
 ```yaml
 # Single vLLM deployment serving multiple "models"
 args:
-  - "--model=nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
+  - "--model=nvidia/Llama-3.1-Nemotron-Nano-8B-v1"
   - "--enable-lora"
   - "--lora-modules"
   - "chat-agent=/models/lora/chat"

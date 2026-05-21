@@ -143,7 +143,7 @@ These models are downloaded and served at runtime. They are not bundled in the r
 
 | Model | Provider | License | Purpose |
 |-------|----------|---------|---------|
-| [NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4) | NVIDIA | NVIDIA Open Model License | Chat LLM (MoE, 30B total / 3B active) |
+| [Llama-3.1-Nemotron-Nano-8B-v1](https://huggingface.co/nvidia/Llama-3.1-Nemotron-Nano-8B-v1) | NVIDIA | Llama 3.1 Community License Agreement + NVIDIA Open Model License | Chat LLM (Dense, 8B) — served via KServe (vLLM runtime) as `nemotron-nano-8b` |
 | [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) | sentence-transformers | Apache-2.0 | Document embedding (22M params, 384-dim) |
 
 ---
@@ -174,7 +174,7 @@ The following license types are used across all dependencies:
 | **AGPL-3.0** | Copyleft | MinIO (used as a standalone service) |
 | **MPL-2.0** | Weak copyleft | certifi |
 | **NVIDIA EULA** | Proprietary | CUDA containers, TensorRT-LLM |
-| **NVIDIA Open Model License** (Models) | Permissive | NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4 |
+| **NVIDIA Open Model License** + **Llama 3.1 Community License** (Models) | Permissive | Llama-3.1-Nemotron-Nano-8B-v1 |
 | **Apache-2.0** (Models) | Permissive | all-MiniLM-L6-v2 |
 
 ### AGPL-3.0 Note
