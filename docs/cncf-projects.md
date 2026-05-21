@@ -23,7 +23,7 @@ This document catalogs all [Cloud Native Computing Foundation (CNCF)](https://ww
 
 | Project | Usage | Where |
 |---------|-------|-------|
-| [External Secrets Operator](https://external-secrets.io/) | Syncs secrets from Azure Key Vault to Kubernetes via ClusterSecretStore | `kustomize/frontend/base/acr-external-secret.yaml`, `kustomize/backend/base/acr-external-secret.yaml`, `kustomize/backend/base/postgres-external-secret.yaml`, `kustomize/models/base/hf-external-secret.yaml` |
+| [External Secrets Operator](https://external-secrets.io/) | Syncs secrets from Azure Key Vault to Kubernetes via ClusterSecretStore | `kustomize/frontend/base/acr-external-secret.yaml`, `kustomize/backend/base/acr-external-secret.yaml`, `kustomize/backend/base/postgres-external-secret.yaml`, `kustomize/backend/base/redis-external-secret.yaml` |
 
 ## Kubernetes Sub-Projects (under CNCF umbrella)
 

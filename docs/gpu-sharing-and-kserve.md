@@ -9,10 +9,10 @@ Strategies for sharing a single NVIDIA DGX Spark (Blackwell GB10, 128GB unified 
 | GPU Node | `spark-7eb5` — NVIDIA DGX Spark, Blackwell GB10 |
 | GPU Memory | 128GB unified (shared CPU/GPU address space) |
 | CUDA | 13.0 (Driver 580.95) |
-| Current Workload | Nemotron 3 Nano 30B NVFP4 via vLLM (55% GPU mem utilization) |
-| GPU Resource | `nvidia.com/gpu: 1` — exclusive allocation to one pod |
+| Current Workloads | KServe `InferenceService` per model in the `kserve` namespace — currently `nemotron` (Llama-3.1-Nemotron-Nano-8B-v1, served as `nemotron-nano-8b`, ~16GB BF16) and `qwen-coder` |
+| GPU Resource | `nvidia.com/gpu: 1` — exclusive allocation to one pod (sharing strategies below not yet enabled) |
 
-**The problem:** Kubernetes allocates the GPU as a single indivisible resource. The current `nemotron-nano` deployment claims the entire GPU, blocking any other pod from scheduling GPU workloads.
+**Status:** Application-side LLM serving moved to KServe on 2026-05-21 (see `docs/llm-selection-journey.md` Phase 7). The strategies below remain the operative roadmap for letting multiple GPU workloads share the single DGX Spark; the InferenceService model makes them easier to adopt than the previous in-repo Deployment did, but the GPU itself is still allocated as one indivisible resource until time-slicing or MPS is configured at the GPU Operator level.
 
 ---
 
@@ -69,7 +69,7 @@ Allocatable:
 **Update your deployments** to request a fraction:
 
 ```yaml
-# nemotron-nano-deployment.yaml — reduce from 1 to 1 virtual GPU slice
+# Inside the KServe InferenceService predictor spec — claim 1 virtual GPU slice
 resources:
   limits:
     nvidia.com/gpu: 1   # now 1 of 4 slices, not 1 of 1
