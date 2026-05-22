@@ -51,4 +51,10 @@ ENV HF_HUB_OFFLINE=1
 
 EXPOSE 8000
 
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+# Two workers lets us serve embeddings concurrently across CPU cores. The
+# event loop in each worker still hands model.encode() to a thread pool so a
+# single worker isn't fully serialized either — workers=2 is additional
+# capacity on top of that. Each worker loads its own copy of the model
+# (~600 MB resident), so total RAM is ~1.2 GB; fits comfortably in the pod's
+# 4 Gi memory limit. Drop back to 1 worker if memory pressure ever shows up.
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

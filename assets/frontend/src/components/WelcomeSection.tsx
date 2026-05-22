@@ -23,6 +23,11 @@ export default function WelcomeSection({ children }: { children?: React.ReactNod
       <div className={styles.welcomeMessage}>
         Hello! Send a message to Spark Chat.
       </div>
+      <div className={styles.welcomeHint}>
+        Each question is answered independently from the selected documents.
+        For follow-ups, restate the full question — the assistant doesn't
+        carry context from prior turns.
+      </div>
       {children}
     </div>
   );

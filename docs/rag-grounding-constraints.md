@@ -91,10 +91,69 @@ Several architectural decisions prevent knowledge leakage:
 | **LLM inference** | Self-hosted via KServe (vLLM runtime) — no external knowledge augmentation |
 | **Single-pass pipeline** | `START → generate → END` — no iterative loops that could refine queries to escape grounding |
 | **No web access** | No search tools, no URL fetching — the model cannot access external information |
+| **Zero conversation history** | Each turn is sent to the LLM as `(system + current user message)` only — see §5 |
 
 ---
 
-## 5. Temperature and Sampling
+## 5. Stateless Turns (No Conversation History)
+
+**File:** `assets/backend/agent.py` — `generate()` (line ~140)
+
+The LLM call uses **only** the current turn's user message plus the system prompt
+(which embeds the retrieved documents). Prior `HumanMessage` / `AIMessage` pairs
+are saved to PostgreSQL for the UI to display, but never replayed to the model.
+
+```python
+messages = [
+    {"role": "system", "content": system_prompt},  # includes retrieved <document> blocks
+    {"role": "user", "content": user_query},
+]
+```
+
+### Why no history
+
+The obvious feature ask is "let the model see the last N turns so users can ask
+follow-ups like 'expand on that'." We deliberately don't do it because of a
+failure mode that's specific to user-selected RAG:
+
+> **Scenario.** User selects Doc A, asks question about Doc A → correct answer.
+> User then *deselects* Doc A, selects Doc B, asks a similar question. The model
+> has Doc A's facts in conversation history. It bleeds those facts into the
+> Doc B answer even though Doc A is no longer in the retrieved context for this
+> turn. Result: confidently-stated factual claims that contradict the currently-
+> selected sources.
+
+In a non-RAG chatbot, conversation history is purely additive context. In a
+RAG chatbot where the *active source set* can change between turns, history
+becomes a vector for cross-source contamination. The user has no idea the
+model is still influenced by a doc they've already moved on from.
+
+### Trade-offs accepted
+
+- **No "expand on that" / "elaborate" UX.** Follow-ups need to restate context.
+  The system prompt explicitly tells the model to ask the user to rephrase when
+  a question is ambiguous in isolation, instead of guessing from prior turns.
+- **Slightly more typing for users.** Acceptable cost for the correctness
+  guarantee.
+- **The UI surfaces this** in the welcome message so users aren't surprised.
+
+### What if multi-turn becomes a hard requirement later
+
+Two options that preserve grounding:
+
+1. **Per-source history.** Maintain a separate history thread per active source
+   set; switch threads when the user changes selected_sources. Adds state
+   complexity but eliminates the cross-source bleed.
+2. **Summarized history.** Maintain a rolling summary of prior turns scoped to
+   "what the user has been asking about", not "what the model said." The
+   summary feeds back into the system prompt as topical hints, not as
+   conclusions to defer to. Lower precision but bounded contamination.
+
+Neither is in scope today.
+
+---
+
+## 6. Temperature and Sampling
 
 **File:** `assets/backend/agent.py` — `generate()`
 

@@ -15,55 +15,94 @@
 # limitations under the License.
 #
 import glob
-from typing import List, Optional, Callable
 import os
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_milvus import Milvus
-from langchain_core.documents import Document
-from langchain_unstructured import UnstructuredLoader
-from logger import logger
+from typing import List, Optional, Callable
+
+import httpx
 import requests
+from langchain_core.documents import Document
+from langchain_milvus import Milvus
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_unstructured import UnstructuredLoader
+
+from logger import logger
 
 
 EMBEDDING_BATCH_SIZE = 32
 RELEVANCE_SCORE_THRESHOLD = float(os.getenv("RELEVANCE_SCORE_THRESHOLD", "0.4"))
+EMBEDDING_HTTP_TIMEOUT = 60.0
 
 
 class CustomEmbeddings:
     """Wraps embedding service (all-MiniLM-L6-v2) to match OpenAI format.
 
-    Supports batched requests to reduce HTTP round-trips during document indexing.
+    Supports both sync (``embed_query`` / ``embed_documents``) and async
+    (``aembed_query`` / ``aembed_documents``) interfaces. The async path uses
+    a shared ``httpx.AsyncClient`` so the embed call in the chat-query hot
+    path never blocks the event loop — previously it was sync ``requests``
+    wrapped in ``asyncio.to_thread``, which paid a thread per call.
+
+    Batched in EMBEDDING_BATCH_SIZE chunks to reduce HTTP overhead during
+    large ingestions.
     """
     def __init__(self, model: str = "all-MiniLM-L6-v2", host: str = "http://embedding.rag-agent.svc.cluster.local:8000"):
         self.model = model
         self.url = f"{host}/v1/embeddings"
         self._session = requests.Session()
+        self._async_client: Optional[httpx.AsyncClient] = None
+
+    def _ensure_async_client(self) -> httpx.AsyncClient:
+        if self._async_client is None:
+            self._async_client = httpx.AsyncClient(timeout=EMBEDDING_HTTP_TIMEOUT)
+        return self._async_client
 
     def __call__(self, texts: list[str]) -> list[list[float]]:
         embeddings: list[list[float]] = []
-        # Batch requests to reduce HTTP overhead during large ingestions
         for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
             batch = texts[i:i + EMBEDDING_BATCH_SIZE]
             response = self._session.post(
                 self.url,
                 json={"input": batch, "model": self.model},
                 headers={"Content-Type": "application/json"},
-                timeout=60,
+                timeout=EMBEDDING_HTTP_TIMEOUT,
             )
             response.raise_for_status()
             data = response.json()
-            # Sort by index to maintain ordering
+            sorted_data = sorted(data["data"], key=lambda x: x["index"])
+            embeddings.extend(item["embedding"] for item in sorted_data)
+        return embeddings
+
+    async def _acall(self, texts: list[str]) -> list[list[float]]:
+        client = self._ensure_async_client()
+        embeddings: list[list[float]] = []
+        for i in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+            batch = texts[i:i + EMBEDDING_BATCH_SIZE]
+            response = await client.post(
+                self.url,
+                json={"input": batch, "model": self.model},
+                headers={"Content-Type": "application/json"},
+            )
+            response.raise_for_status()
+            data = response.json()
             sorted_data = sorted(data["data"], key=lambda x: x["index"])
             embeddings.extend(item["embedding"] for item in sorted_data)
         return embeddings
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        """Embed a list of document texts. Required by Milvus library."""
+        """Embed a list of document texts (sync — used by ingest path)."""
         return self.__call__(texts)
 
     def embed_query(self, text: str) -> list[float]:
-        """Embed a single query text. Required by Milvus library."""
+        """Embed a single query text (sync — used as fallback by langchain_milvus)."""
         return self.__call__([text])[0]
+
+    async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed a list of document texts (async)."""
+        return await self._acall(texts)
+
+    async def aembed_query(self, text: str) -> list[float]:
+        """Embed a single query text (async — used by chat-query hot path)."""
+        return (await self._acall([text]))[0]
 
 
 def _sanitize_milvus_string(value: str) -> str:
@@ -491,18 +530,23 @@ class VectorStore:
             self._milvus_connected = False
             logger.error({"message": "Error flushing Milvus store", "error": str(e)}, exc_info=True)
 
-    def get_documents(
+    async def get_documents(
         self,
         query: str,
         user_id: str,
         k: int = 5,
-        sources: Optional[List[str]] = None,
     ) -> List[Document]:
         """Retrieve documents visible to this user, filtered by similarity.
 
-        Visibility filter: ``visibility == "public" OR user_id == <user>``.
-        Source filter (if provided) is AND-ed with the visibility filter.
-        Chunks below ``RELEVANCE_SCORE_THRESHOLD`` are dropped.
+        Visibility filter (``visibility == "public" OR user_id == <user>``) is
+        applied in Milvus. **Source-set partitioning happens in the caller**
+        (see ``agent.generate``) — keeping it out of Milvus lets us answer the
+        common "look in selected sources, fall back to corpus if empty" UX
+        pattern in a single Milvus query instead of two.
+
+        Chunks below ``RELEVANCE_SCORE_THRESHOLD`` are dropped before return.
+        Async-native via ``asimilarity_search_with_relevance_scores`` so the
+        chat-query path doesn't burn a thread on every turn.
         """
         if not self._ensure_migrated():
             logger.warning({
@@ -511,25 +555,16 @@ class VectorStore:
             })
             return []
         try:
-            visibility_expr = _build_visibility_filter(user_id)
-            if sources:
-                if len(sources) == 1:
-                    source_expr = f'source == "{_sanitize_milvus_string(sources[0])}"'
-                else:
-                    source_expr = " || ".join(
-                        f'source == "{_sanitize_milvus_string(s)}"' for s in sources
-                    )
-                filter_expr = f"({source_expr}) && {visibility_expr}"
-            else:
-                filter_expr = visibility_expr
+            filter_expr = _build_visibility_filter(user_id)
 
             logger.debug({
                 "message": "Retrieving with filter",
                 "filter": filter_expr,
+                "k": k,
                 "user_id": user_id,
             })
 
-            results_with_scores = self._store.similarity_search_with_relevance_scores(
+            results_with_scores = await self._store.asimilarity_search_with_relevance_scores(
                 query, k=k, expr=filter_expr
             )
 
@@ -541,9 +576,8 @@ class VectorStore:
                     "preview": doc.page_content[:80]
                 })
 
-            filtered = [
-                (doc, score)
-                for doc, score in results_with_scores
+            above_threshold = [
+                doc for doc, score in results_with_scores
                 if score >= RELEVANCE_SCORE_THRESHOLD
             ]
 
@@ -551,12 +585,12 @@ class VectorStore:
                 "message": "Document retrieval complete",
                 "query": query[:80],
                 "total_candidates": len(results_with_scores),
-                "above_threshold": len(filtered),
+                "above_threshold": len(above_threshold),
                 "threshold": RELEVANCE_SCORE_THRESHOLD,
                 "user_id": user_id,
             })
 
-            return [doc for doc, score in filtered]
+            return above_threshold
         except Exception as e:
             logger.error({
                 "message": "Error retrieving documents",

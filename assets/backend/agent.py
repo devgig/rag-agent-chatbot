@@ -142,24 +142,37 @@ class ChatAgent:
             "query": user_query[:100],
         })
 
-        # --- Document search (inline, replaces MCP subprocess) ---
+        # --- Document search ---
         prefs = await self.conversation_store.get_user_preferences(user_id)
         sources = prefs.get("selected_sources") or []
 
-        if sources:
-            retrieved_docs = await asyncio.to_thread(
-                self.vector_store.get_documents, user_query, user_id, 5, sources
-            )
-        else:
-            retrieved_docs = await asyncio.to_thread(
-                self.vector_store.get_documents, user_query, user_id
-            )
+        # Single oversampled query, partition by selected sources in Python.
+        # Previously this was two sequential queries when the user had sources
+        # selected (filtered first, un-filtered fallback if empty) — each one
+        # an embedding round-trip + Milvus RPC. Now we issue one un-filtered
+        # query at higher k, partition locally, and preserve the "fall back to
+        # corpus" UX without the extra hop.
+        k_target = 5
+        k_oversample = max(k_target * 5, 25) if sources else k_target
+        all_docs = await self.vector_store.get_documents(
+            user_query, user_id, k=k_oversample
+        )
 
-        if not retrieved_docs and sources:
-            logger.info("No documents with source filter, retrying without filter")
-            retrieved_docs = await asyncio.to_thread(
-                self.vector_store.get_documents, user_query, user_id
-            )
+        if sources:
+            selected_set = set(sources)
+            in_selected = [
+                d for d in all_docs if d.metadata.get("source") in selected_set
+            ][:k_target]
+            if in_selected:
+                retrieved_docs = in_selected
+            else:
+                logger.info({
+                    "message": "No hits in selected sources; falling back to corpus",
+                    "selected_sources": sources,
+                })
+                retrieved_docs = all_docs[:k_target]
+        else:
+            retrieved_docs = all_docs[:k_target]
 
         # Format context string. Each retrieved chunk is wrapped in a
         # <document> tag with the source name as an attribute, and stray

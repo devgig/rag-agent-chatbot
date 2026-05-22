@@ -1,9 +1,11 @@
+import asyncio
+import logging
+from typing import List
+
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
-from typing import List
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,7 +41,12 @@ async def load_model():
 @app.post("/v1/embeddings")
 async def create_embedding(request: EmbeddingRequest):
     texts = [request.input] if isinstance(request.input, str) else request.input
-    embeddings = model.encode(texts).tolist()
+    # sentence-transformers' encode() is CPU-bound and synchronous. Running it
+    # directly in this async handler would block the event loop and serialize
+    # all incoming requests, even though uvicorn has multiple workers. Hand it
+    # off to the default thread pool so concurrent requests can interleave.
+    embeddings_arr = await asyncio.to_thread(model.encode, texts)
+    embeddings = embeddings_arr.tolist()
 
     return EmbeddingResponse(
         data=[
