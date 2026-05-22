@@ -33,7 +33,6 @@ import json
 import os
 import time
 import uuid
-from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict
 
@@ -44,7 +43,7 @@ from fastapi.responses import StreamingResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from agent import ChatAgent
-from auth import get_current_user
+from auth import close_jwks, get_current_user, init_jwks
 from cache import (
     CACHE_L2_TTL_SECONDS,
     clear_partial_response,
@@ -71,6 +70,10 @@ MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 MAX_TOTAL_UPLOAD_BYTES = int(os.getenv("MAX_TOTAL_UPLOAD_MB", "200")) * 1024 * 1024
 MAX_QUERY_BYTES = int(os.getenv("MAX_QUERY_BYTES", str(64 * 1024)))  # 64KB
 MAX_STREAMS_PER_USER = int(os.getenv("MAX_STREAMS_PER_USER", "5"))
+# Stream-slot TTL — long enough to cover any realistic single chat response
+# (RAG + LLM generation), short enough that a crashed pod's counters auto-decay
+# within ~10 minutes so users aren't stuck unable to start new streams.
+STREAM_SLOT_TTL_SECONDS = int(os.getenv("STREAM_SLOT_TTL_SECONDS", "600"))
 UPLOAD_READ_CHUNK_BYTES = 64 * 1024  # how much we slurp per read() from the request stream
 
 ALLOWED_UPLOAD_EXTENSIONS = {'.pdf', '.txt', '.docx', '.doc', '.md', '.rtf', '.csv', '.json', '.html'}
@@ -131,11 +134,6 @@ def _validate_magic_bytes(path: str, ext: str) -> Optional[str]:
         return f"magic bytes ({detected.mime}) don't match extension {ext}"
     return None
 
-# Per-user concurrent SSE stream tracking. Per-pod; with Istio consistent-hash
-# affinity each user maps to a single pod so this is effectively per-user.
-_active_streams: Dict[str, int] = defaultdict(int)
-_streams_lock = asyncio.Lock()
-
 config_manager = ConfigManager(CONFIG_PATH)
 
 postgres_storage = PostgreSQLConversationStorage(
@@ -187,6 +185,9 @@ async def lifespan(app: FastAPI):
         await postgres_storage.init_pool()
         logger.info("PostgreSQL storage initialized successfully")
         await redis_cache.connect()
+        # JWKS is best-effort at startup: if the auth backend is briefly
+        # unreachable we still come up and lazy-fetch on the first request.
+        await init_jwks()
         logger.debug("Initializing ChatAgent...")
         agent = await ChatAgent.create(
             vector_store=vector_store,
@@ -206,6 +207,11 @@ async def lifespan(app: FastAPI):
         logger.debug("PostgreSQL storage closed successfully")
     except Exception as e:
         logger.error(f"Error closing PostgreSQL storage: {e}")
+
+    try:
+        await close_jwks()
+    except Exception as e:
+        logger.error(f"Error closing JWKS subsystem: {e}")
 
     try:
         await redis_cache.close()
@@ -299,10 +305,15 @@ async def stream_chat_query(
         if other_owner and other_owner != current_user:
             raise HTTPException(status_code=404, detail="Chat not found")
 
-    async with _streams_lock:
-        if _active_streams[current_user] >= MAX_STREAMS_PER_USER:
-            raise HTTPException(status_code=429, detail="Too many active streams")
-        _active_streams[current_user] += 1
+    # Atomic per-user stream cap via Redis. Survives pod restarts and
+    # consistent-hash rebalancing across KEDA scale events (the previous
+    # in-memory dict was per-pod and could let a user briefly exceed the
+    # cap while the hash ring was settling).
+    acquired = await redis_cache.acquire_stream_slot(
+        current_user, MAX_STREAMS_PER_USER, STREAM_SLOT_TTL_SECONDS
+    )
+    if not acquired:
+        raise HTTPException(status_code=429, detail="Too many active streams")
 
     async def event_stream():
         partial_buffer: List[str] = []
@@ -342,8 +353,7 @@ async def stream_chat_query(
                 )
             raise
         finally:
-            async with _streams_lock:
-                _active_streams[current_user] = max(0, _active_streams[current_user] - 1)
+            await redis_cache.release_stream_slot(current_user)
 
     return StreamingResponse(
         event_stream(),

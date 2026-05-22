@@ -114,6 +114,61 @@ class RedisCache:
         except Exception as exc:
             logger.warning(f"Redis DEL failed (ns={namespace} key={key}): {exc}")
 
+    async def acquire_stream_slot(
+        self, user_id: str, max_concurrent: int, ttl_seconds: int
+    ) -> bool:
+        """Atomically try to claim a per-user SSE stream slot.
+
+        Returns True on success (caller may proceed). Returns False on cap
+        hit (caller should reject the request with 429). Fails open (returns
+        True) if Redis is unavailable — losing the cap is preferable to
+        blocking all chat traffic during a Redis outage.
+
+        Implementation note: there is a benign race between INCR and the
+        conditional DECR. Under pile-on, the count may briefly overshoot
+        ``max_concurrent`` by up to ``concurrent_request_count`` before
+        each over-cap request decrements itself. Steady-state is bounded.
+        The TTL ensures stale counters don't accumulate forever if a pod
+        crashes mid-stream.
+        """
+        if self._client is None:
+            return True
+        try:
+            key = self._key("streams", user_id)
+            count = await self._client.incr(key)
+            await self._client.expire(key, ttl_seconds)
+            if count > max_concurrent:
+                await self._client.decr(key)
+                return False
+            return True
+        except Exception as exc:
+            logger.warning(
+                f"Redis acquire_stream_slot failed (user={user_id}): {exc} "
+                "— failing open"
+            )
+            return True
+
+    async def release_stream_slot(self, user_id: str) -> None:
+        """Release a previously-claimed stream slot.
+
+        Idempotent and best-effort: Redis errors are logged and swallowed.
+        On rare double-release or missed-release, the TTL on the counter
+        ensures we don't drift permanently — stale counts auto-decay.
+        """
+        if self._client is None:
+            return
+        try:
+            key = self._key("streams", user_id)
+            # Use DECR but floor at 0 to avoid negative counts if something
+            # double-releases (e.g. after a Redis flush).
+            new_count = await self._client.decr(key)
+            if new_count < 0:
+                await self._client.set(key, 0, xx=True)
+        except Exception as exc:
+            logger.warning(
+                f"Redis release_stream_slot failed (user={user_id}): {exc}"
+            )
+
 
 # Module-level singleton — one Redis pool per backend process.
 redis_cache = RedisCache()
