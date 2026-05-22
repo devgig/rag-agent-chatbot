@@ -268,8 +268,7 @@ async def get_chat_history(chat_id: str, current_user: str = Depends(get_current
     Returns an empty history if the chat is owned by a different user — same
     response shape as a nonexistent chat so we don't leak existence.
     """
-    history_messages = await postgres_storage.get_messages(current_user, chat_id)
-    history = [postgres_storage._message_to_dict(msg) for msg in history_messages]
+    history = await postgres_storage.get_history_dicts(current_user, chat_id)
     partial = await get_partial_response(current_user, chat_id)
     return {"messages": history, "partial": partial}
 

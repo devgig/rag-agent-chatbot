@@ -1,0 +1,102 @@
+# NetworkPolicy: scope backend egress to the services it actually talks to.
+#
+# Why: the backend pod has Istio ambient explicitly disabled
+# (istio.io/dataplane-mode: none — see deployment.yaml) so the JWKS fetch,
+# the Postgres connection, the Redis connection, the Milvus connection, and
+# the embedding HTTP call all traverse the cluster network unauthenticated.
+# A NetworkPolicy at the CNI layer is the right complement: it doesn't add
+# authentication, but it limits which destinations a compromised backend
+# pod could reach.
+#
+# Egress allowed:
+#   - kube-dns (UDP/53) for service resolution
+#   - auth-service ns, port 8000 (JWKS fetch)
+#   - postgres-system ns, port 5432
+#   - redis-system ns, port 6379 + 26379 (sentinel)
+#   - milvus-system ns, port 19530
+#   - embedding pods inside rag-agent ns, port 8000
+#   - kserve ns, port 8000 (LLM via ExternalName → nemotron-nano-8b)
+# Everything else (including the public internet) is denied.
+#
+# Ingress is left open here — the existing Istio HTTPRoute already gates
+# external traffic and we don't want to introduce a NetworkPolicy that
+# fights with KEDA's hash-ring rebalancing.
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rag-agent-backend-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: rag-agent-backend
+  policyTypes:
+    - Egress
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # JWKS fetch — auth backend
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: auth-service
+      ports:
+        - protocol: TCP
+          port: 8000
+
+    # PostgreSQL
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgres-system
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # Redis (+ Sentinel)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: redis-system
+      ports:
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 26379
+
+    # Milvus
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: milvus-system
+      ports:
+        - protocol: TCP
+          port: 19530
+
+    # Embedding service (same namespace)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: embedding
+      ports:
+        - protocol: TCP
+          port: 8000
+
+    # KServe LLM (nemotron-nano-8b ExternalName → nemotron.kserve.svc)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kserve
+      ports:
+        - protocol: TCP
+          port: 8000

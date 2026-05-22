@@ -190,12 +190,16 @@ class PostgreSQLConversationStorage:
         self._db_operations = 0
 
     async def init_pool(self) -> None:
-        """Initialize the connection pool with retry logic and create tables."""
+        """Initialize the connection pool with retry logic and create tables.
+
+        The database itself must already exist — this no longer attempts a
+        ``CREATE DATABASE`` from the app role (PR 7: that required CREATEDB
+        privilege which is excessive for an app account). Provision the
+        ``chatbot`` database out-of-band before the first deploy.
+        """
         last_error = None
         for attempt in range(POOL_CONNECT_MAX_RETRIES):
             try:
-                await self._ensure_database_exists()
-
                 self.pool = await asyncpg.create_pool(
                     host=self.host,
                     port=self.port,
@@ -222,36 +226,6 @@ class PostgreSQLConversationStorage:
 
         logger.error(f"Failed to initialize PostgreSQL pool after {POOL_CONNECT_MAX_RETRIES} attempts: {last_error}")
         raise last_error
-
-    async def _ensure_database_exists(self) -> None:
-        """Ensure the target database exists, create if it doesn't."""
-        try:
-            conn = await asyncpg.connect(
-                host=self.host,
-                port=self.port,
-                database='postgres',
-                user=self.user,
-                password=self.password
-            )
-
-            try:
-                result = await conn.fetchval(
-                    "SELECT 1 FROM pg_database WHERE datname = $1",
-                    self.database
-                )
-
-                if not result:
-                    await conn.execute(f'CREATE DATABASE "{self.database}"')
-                    logger.debug(f"Created database: {self.database}")
-                else:
-                    logger.debug(f"Database {self.database} already exists")
-
-            finally:
-                await conn.close()
-
-        except Exception as e:
-            logger.error(f"Error ensuring database exists: {e}")
-            pass
 
     async def close(self) -> None:
         """Close the connection pool and cleanup background tasks."""
@@ -299,15 +273,18 @@ class PostgreSQLConversationStorage:
                     CREATE TABLE IF NOT EXISTS conversations (
                         chat_id VARCHAR(255) PRIMARY KEY,
                         user_id TEXT NOT NULL,
-                        messages JSONB NOT NULL DEFAULT '[]'::jsonb,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         message_count INTEGER DEFAULT 0
                     )
                 """)
-                # Migration 4 (below) moves message data out of this column. Kept
-                # nullable-via-default for back-compat with code paths that may
-                # still INSERT a chat row before append_messages_to_chat runs.
+                # PR 7 Migration 5: drop the legacy JSONB `messages` column
+                # once the per-row backfill from PR 6's Migration 4 has run.
+                # ALTER IF EXISTS so this is safe on fresh deploys that never
+                # had the column.
+                await conn.execute(
+                    "ALTER TABLE conversations DROP COLUMN IF EXISTS messages"
+                )
 
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS chat_metadata (
@@ -363,9 +340,9 @@ class PostgreSQLConversationStorage:
                 """)
 
                 # --- Migration 4: row-per-message storage (PR 6) ---
-                # New ``messages`` table holds one row per turn. The JSONB
-                # ``conversations.messages`` column is preserved as a backup
-                # for one release cycle and will be dropped in PR 7.
+                # The JSONB-to-rows backfill that lived here in PR 6 is gone
+                # in PR 7 because the JSONB column itself was dropped above.
+                # Any future re-migration would need to come from a backup.
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS messages (
                         chat_id VARCHAR(255) NOT NULL,
@@ -385,62 +362,6 @@ class PostgreSQLConversationStorage:
                     "CREATE INDEX IF NOT EXISTS idx_messages_user_chat_position "
                     "ON messages(user_id, chat_id, position)"
                 )
-
-                # One-shot backfill: copy JSONB messages into per-row storage
-                # for any conversation that has data in the old column but
-                # nothing in the new table. Idempotent — skipped on subsequent
-                # startups because each conversation appears in `messages`
-                # exactly once.
-                unmigrated = await conn.fetch("""
-                    SELECT c.chat_id, c.user_id, c.messages
-                    FROM conversations c
-                    WHERE jsonb_array_length(c.messages) > 0
-                      AND NOT EXISTS (
-                        SELECT 1 FROM messages m WHERE m.chat_id = c.chat_id
-                      )
-                """)
-                if unmigrated:
-                    logger.warning(
-                        "Schema migration: backfilling %d conversation(s) "
-                        "from JSONB to row-per-message storage",
-                        len(unmigrated),
-                    )
-                    for conv_row in unmigrated:
-                        chat_id = conv_row["chat_id"]
-                        user_id = conv_row["user_id"]
-                        msgs_blob = conv_row["messages"]
-                        if isinstance(msgs_blob, str):
-                            msgs_blob = json.loads(msgs_blob)
-                        rows = []
-                        for pos, m in enumerate(msgs_blob or []):
-                            mtype = m.get("type", "")
-                            role = {
-                                "AIMessage": "ai",
-                                "HumanMessage": "human",
-                                "SystemMessage": "system",
-                                "ToolMessage": "tool",
-                            }.get(mtype, "human")
-                            rows.append((
-                                chat_id,
-                                user_id,
-                                pos,
-                                role,
-                                m.get("content", "") or "",
-                                json.dumps(m["tool_calls"]) if m.get("tool_calls") else None,
-                                m.get("tool_call_id"),
-                                m.get("name"),
-                            ))
-                        if rows:
-                            await conn.executemany(
-                                """
-                                INSERT INTO messages
-                                    (chat_id, user_id, position, role, content,
-                                     tool_calls, tool_call_id, name)
-                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                                ON CONFLICT (chat_id, position) DO NOTHING
-                                """,
-                                rows,
-                            )
 
                 # --- Images: unchanged (kept here for completeness) ---
                 await conn.execute("""
@@ -578,6 +499,73 @@ class PostgreSQLConversationStorage:
             )
             return messages[-limit:] if limit else messages
 
+    async def get_history_dicts(
+        self, user_id: str, chat_id: str, limit: Optional[int] = None
+    ) -> List[Dict]:
+        """Like ``get_messages`` but skips the BaseMessage round-trip.
+
+        Returns the same dict shape that ``_message_to_dict`` produces, but
+        constructs the dicts directly from DB rows (or from cached dicts in
+        L2) instead of building intermediate BaseMessage objects. Used by
+        the SSE history endpoint where the consumer is JSON-only.
+        """
+        cached_messages = self._get_cached_messages(user_id, chat_id)
+        if cached_messages is not None:
+            dicts = [self._message_to_dict(m) for m in cached_messages]
+            return dicts[-limit:] if limit else dicts
+
+        from cache import redis_cache
+        l2 = await redis_cache.get_json("messages", _cache_key(user_id, chat_id))
+        if l2 is not None:
+            # Repopulate L1 so subsequent reads stay fast even when the
+            # consumer wants BaseMessage objects.
+            messages = [self._dict_to_message(d) for d in l2]
+            self._cache_messages(user_id, chat_id, messages)
+            return l2[-limit:] if limit else l2
+
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT role, content, tool_calls, tool_call_id, name
+                FROM messages
+                WHERE user_id = $1 AND chat_id = $2
+                ORDER BY position ASC
+                """,
+                user_id, chat_id,
+            )
+            self._db_operations += 1
+
+        type_for_role = {
+            "human": "HumanMessage",
+            "ai": "AIMessage",
+            "system": "SystemMessage",
+            "tool": "ToolMessage",
+        }
+        dicts: List[Dict] = []
+        for r in rows:
+            role = r["role"]
+            d: Dict[str, Any] = {
+                "type": type_for_role.get(role, "HumanMessage"),
+                "content": r["content"],
+            }
+            tc = r["tool_calls"]
+            if tc:
+                d["tool_calls"] = json.loads(tc) if isinstance(tc, str) else tc
+            if role == "tool":
+                d["tool_call_id"] = r["tool_call_id"] or ""
+                d["name"] = r["name"] or ""
+            dicts.append(d)
+
+        # Best-effort cache backfill so the next BaseMessage-shaped read
+        # (agent / metadata) doesn't pay the DB hop either.
+        self._cache_messages(
+            user_id, chat_id, [self._dict_to_message(d) for d in dicts]
+        )
+        await redis_cache.set_json(
+            "messages", _cache_key(user_id, chat_id), dicts
+        )
+        return dicts[-limit:] if limit else dicts
+
     async def create_empty_chat(self, user_id: str, chat_id: str) -> None:
         """Insert an empty conversations row owned by ``user_id``.
 
@@ -588,8 +576,8 @@ class PostgreSQLConversationStorage:
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO conversations (chat_id, user_id, messages, message_count)
-                VALUES ($1, $2, '[]'::jsonb, 0)
+                INSERT INTO conversations (chat_id, user_id, message_count)
+                VALUES ($1, $2, 0)
                 ON CONFLICT (chat_id) DO NOTHING
                 """,
                 chat_id, user_id,
@@ -622,8 +610,8 @@ class PostgreSQLConversationStorage:
                 # so a wrong-owner write silently fails).
                 await conn.execute(
                     """
-                    INSERT INTO conversations (chat_id, user_id, messages, message_count)
-                    VALUES ($1, $2, '[]'::jsonb, 0)
+                    INSERT INTO conversations (chat_id, user_id, message_count)
+                    VALUES ($1, $2, 0)
                     ON CONFLICT (chat_id) DO NOTHING
                     """,
                     chat_id, user_id,

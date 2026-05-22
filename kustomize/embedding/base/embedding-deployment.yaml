@@ -56,13 +56,17 @@ spec:
         ports:
         - containerPort: 8000
           name: http
+        # Right-sized after PR 5: with CPU-only torch + 2 uvicorn workers
+        # the observed resident set is ~656 MiB. The old 2Gi/4Gi sizing was
+        # carrying the bloated GPU-torch image from before the embedding
+        # image fix; reclaim the headroom for other storage-node workloads.
         resources:
           requests:
             cpu: "500m"
-            memory: "2Gi"
+            memory: "1Gi"
           limits:
             cpu: "2"
-            memory: "4Gi"
+            memory: "2Gi"
         startupProbe:
           httpGet:
             path: /health

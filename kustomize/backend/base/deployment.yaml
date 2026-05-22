@@ -127,9 +127,13 @@ spec:
           mountPath: /tmp
         - name: config-volume
           mountPath: /config
+        # CPU request bumped 500m → 750m so KEDA's 70% utilization
+        # threshold (in keda-scaledobject.yaml) fires at ~525m instead of
+        # ~350m. The previous threshold was triggering under steady SSE
+        # streaming load and producing scale flapping.
         resources:
           requests:
-            cpu: "500m"
+            cpu: "750m"
             memory: "512Mi"
           limits:
             cpu: "2000m"

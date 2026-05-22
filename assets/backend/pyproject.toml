@@ -25,4 +25,5 @@ dependencies = [
     "prometheus-fastapi-instrumentator>=7.0.0",
     "redis>=5.0.0",
     "filetype>=1.2.0",
+    "orjson>=3.10.0",
 ]

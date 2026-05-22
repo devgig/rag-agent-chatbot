@@ -16,6 +16,8 @@ resources:
   - keda-scaledobject.yaml
   # ExternalName alias so backend resolves nemotron-nano-8b:8000 → nemotron.kserve.svc
   - nemotron-kserve-externalname-service.yaml
+  # Restrict backend pod egress to the services it actually needs
+  - networkpolicy.yaml
 
 patches:
   - target:
