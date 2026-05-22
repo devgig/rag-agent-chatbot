@@ -4,13 +4,26 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# Install dependencies and download model in a single layer
+# IMPORTANT: install torch from the CPU-only wheel index BEFORE pulling
+# sentence-transformers. Without this, pip resolves torch from PyPI's
+# default index and downloads the GPU build which drags in ~3-4 GB of
+# nvidia-cublas, nvidia-cudnn, nvidia-cufft, nvidia-nccl, triton, etc.
+# This embedding service is CPU-only (runs on storage nodes with no GPU)
+# so all of that is dead weight AND the resulting site-packages tree is
+# large enough that the multi-stage COPY times out the Docker daemon
+# socket with "error reading from server: EOF".
+#
+# Pinning torch (rather than letting sentence-transformers pick) protects
+# against future torch releases bundling more CUDA libraries.
 RUN pip install --no-cache-dir \
-    sentence-transformers==2.3.1 \
-    fastapi==0.109.0 \
-    uvicorn==0.27.0 \
-    pydantic==2.5.3 \
-    prometheus-fastapi-instrumentator==7.0.2 \
+        --index-url https://download.pytorch.org/whl/cpu \
+        "torch==2.6.0" \
+    && pip install --no-cache-dir \
+        sentence-transformers==2.3.1 \
+        fastapi==0.109.0 \
+        uvicorn==0.27.0 \
+        pydantic==2.5.3 \
+        prometheus-fastapi-instrumentator==7.0.2 \
     && python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" \
     && cp -r /root/.cache/huggingface /app/.cache_hf
 
