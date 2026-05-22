@@ -34,6 +34,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import List, Optional, Dict
 
 import filetype
@@ -404,7 +405,7 @@ async def ingest_files(
         )
 
         os.makedirs(permanent_dir, exist_ok=True)
-        permanent_dir_real = os.path.realpath(permanent_dir)
+        permanent_dir_real = Path(permanent_dir).resolve()
 
         total_size = 0
         for upload in files:
@@ -420,9 +421,12 @@ async def ingest_files(
 
             # Defense in depth against a maliciously crafted filename that
             # somehow slipped past _sanitize_filename — verify the resolved
-            # path is still inside permanent_dir.
-            real_dest = os.path.realpath(dest_path)
-            if not real_dest.startswith(permanent_dir_real + os.sep):
+            # path is still inside permanent_dir. Path.is_relative_to() is
+            # the idiomatic safe form here; it correctly handles edge cases
+            # like ``/uploads/abc`` vs ``/uploads/abcd`` that a naive
+            # ``startswith`` would accept.
+            real_dest = Path(dest_path).resolve()
+            if not real_dest.is_relative_to(permanent_dir_real):
                 raise HTTPException(
                     status_code=400,
                     detail=f"Invalid filename: {upload.filename!r}",

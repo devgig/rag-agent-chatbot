@@ -7,6 +7,7 @@ metadata:
 resources:
   - embedding-deployment.yaml
   - embedding-service.yaml
+  - networkpolicy.yaml
 
 patches:
   - target:

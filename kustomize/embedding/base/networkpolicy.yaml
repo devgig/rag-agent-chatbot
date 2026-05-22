@@ -1,0 +1,34 @@
+# NetworkPolicy: lock embedding service ingress to rag-agent-backend only.
+#
+# Why: the embedding service has no authentication of its own (it's a thin
+# wrapper around sentence-transformers exposed as /v1/embeddings). Anything
+# in the cluster network could otherwise POST text to it and burn CPU. Istio
+# ambient is explicitly disabled on these pods (storage-node iptables-nft
+# is broken on kernel 6.1.0-1025-rockchip), so mesh-level AuthorizationPolicy
+# isn't an option here — a plain NetworkPolicy is the right tool.
+#
+# Effect: only pods labeled app=rag-agent-backend in the rag-agent namespace
+# can hit TCP/8000 on embedding pods. Everything else (other namespaces,
+# unlabeled pods, the host network) is rejected at the CNI layer.
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: embedding-allow-backend-only
+spec:
+  podSelector:
+    matchLabels:
+      app: embedding
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: rag-agent
+          podSelector:
+            matchLabels:
+              app: rag-agent-backend
+      ports:
+        - protocol: TCP
+          port: 8000

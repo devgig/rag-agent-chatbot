@@ -45,7 +45,11 @@ spec:
       - name: acr-secret
       initContainers:
       - name: create-config
-        image: busybox
+        # Pinned: the bare ``busybox`` tag is mutable and a supply-chain
+        # compromise on the upstream tag would land here on the next pull.
+        # Substitute the multi-arch digest (``busybox:1.36.1-musl@sha256:...``)
+        # if stricter immutability is needed.
+        image: busybox:1.36.1-musl
         command: ['sh', '-c', 'echo "{\"sources\":[],\"models\":[\"${MODELS}\"],\"selected_model\":\"${MODELS}\",\"selected_sources\":[],\"current_chat_id\":null}" > /config/config.json']
         envFrom:
         - configMapRef:

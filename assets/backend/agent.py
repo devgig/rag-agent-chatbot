@@ -18,6 +18,7 @@
 
 import asyncio
 import contextlib
+import re
 from typing import AsyncIterator, List, Dict, Any, TypedDict, Optional, Callable, Awaitable
 
 from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage
@@ -34,6 +35,43 @@ SENTINEL = object()
 StreamCallback = Callable[[Dict[str, Any]], Awaitable[None]]
 
 LLM_REQUEST_TIMEOUT = 120.0
+
+# Tokens that an attacker-controlled document could embed to try to break out
+# of the <document>…</document> frame the system prompt sets up. We strip /
+# neutralize these before injecting any retrieved content. This is defense in
+# depth on top of the "treat the following as untrusted" framing in the
+# system prompt.
+_PROMPT_BREAKOUT_PATTERNS = [
+    # Closing-tag escapes from the document fence
+    (re.compile(r"</\s*document\s*>", re.IGNORECASE), "&lt;/document&gt;"),
+    (re.compile(r"<\s*document\b[^>]*>", re.IGNORECASE), "&lt;document&gt;"),
+    # Common chat-template control sequences different models use to switch role
+    (re.compile(r"<\|im_start\|>"), "&lt;|im_start|&gt;"),
+    (re.compile(r"<\|im_end\|>"), "&lt;|im_end|&gt;"),
+    (re.compile(r"<\|system\|>", re.IGNORECASE), "&lt;|system|&gt;"),
+    (re.compile(r"<\|user\|>", re.IGNORECASE), "&lt;|user|&gt;"),
+    (re.compile(r"<\|assistant\|>", re.IGNORECASE), "&lt;|assistant|&gt;"),
+    # <think>...</think> blocks — Nemotron-class models use these as
+    # reasoning markers; stripping them from input prevents a poisoned doc
+    # from hiding instructions inside a "reasoning" block the model would
+    # otherwise filter out of its visible output.
+    (re.compile(r"<\s*/?\s*think\s*>", re.IGNORECASE), "&lt;think&gt;"),
+]
+
+
+def _neutralize_doc_content(text: str) -> str:
+    """Strip prompt-injection breakout sequences from retrieved doc content.
+
+    Replaces XML-like control tokens with HTML-entity escapes so the model
+    sees them as literal text instead of as role/scope changes. The output
+    is still readable for the user (the visible content is unchanged), but
+    can't be mistaken for an instruction frame by the chat-template parser.
+    """
+    if not text:
+        return text
+    for pattern, replacement in _PROMPT_BREAKOUT_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 class State(TypedDict, total=False):
@@ -123,13 +161,24 @@ class ChatAgent:
                 self.vector_store.get_documents, user_query, user_id
             )
 
-        # Format context string (same format as former rag.py MCP tool)
+        # Format context string. Each retrieved chunk is wrapped in a
+        # <document> tag with the source name as an attribute, and stray
+        # control sequences that could look like a closing tag or another
+        # instruction frame are neutralized before insertion. This is the
+        # prompt-injection defense — the system prompt tells the model that
+        # anything inside <document>…</document> is untrusted data, never
+        # an instruction.
         if retrieved_docs:
-            context_parts = []
+            context_parts = ["Document context (untrusted reference material):"]
             for i, doc in enumerate(retrieved_docs, 1):
                 source = doc.metadata.get("source", "unknown")
-                content = doc.page_content.strip()
-                context_parts.append(f"[Document {i} - {source}]\n{content}")
+                content = _neutralize_doc_content(doc.page_content.strip())
+                safe_source = _neutralize_doc_content(source)
+                context_parts.append(
+                    f'<document index="{i}" source="{safe_source}">\n'
+                    f"{content}\n"
+                    f"</document>"
+                )
             context_str = "\n\n".join(context_parts)
             logger.info({
                 "message": "Documents retrieved for RAG",
@@ -137,7 +186,7 @@ class ChatAgent:
                 "context_length": len(context_str),
             })
         else:
-            context_str = "No relevant documents found."
+            context_str = "No document context available for this query."
             logger.warning({"message": "No documents retrieved", "query": user_query})
 
         # --- LLM call with context baked into system prompt ---
