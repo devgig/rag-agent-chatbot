@@ -291,9 +291,10 @@ async def stream_chat_query(
     if len(body.message.encode("utf-8")) > MAX_QUERY_BYTES:
         raise HTTPException(status_code=413, detail="Message too large")
 
-    # If the chat exists, it must be owned by this user. If it doesn't, we'll
-    # create it on first save in the agent runner (save_messages_immediate has
-    # an INSERT path).
+    # If the chat exists, it must be owned by this user. If it doesn't, the
+    # agent's append_messages_to_chat will create the conversations row on
+    # first save (the INSERT … ON CONFLICT DO NOTHING is a no-op if the
+    # caller doesn't own a colliding chat_id).
     exists = await postgres_storage.exists(current_user, chat_id)
     if not exists:
         # Check whether some other user owns this chat_id (UUID collision /
@@ -318,10 +319,12 @@ async def stream_chat_query(
 
     async def event_stream():
         partial_buffer: List[str] = []
-        completed = False
         try:
             await clear_partial_response(current_user, chat_id)
             try:
+                # PR 6: the agent now emits both ``history`` and ``done`` events
+                # itself after persisting the turn, so this handler doesn't need
+                # to re-query Postgres for the final history.
                 async for event in agent.query(
                     query_text=body.message,
                     chat_id=chat_id,
@@ -332,18 +335,11 @@ async def stream_chat_query(
                     yield _sse(event)
                     if await request.is_disconnected():
                         raise asyncio.CancelledError()
-                completed = True
             except asyncio.CancelledError:
                 raise
             except Exception as query_error:
                 logger.error(f"Error in agent.query: {query_error}", exc_info=True)
                 yield _sse({"type": "error", "content": "An error occurred processing your request"})
-
-            if completed:
-                final_messages = await postgres_storage.get_messages(current_user, chat_id)
-                final_history = [postgres_storage._message_to_dict(msg) for msg in final_messages]
-                yield _sse({"type": "history", "messages": final_history})
-                yield _sse({"type": "done"})
         except asyncio.CancelledError:
             partial = "".join(partial_buffer)
             if partial:
@@ -696,7 +692,7 @@ async def get_chat_id(current_user: str = Depends(get_current_user)):
             return {"status": "success", "chat_id": current_chat_id}
 
         new_chat_id = str(uuid.uuid4())
-        await postgres_storage.save_messages_immediate(current_user, new_chat_id, [])
+        await postgres_storage.create_empty_chat(current_user, new_chat_id)
         await postgres_storage.set_chat_metadata(
             current_user, new_chat_id, f"Chat {new_chat_id[:8]}"
         )
@@ -778,7 +774,7 @@ async def create_new_chat(current_user: str = Depends(get_current_user)):
     """Create a new chat conversation for the caller and set it current."""
     try:
         new_chat_id = str(uuid.uuid4())
-        await postgres_storage.save_messages_immediate(current_user, new_chat_id, [])
+        await postgres_storage.create_empty_chat(current_user, new_chat_id)
         await postgres_storage.set_chat_metadata(
             current_user, new_chat_id, f"Chat {new_chat_id[:8]}"
         )
@@ -837,7 +833,7 @@ async def clear_all_chats(current_user: str = Depends(get_current_user)):
                 cleared_count += 1
 
         new_chat_id = str(uuid.uuid4())
-        await postgres_storage.save_messages_immediate(current_user, new_chat_id, [])
+        await postgres_storage.create_empty_chat(current_user, new_chat_id)
         await postgres_storage.set_chat_metadata(
             current_user, new_chat_id, f"Chat {new_chat_id[:8]}"
         )

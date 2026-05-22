@@ -16,16 +16,16 @@
 #
 """PostgreSQL-based conversation storage with LRU caching and I/O optimization.
 
-User-scoped: every conversation, chat metadata row, and user preference is
-keyed by the JWT ``sub`` (an email string). Cross-user reads/writes are not
-possible through the public API — every method takes ``user_id`` and every
-query filters on it.
+User-scoped: every conversation, chat metadata row, message, and user
+preference is keyed by the JWT ``sub`` (an email string). Cross-user
+reads/writes are not possible through the public API.
 
-Document sources are scoped by ``(user_id, visibility)``: legacy chunks
-uploaded before user-scoping have ``user_id = NULL`` and ``visibility =
-'public'`` and remain visible to all users. New uploads carry the uploader
-in ``user_id`` and either ``visibility = 'public'`` (visible to everyone)
-or ``visibility = 'private'`` (visible only to the uploader).
+Message persistence model (PR 6): one row per message in a separate
+``messages`` table, keyed by ``(chat_id, position)``. Previously the entire
+conversation was stored as a JSONB blob on the ``conversations`` row and
+rewritten on every turn (quadratic write amplification on long chats). The
+new layout appends only the new turn's messages and supports cheap LIMIT'd
+reads of recent history.
 """
 
 import json
@@ -108,13 +108,59 @@ class LRUCache:
 
 
 def _cache_key(user_id: str, chat_id: str) -> str:
-    """Build a user-scoped cache key. Email + chat UUID, separated by `|`
-    (which neither value can contain) to avoid ambiguity."""
+    """Build a user-scoped cache key."""
     return f"{user_id}|{chat_id}"
 
 
+# --- Message <-> DB row helpers ---
+
+
+_ROLE_TO_CLASS = {
+    "human": HumanMessage,
+    "ai": AIMessage,
+    "system": SystemMessage,
+    "tool": ToolMessage,
+}
+
+
+def _message_role(message: BaseMessage) -> str:
+    if isinstance(message, HumanMessage):
+        return "human"
+    if isinstance(message, AIMessage):
+        return "ai"
+    if isinstance(message, SystemMessage):
+        return "system"
+    if isinstance(message, ToolMessage):
+        return "tool"
+    return "human"  # safest default; preserves text round-trip
+
+
+def _row_to_message(row) -> BaseMessage:
+    role = row["role"]
+    content = row["content"]
+    if role == "ai":
+        msg = AIMessage(content=content)
+        if row.get("tool_calls"):
+            tc = row["tool_calls"]
+            if isinstance(tc, str):
+                tc = json.loads(tc)
+            msg.tool_calls = tc
+        return msg
+    if role == "human":
+        return HumanMessage(content=content)
+    if role == "system":
+        return SystemMessage(content=content)
+    if role == "tool":
+        return ToolMessage(
+            content=content,
+            tool_call_id=row.get("tool_call_id") or "",
+            name=row.get("name") or "",
+        )
+    return HumanMessage(content=content)
+
+
 class PostgreSQLConversationStorage:
-    """PostgreSQL-based conversation storage with LRU caching and I/O optimization."""
+    """PostgreSQL-based conversation storage with LRU caching."""
 
     def __init__(
         self,
@@ -136,15 +182,9 @@ class PostgreSQLConversationStorage:
 
         self.pool: Optional[asyncpg.Pool] = None
 
-        # All caches now keyed by `user_id|chat_id` to prevent cross-user reads.
         self._message_cache = LRUCache(max_size=MAX_CACHE_ENTRIES, default_ttl=cache_ttl)
         self._metadata_cache = LRUCache(max_size=MAX_CACHE_ENTRIES, default_ttl=cache_ttl)
-        # Per-user chat list cache: user_id -> CacheEntry(list[str])
         self._chat_list_cache: Dict[str, CacheEntry] = {}
-
-        self._pending_saves: Dict[str, List[BaseMessage]] = {}
-        self._save_lock = asyncio.Lock()
-        self._batch_save_task: Optional[asyncio.Task] = None
         self._cache_eviction_task: Optional[asyncio.Task] = None
 
         self._db_operations = 0
@@ -170,7 +210,6 @@ class PostgreSQLConversationStorage:
                 await self._create_tables()
                 logger.debug("PostgreSQL connection pool initialized successfully")
 
-                self._batch_save_task = asyncio.create_task(self._batch_save_worker())
                 self._cache_eviction_task = asyncio.create_task(self._cache_eviction_worker())
                 return
 
@@ -216,36 +255,12 @@ class PostgreSQLConversationStorage:
 
     async def close(self) -> None:
         """Close the connection pool and cleanup background tasks."""
-        for task in (self._batch_save_task, self._cache_eviction_task):
-            if task:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
-
-        # Flush remaining pending saves before closing
-        if self._pending_saves and self.pool:
+        if self._cache_eviction_task:
+            self._cache_eviction_task.cancel()
             try:
-                async with self._save_lock:
-                    saves = self._pending_saves.copy()
-                    self._pending_saves.clear()
-                async with self.pool.acquire() as conn:
-                    async with conn.transaction():
-                        for key, messages in saves.items():
-                            user_id, chat_id = key.split("|", 1)
-                            serialized = [self._message_to_dict(msg) for msg in messages]
-                            await conn.execute("""
-                                INSERT INTO conversations (chat_id, user_id, messages, message_count)
-                                VALUES ($1, $2, $3, $4)
-                                ON CONFLICT (chat_id)
-                                DO UPDATE SET messages = EXCLUDED.messages,
-                                    message_count = EXCLUDED.message_count,
-                                    updated_at = CURRENT_TIMESTAMP
-                                WHERE conversations.user_id = EXCLUDED.user_id
-                            """, chat_id, user_id, json.dumps(serialized), len(messages))
-            except Exception as e:
-                logger.error(f"Error flushing pending saves on shutdown: {e}")
+                await self._cache_eviction_task
+            except asyncio.CancelledError:
+                pass
 
         if self.pool:
             await self.pool.close()
@@ -255,13 +270,7 @@ class PostgreSQLConversationStorage:
         """Create / migrate schema.
 
         Uses a Postgres advisory lock so only one pod runs DDL at a time
-        during rolling deploys. The migration is idempotent: if user_id
-        columns are already present, the migration is a no-op.
-
-        Chat data (conversations + chat_metadata) is DROPPED on initial
-        migration — dev decision documented in the PR description. Document
-        sources are preserved and the existing rows are treated as
-        ``visibility = 'public'``, ``user_id = NULL``.
+        during rolling deploys. Each migration step is idempotent.
         """
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -271,7 +280,7 @@ class PostgreSQLConversationStorage:
                     _MIGRATION_ADVISORY_LOCK_KEY,
                 )
 
-                # --- Migration 1: chat tables become user-scoped ---
+                # --- Migration 1: chat tables become user-scoped (PR 1) ---
                 conv_has_user_id = await conn.fetchval("""
                     SELECT EXISTS (
                         SELECT 1 FROM information_schema.columns
@@ -290,12 +299,15 @@ class PostgreSQLConversationStorage:
                     CREATE TABLE IF NOT EXISTS conversations (
                         chat_id VARCHAR(255) PRIMARY KEY,
                         user_id TEXT NOT NULL,
-                        messages JSONB NOT NULL,
+                        messages JSONB NOT NULL DEFAULT '[]'::jsonb,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         message_count INTEGER DEFAULT 0
                     )
                 """)
+                # Migration 4 (below) moves message data out of this column. Kept
+                # nullable-via-default for back-compat with code paths that may
+                # still INSERT a chat row before append_messages_to_chat runs.
 
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS chat_metadata (
@@ -317,9 +329,7 @@ class PostgreSQLConversationStorage:
                     "ON chat_metadata(user_id)"
                 )
 
-                # --- Migration 2: document_sources gets user_id + visibility ---
-                # NULL user_id + visibility='public' is the legacy default so existing
-                # chunks remain visible to all users.
+                # --- Migration 2: document_sources gets user_id + visibility (PR 1) ---
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS document_sources (
                         source_name VARCHAR(500) PRIMARY KEY,
@@ -342,7 +352,7 @@ class PostgreSQLConversationStorage:
                     "ON document_sources(visibility, user_id)"
                 )
 
-                # --- Migration 3: per-user preferences ---
+                # --- Migration 3: per-user preferences (PR 1) ---
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS user_preferences (
                         user_id TEXT PRIMARY KEY,
@@ -352,7 +362,87 @@ class PostgreSQLConversationStorage:
                     )
                 """)
 
-                # --- Images: unchanged ---
+                # --- Migration 4: row-per-message storage (PR 6) ---
+                # New ``messages`` table holds one row per turn. The JSONB
+                # ``conversations.messages`` column is preserved as a backup
+                # for one release cycle and will be dropped in PR 7.
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS messages (
+                        chat_id VARCHAR(255) NOT NULL,
+                        user_id TEXT NOT NULL,
+                        position INTEGER NOT NULL,
+                        role TEXT NOT NULL CHECK (role IN ('human','ai','system','tool')),
+                        content TEXT NOT NULL,
+                        tool_calls JSONB,
+                        tool_call_id VARCHAR(255),
+                        name VARCHAR(255),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (chat_id, position),
+                        FOREIGN KEY (chat_id) REFERENCES conversations(chat_id) ON DELETE CASCADE
+                    )
+                """)
+                await conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_messages_user_chat_position "
+                    "ON messages(user_id, chat_id, position)"
+                )
+
+                # One-shot backfill: copy JSONB messages into per-row storage
+                # for any conversation that has data in the old column but
+                # nothing in the new table. Idempotent — skipped on subsequent
+                # startups because each conversation appears in `messages`
+                # exactly once.
+                unmigrated = await conn.fetch("""
+                    SELECT c.chat_id, c.user_id, c.messages
+                    FROM conversations c
+                    WHERE jsonb_array_length(c.messages) > 0
+                      AND NOT EXISTS (
+                        SELECT 1 FROM messages m WHERE m.chat_id = c.chat_id
+                      )
+                """)
+                if unmigrated:
+                    logger.warning(
+                        "Schema migration: backfilling %d conversation(s) "
+                        "from JSONB to row-per-message storage",
+                        len(unmigrated),
+                    )
+                    for conv_row in unmigrated:
+                        chat_id = conv_row["chat_id"]
+                        user_id = conv_row["user_id"]
+                        msgs_blob = conv_row["messages"]
+                        if isinstance(msgs_blob, str):
+                            msgs_blob = json.loads(msgs_blob)
+                        rows = []
+                        for pos, m in enumerate(msgs_blob or []):
+                            mtype = m.get("type", "")
+                            role = {
+                                "AIMessage": "ai",
+                                "HumanMessage": "human",
+                                "SystemMessage": "system",
+                                "ToolMessage": "tool",
+                            }.get(mtype, "human")
+                            rows.append((
+                                chat_id,
+                                user_id,
+                                pos,
+                                role,
+                                m.get("content", "") or "",
+                                json.dumps(m["tool_calls"]) if m.get("tool_calls") else None,
+                                m.get("tool_call_id"),
+                                m.get("name"),
+                            ))
+                        if rows:
+                            await conn.executemany(
+                                """
+                                INSERT INTO messages
+                                    (chat_id, user_id, position, role, content,
+                                     tool_calls, tool_call_id, name)
+                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                                ON CONFLICT (chat_id, position) DO NOTHING
+                                """,
+                                rows,
+                            )
+
+                # --- Images: unchanged (kept here for completeness) ---
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS images (
                         image_id VARCHAR(255) PRIMARY KEY,
@@ -365,7 +455,7 @@ class PostgreSQLConversationStorage:
                     "CREATE INDEX IF NOT EXISTS idx_images_expires_at ON images(expires_at)"
                 )
 
-                # Trigger to keep updated_at fresh
+                # Trigger to keep updated_at fresh on conversations
                 await conn.execute("""
                     CREATE OR REPLACE FUNCTION update_updated_at_column()
                     RETURNS TRIGGER AS $$
@@ -385,27 +475,23 @@ class PostgreSQLConversationStorage:
                         EXECUTE FUNCTION update_updated_at_column()
                 """)
 
+    # --- Message <-> dict for SSE / API surfaces (kept for back-compat) ---
+
     def _message_to_dict(self, message: BaseMessage) -> Dict:
-        """Convert a message object to a dictionary for storage."""
         result = {
             "type": message.__class__.__name__,
             "content": message.content,
         }
-
         if hasattr(message, "tool_calls") and message.tool_calls:
             result["tool_calls"] = message.tool_calls
-
         if isinstance(message, ToolMessage):
             result["tool_call_id"] = getattr(message, "tool_call_id", None)
             result["name"] = getattr(message, "name", None)
-
         return result
 
     def _dict_to_message(self, data: Dict) -> BaseMessage:
-        """Convert a dictionary back to a message object."""
         msg_type = data["type"]
         content = data["content"]
-
         if msg_type == "AIMessage":
             msg = AIMessage(content=content)
             if "tool_calls" in data:
@@ -424,27 +510,26 @@ class PostgreSQLConversationStorage:
         else:
             return HumanMessage(content=content)
 
+    # --- L1 / L2 cache helpers (kept the same shape; per-user-scoped) ---
+
     def _get_cached_messages(self, user_id: str, chat_id: str) -> Optional[List[BaseMessage]]:
-        """Get messages from LRU cache if available and not expired."""
         return self._message_cache.get(_cache_key(user_id, chat_id))
 
     def _cache_messages(self, user_id: str, chat_id: str, messages: List[BaseMessage]) -> None:
-        """Cache messages in LRU cache."""
         self._message_cache.put(_cache_key(user_id, chat_id), messages.copy())
 
     def _invalidate_cache(self, user_id: str, chat_id: str) -> None:
-        """Invalidate cache entries for a chat."""
         key = _cache_key(user_id, chat_id)
         self._message_cache.remove(key)
         self._metadata_cache.remove(key)
         self._chat_list_cache.pop(user_id, None)
 
-    async def exists(self, user_id: str, chat_id: str) -> bool:
-        """Check if a conversation exists and is owned by this user."""
-        cached_messages = self._get_cached_messages(user_id, chat_id)
-        if cached_messages is not None:
-            return len(cached_messages) > 0
+    # --- Public message API ---
 
+    async def exists(self, user_id: str, chat_id: str) -> bool:
+        cached_messages = self._get_cached_messages(user_id, chat_id)
+        if cached_messages is not None and len(cached_messages) > 0:
+            return True
         async with self.pool.acquire() as conn:
             result = await conn.fetchval(
                 "SELECT EXISTS(SELECT 1 FROM conversations WHERE user_id = $1 AND chat_id = $2)",
@@ -456,10 +541,11 @@ class PostgreSQLConversationStorage:
     async def get_messages(
         self, user_id: str, chat_id: str, limit: Optional[int] = None
     ) -> List[BaseMessage]:
-        """Retrieve messages for a chat session, scoped to the owning user.
+        """Retrieve messages, scoped to the owning user.
 
-        Returns [] if the chat doesn't exist or belongs to a different user —
-        same response either way so we don't leak existence.
+        Returns [] if the chat doesn't exist or belongs to a different user.
+        Reads from the row-per-message ``messages`` table; ``limit`` (if
+        provided) returns the most recent N messages.
         """
         cached_messages = self._get_cached_messages(user_id, chat_id)
         if cached_messages is not None:
@@ -473,141 +559,161 @@ class PostgreSQLConversationStorage:
             return messages[-limit:] if limit else messages
 
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT messages FROM conversations WHERE user_id = $1 AND chat_id = $2",
+            rows = await conn.fetch(
+                """
+                SELECT role, content, tool_calls, tool_call_id, name, position
+                FROM messages
+                WHERE user_id = $1 AND chat_id = $2
+                ORDER BY position ASC
+                """,
                 user_id, chat_id
             )
             self._db_operations += 1
-
-            if not row:
-                return []
-
-            messages_data = row['messages']
-            if isinstance(messages_data, str):
-                messages_data = json.loads(messages_data)
-            messages = [self._dict_to_message(msg_data) for msg_data in messages_data]
+            messages = [_row_to_message(dict(r)) for r in rows]
 
             self._cache_messages(user_id, chat_id, messages)
+            serialized = [self._message_to_dict(m) for m in messages]
             await redis_cache.set_json(
-                "messages", _cache_key(user_id, chat_id), messages_data
+                "messages", _cache_key(user_id, chat_id), serialized
             )
-
             return messages[-limit:] if limit else messages
 
-    async def save_messages(
-        self, user_id: str, chat_id: str, messages: List[BaseMessage]
-    ) -> None:
-        """Save messages with batching for performance."""
-        async with self._save_lock:
-            self._pending_saves[_cache_key(user_id, chat_id)] = messages.copy()
+    async def create_empty_chat(self, user_id: str, chat_id: str) -> None:
+        """Insert an empty conversations row owned by ``user_id``.
 
-        self._cache_messages(user_id, chat_id, messages)
-
-    async def save_messages_immediate(
-        self, user_id: str, chat_id: str, messages: List[BaseMessage]
-    ) -> None:
-        """Save messages immediately without batching.
-
-        Uses INSERT ... ON CONFLICT, but the WHERE clause on the UPDATE
-        protects against a different user trying to write to an existing
-        chat_id (which would only happen on UUID collision or attempted
-        squatting). On mismatch the UPDATE is silently skipped — the user
-        observes the operation as a no-op and we don't leak ownership.
+        Used when a fresh chat is created via the API before any messages
+        exist. The conversations row is required so chat_metadata + messages
+        FKs can reference it.
         """
-        serialized_messages = [self._message_to_dict(msg) for msg in messages]
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO conversations (chat_id, user_id, messages, message_count)
+                VALUES ($1, $2, '[]'::jsonb, 0)
+                ON CONFLICT (chat_id) DO NOTHING
+                """,
+                chat_id, user_id,
+            )
+            self._db_operations += 1
+        self._cache_messages(user_id, chat_id, [])
+        self._chat_list_cache.pop(user_id, None)
+        from cache import redis_cache
+        await redis_cache.set_json("messages", _cache_key(user_id, chat_id), [])
+        await redis_cache.delete("chats_list", user_id)
+
+    async def append_messages_to_chat(
+        self, user_id: str, chat_id: str, new_messages: List[BaseMessage]
+    ) -> List[BaseMessage]:
+        """Append ``new_messages`` to ``chat_id`` for ``user_id``.
+
+        Creates the conversations row if it doesn't already exist. Inserts
+        rows at ``position = MAX(position) + 1, +2, ...`` inside a single
+        transaction. Returns the **combined** message list (existing +
+        new) so callers can pass it through to the SSE response without
+        re-reading from the DB.
+        """
+        if not new_messages:
+            return await self.get_messages(user_id, chat_id)
 
         async with self.pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO conversations (chat_id, user_id, messages, message_count)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (chat_id)
-                DO UPDATE SET
-                    messages = EXCLUDED.messages,
-                    message_count = EXCLUDED.message_count,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE conversations.user_id = EXCLUDED.user_id
-            """, chat_id, user_id, json.dumps(serialized_messages), len(messages))
-            self._db_operations += 1
+            async with conn.transaction():
+                # Ensure conversations row exists (and confirm ownership if it
+                # already does — INSERT … DO NOTHING is a no-op on conflict,
+                # so a wrong-owner write silently fails).
+                await conn.execute(
+                    """
+                    INSERT INTO conversations (chat_id, user_id, messages, message_count)
+                    VALUES ($1, $2, '[]'::jsonb, 0)
+                    ON CONFLICT (chat_id) DO NOTHING
+                    """,
+                    chat_id, user_id,
+                )
+                owner = await conn.fetchval(
+                    "SELECT user_id FROM conversations WHERE chat_id = $1",
+                    chat_id,
+                )
+                if owner != user_id:
+                    logger.warning(
+                        f"append_messages rejected: user={user_id} does not "
+                        f"own chat={chat_id} (owner={owner})"
+                    )
+                    return await self.get_messages(user_id, chat_id)
 
-        self._cache_messages(user_id, chat_id, messages)
+                next_pos = await conn.fetchval(
+                    "SELECT COALESCE(MAX(position), -1) + 1 FROM messages "
+                    "WHERE chat_id = $1",
+                    chat_id,
+                )
+                rows = []
+                for offset, m in enumerate(new_messages):
+                    rows.append((
+                        chat_id,
+                        user_id,
+                        next_pos + offset,
+                        _message_role(m),
+                        m.content if isinstance(m.content, str) else json.dumps(m.content),
+                        json.dumps(m.tool_calls) if (
+                            isinstance(m, AIMessage) and getattr(m, "tool_calls", None)
+                        ) else None,
+                        getattr(m, "tool_call_id", None) if isinstance(m, ToolMessage) else None,
+                        getattr(m, "name", None) if isinstance(m, ToolMessage) else None,
+                    ))
+                await conn.executemany(
+                    """
+                    INSERT INTO messages
+                        (chat_id, user_id, position, role, content,
+                         tool_calls, tool_call_id, name)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    """,
+                    rows,
+                )
+                await conn.execute(
+                    """
+                    UPDATE conversations
+                    SET message_count = message_count + $2,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE chat_id = $1
+                    """,
+                    chat_id, len(new_messages),
+                )
+                self._db_operations += 1
+
+        # Update L1: cached_list = cached_list + new_messages.
+        # Falls back to a full reload if the cache was cold.
+        cached = self._get_cached_messages(user_id, chat_id)
+        if cached is not None:
+            combined = cached + list(new_messages)
+        else:
+            combined = await self._reload_messages_from_db(user_id, chat_id)
+        self._cache_messages(user_id, chat_id, combined)
         self._chat_list_cache.pop(user_id, None)
 
         from cache import redis_cache
+        serialized = [self._message_to_dict(m) for m in combined]
         await redis_cache.set_json(
-            "messages", _cache_key(user_id, chat_id), serialized_messages
+            "messages", _cache_key(user_id, chat_id), serialized
         )
         await redis_cache.delete("chats_list", user_id)
+        return combined
 
-    async def _batch_save_worker(self) -> None:
-        """Background worker to batch save operations."""
-        while True:
-            try:
-                await asyncio.sleep(1.0)
-
-                async with self._save_lock:
-                    if not self._pending_saves:
-                        continue
-
-                    saves_to_process = self._pending_saves.copy()
-                    self._pending_saves.clear()
-
-                async with self.pool.acquire() as conn:
-                    async with conn.transaction():
-                        for key, messages in saves_to_process.items():
-                            user_id, chat_id = key.split("|", 1)
-                            serialized_messages = [self._message_to_dict(msg) for msg in messages]
-
-                            await conn.execute("""
-                                INSERT INTO conversations (chat_id, user_id, messages, message_count)
-                                VALUES ($1, $2, $3, $4)
-                                ON CONFLICT (chat_id)
-                                DO UPDATE SET
-                                    messages = EXCLUDED.messages,
-                                    message_count = EXCLUDED.message_count,
-                                    updated_at = CURRENT_TIMESTAMP
-                                WHERE conversations.user_id = EXCLUDED.user_id
-                            """, chat_id, user_id, json.dumps(serialized_messages), len(messages))
-
-                self._db_operations += len(saves_to_process)
-                if saves_to_process:
-                    logger.debug(f"Batch saved {len(saves_to_process)} conversations")
-                    # Invalidate per-user list caches
-                    touched_users = set()
-                    for key in saves_to_process:
-                        touched_users.add(key.split("|", 1)[0])
-                    for uid in touched_users:
-                        self._chat_list_cache.pop(uid, None)
-
-                    from cache import redis_cache
-                    for key, messages in saves_to_process.items():
-                        serialized = [self._message_to_dict(msg) for msg in messages]
-                        await redis_cache.set_json("messages", key, serialized)
-                    for uid in touched_users:
-                        await redis_cache.delete("chats_list", uid)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in batch save worker: {e}")
-
-    async def append_messages(
-        self, user_id: str, chat_id: str, new_messages: List[BaseMessage]
-    ) -> None:
-        """Append messages to a conversation without re-fetching when cache is warm."""
-        cached = self._get_cached_messages(user_id, chat_id)
-        if cached is not None:
-            updated = cached + new_messages
-        else:
-            existing = await self.get_messages(user_id, chat_id)
-            updated = existing + new_messages
-        await self.save_messages(user_id, chat_id, updated)
-
-    async def add_message(self, user_id: str, chat_id: str, message: BaseMessage) -> None:
-        """Add a single message to conversation (optimized)."""
-        await self.append_messages(user_id, chat_id, [message])
+    async def _reload_messages_from_db(
+        self, user_id: str, chat_id: str
+    ) -> List[BaseMessage]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT role, content, tool_calls, tool_call_id, name, position
+                FROM messages
+                WHERE user_id = $1 AND chat_id = $2
+                ORDER BY position ASC
+                """,
+                user_id, chat_id,
+            )
+            self._db_operations += 1
+            return [_row_to_message(dict(r)) for r in rows]
 
     async def delete_conversation(self, user_id: str, chat_id: str) -> bool:
-        """Delete a conversation owned by this user. Returns False if not owned."""
+        """Delete a conversation owned by this user. CASCADE drops messages."""
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(
@@ -664,7 +770,6 @@ class PostgreSQLConversationStorage:
     async def get_chat_metadata(
         self, user_id: str, chat_id: str
     ) -> Optional[Dict]:
-        """Get chat metadata if owned by this user, else fallback to default name."""
         cache_key = _cache_key(user_id, chat_id)
         cached = self._metadata_cache.get(cache_key)
         if cached is not None:
@@ -684,8 +789,6 @@ class PostgreSQLConversationStorage:
                     "created_at": row['created_at'].isoformat()
                 }
             else:
-                # If the chat isn't owned by this user, this is what we return.
-                # Don't leak existence-of-row signals to a different user.
                 metadata = {"name": f"Chat {chat_id[:8]}"}
 
             self._metadata_cache.put(cache_key, metadata)
@@ -696,9 +799,6 @@ class PostgreSQLConversationStorage:
     ) -> None:
         """Set chat metadata. Only writes if the conversation is owned by this user."""
         async with self.pool.acquire() as conn:
-            # Verify ownership exists before inserting metadata. INSERT alone
-            # would tie metadata to a chat without checking the conversations
-            # row's owner.
             owned = await conn.fetchval(
                 "SELECT EXISTS("
                 "SELECT 1 FROM conversations WHERE user_id = $1 AND chat_id = $2"
@@ -725,13 +825,11 @@ class PostgreSQLConversationStorage:
         self._metadata_cache.put(_cache_key(user_id, chat_id), {"name": name})
 
     async def _cache_eviction_worker(self) -> None:
-        """Periodically evict expired cache entries to free memory."""
         while True:
             try:
                 await asyncio.sleep(60)
                 msg_evicted = self._message_cache.evict_expired()
                 meta_evicted = self._metadata_cache.evict_expired()
-                # Evict expired per-user list entries
                 expired_users = [
                     uid for uid, entry in self._chat_list_cache.items()
                     if entry.is_expired()
@@ -750,7 +848,6 @@ class PostgreSQLConversationStorage:
                 logger.error(f"Error in cache eviction worker: {e}")
 
     def get_cache_stats(self) -> Dict[str, Any]:
-        """Get cache performance statistics."""
         total_hits = self._message_cache.hits + self._metadata_cache.hits
         total_misses = self._message_cache.misses + self._metadata_cache.misses
         total = total_hits + total_misses
@@ -778,11 +875,6 @@ class PostgreSQLConversationStorage:
         task_id: Optional[str] = None,
         chunk_count: int = 0,
     ) -> None:
-        """Add or update a document source.
-
-        ``visibility`` must be either ``"public"`` or ``"private"``.
-        Public sources are visible to all users; private only to the uploader.
-        """
         if visibility not in ("public", "private"):
             raise ValueError(f"Invalid visibility: {visibility!r}")
         async with self.pool.acquire() as conn:
@@ -800,17 +892,8 @@ class PostgreSQLConversationStorage:
                     updated_at = CURRENT_TIMESTAMP
             """, source_name, user_id, visibility, file_path, task_id, chunk_count)
             self._db_operations += 1
-        logger.debug(
-            f"Added/updated document source: {source_name} "
-            f"(user={user_id}, visibility={visibility})"
-        )
 
     async def get_visible_sources(self, user_id: str) -> List[Dict]:
-        """Return sources visible to this user: public + their own private.
-
-        Each item: ``{source_name, ownership, chunk_count, created_at}``
-        where ``ownership`` is one of ``"public"``, ``"yours"``.
-        """
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
                 SELECT source_name, user_id, visibility, chunk_count, created_at
@@ -838,7 +921,6 @@ class PostgreSQLConversationStorage:
             return result
 
     async def get_visible_source_names(self, user_id: str) -> List[str]:
-        """Return just the names of sources visible to this user."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
                 SELECT source_name FROM document_sources
@@ -851,12 +933,6 @@ class PostgreSQLConversationStorage:
     async def delete_document_source(
         self, source_name: str, user_id: str
     ) -> bool:
-        """Delete a document source if owned by this user.
-
-        Legacy (NULL user_id, public) sources cannot be deleted via this
-        endpoint — they need admin tooling. Returns False on not-owned or
-        not-found.
-        """
         async with self.pool.acquire() as conn:
             result = await conn.execute(
                 "DELETE FROM document_sources "
@@ -864,22 +940,11 @@ class PostgreSQLConversationStorage:
                 source_name, user_id,
             )
             self._db_operations += 1
-            deleted = "DELETE 1" in result
-            if deleted:
-                logger.debug(
-                    f"Deleted document source: {source_name} (user={user_id})"
-                )
-            else:
-                logger.warning(
-                    f"Refused source deletion: user={user_id} not owner of "
-                    f"source={source_name}"
-                )
-            return deleted
+            return "DELETE 1" in result
 
     async def source_is_visible_to(
         self, source_name: str, user_id: str
     ) -> bool:
-        """Check if a source is visible to a given user (public or theirs)."""
         async with self.pool.acquire() as conn:
             result = await conn.fetchval("""
                 SELECT EXISTS(
@@ -896,7 +961,6 @@ class PostgreSQLConversationStorage:
     # ------------------------------------------------------------------
 
     async def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
-        """Return per-user preferences. Creates a default row if missing."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT selected_sources, current_chat_id "
@@ -917,7 +981,6 @@ class PostgreSQLConversationStorage:
     async def update_user_selected_sources(
         self, user_id: str, selected_sources: List[str]
     ) -> None:
-        """Persist this user's selected_sources list."""
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO user_preferences (user_id, selected_sources)
@@ -931,7 +994,6 @@ class PostgreSQLConversationStorage:
     async def update_user_current_chat_id(
         self, user_id: str, chat_id: Optional[str]
     ) -> None:
-        """Persist this user's last-active chat_id."""
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO user_preferences (user_id, current_chat_id)

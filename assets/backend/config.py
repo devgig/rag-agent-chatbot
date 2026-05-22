@@ -20,10 +20,19 @@ import json
 import os
 import logging
 import threading
+import time
 from typing import List
 
 from logger import logger
 from models import ChatConfig
+
+
+# Skip the os.path.getmtime stat() call on every read_config() and just
+# return the cached value if the last freshness check is younger than this.
+# config.json changes rarely (only on /selected_model and /selected_sources
+# writes — and selected_sources moved to Postgres in PR 1) so a multi-second
+# staleness window is acceptable. Keeps the chat-query hot path off the disk.
+CONFIG_FRESHNESS_CHECK_INTERVAL = float(os.getenv("CONFIG_FRESHNESS_CHECK_INTERVAL", "30"))
 
 
 class ConfigManager:
@@ -32,6 +41,7 @@ class ConfigManager:
         self.config_path = config_path
         self.config = None
         self._last_modified = 0
+        self._last_freshness_check = 0.0
         self._lock = threading.Lock()
         self._ensure_config_exists()
         self.read_config()
@@ -86,8 +96,23 @@ class ConfigManager:
                     json.dump(default_config.model_dump(), f, indent=2)
     
     def read_config(self) -> ChatConfig:
-        """Read config from file, but only if it has changed since last read."""
+        """Read config from file, but only re-stat when the freshness TTL
+        has elapsed since the last check.
+
+        The previous implementation stat()'d ``config.json`` on every call,
+        which was hit from the event loop on every chat turn. With this TTL
+        the stat happens at most every ``CONFIG_FRESHNESS_CHECK_INTERVAL``
+        seconds — config writes still propagate within that window via the
+        explicit cache update in ``write_config``.
+        """
         with self._lock:
+            now = time.monotonic()
+            if (
+                self.config is not None
+                and (now - self._last_freshness_check) < CONFIG_FRESHNESS_CHECK_INTERVAL
+            ):
+                return self.config
+
             try:
                 current_mtime = os.path.getmtime(self.config_path)
                 if self.config is None or current_mtime > self._last_modified:
@@ -95,6 +120,7 @@ class ConfigManager:
                         data = json.load(f)
                     self.config = ChatConfig(**data)
                     self._last_modified = current_mtime
+                self._last_freshness_check = now
                 return self.config
             except Exception as e:
                 logger.error(f"Error reading config: {e}")
@@ -103,7 +129,7 @@ class ConfigManager:
                     models = os.getenv("MODELS", "")
                     if models:
                         models = [model.strip() for model in models.split(",") if model.strip()]
-                    
+
                     self.config = ChatConfig(
                         sources=[],
                         models=models,
@@ -111,6 +137,7 @@ class ConfigManager:
                         selected_sources=[],
                         current_chat_id="1"
                     )
+                self._last_freshness_check = now
                 return self.config
 
     def write_config(self, new_config: ChatConfig) -> None:
@@ -120,6 +147,10 @@ class ConfigManager:
                 json.dump(new_config.model_dump(), f, indent=2)
             self.config = new_config
             self._last_modified = os.path.getmtime(self.config_path)
+            # Reset the freshness window so subsequent read_config calls
+            # immediately reflect the new state (rather than waiting up to
+            # CONFIG_FRESHNESS_CHECK_INTERVAL seconds for the next stat).
+            self._last_freshness_check = time.monotonic()
 
     def get_sources(self) -> List[str]:
         """Return list of available sources."""

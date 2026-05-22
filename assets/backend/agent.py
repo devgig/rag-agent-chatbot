@@ -448,7 +448,13 @@ class ChatAgent:
         user_id: str,
         token_q: asyncio.Queue,
     ) -> None:
-        """Run the graph execution in background task."""
+        """Run the graph execution in background task.
+
+        After the graph completes, the new turn's messages are appended to
+        Postgres (one row per message — see ``postgres_storage`` PR 6) and a
+        final ``history`` event is pushed into the SSE stream so the HTTP
+        handler doesn't have to re-fetch from the DB.
+        """
         try:
             async for final_state in self.graph.astream(
                 initial_state,
@@ -468,19 +474,19 @@ class ChatAgent:
                             msg for msg in self.last_state["messages"]
                             if not isinstance(msg, SystemMessage)
                         ]
-                        cached = self.conversation_store._get_cached_messages(
-                            user_id, chat_id
+                        combined = await self.conversation_store.append_messages_to_chat(
+                            user_id, chat_id, new_messages
                         )
-                        if cached is not None:
-                            combined = cached + new_messages
-                        else:
-                            existing = await self.conversation_store.get_messages(
-                                user_id, chat_id
-                            )
-                            combined = existing + new_messages
-                        await self.conversation_store.save_messages_immediate(
-                            user_id, chat_id, combined
-                        )
+                        # Push the post-save history directly into the stream
+                        # so the SSE handler doesn't re-query Postgres for
+                        # data we already have in hand.
+                        await token_q.put({
+                            "type": "history",
+                            "messages": [
+                                self.conversation_store._message_to_dict(m)
+                                for m in combined
+                            ],
+                        })
                     except Exception as save_err:
                         logger.warning({
                             "message": "Failed to persist conversation",
@@ -488,5 +494,6 @@ class ChatAgent:
                             "user_id": user_id,
                             "error": str(save_err),
                         })
+                await token_q.put({"type": "done"})
             finally:
                 await token_q.put(SENTINEL)
