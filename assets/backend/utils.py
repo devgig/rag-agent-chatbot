@@ -19,8 +19,7 @@
 import asyncio
 import json
 import os
-import time
-from typing import List, Dict, Any
+from typing import Callable, List, Dict, Any
 
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, ToolCall, SystemMessage
 
@@ -34,7 +33,7 @@ async def process_and_ingest_files_background(
     user_id: str,
     visibility: str,
     task_id: str,
-    indexing_tasks: Dict[str, str],
+    update_status: Callable[[str, str], None],
     postgres_storage=None,
 ) -> None:
     """Index already-saved files into the vector store.
@@ -50,7 +49,9 @@ async def process_and_ingest_files_background(
         user_id: Authenticated uploader (JWT sub)
         visibility: 'public' or 'private' — controls who can retrieve the chunks
         task_id: Unique identifier for this processing task
-        indexing_tasks: Dictionary to track task status
+        update_status: Callback (task_id, status) that preserves the task's
+            owner field. The full entry shape lives in main.py; we go through
+            this helper so the owner doesn't get clobbered.
         postgres_storage: PostgreSQL storage for persisting source metadata
     """
     if visibility not in ("public", "private"):
@@ -65,7 +66,7 @@ async def process_and_ingest_files_background(
             "visibility": visibility,
         })
 
-        indexing_tasks[task_id] = ("loading_documents", time.time())
+        update_status(task_id, "loading_documents")
         logger.debug({"message": "Loading documents", "task_id": task_id})
 
         try:
@@ -79,7 +80,7 @@ async def process_and_ingest_files_background(
                 "document_count": len(documents),
             })
 
-            indexing_tasks[task_id] = ("indexing_documents", time.time())
+            update_status(task_id, "indexing_documents")
             await asyncio.to_thread(
                 vector_store.index_documents, documents, user_id, visibility
             )
@@ -106,13 +107,13 @@ async def process_and_ingest_files_background(
                     "visibility": visibility,
                 })
 
-            indexing_tasks[task_id] = ("completed", time.time())
+            update_status(task_id, "completed")
             logger.debug({
                 "message": "Background indexing completed successfully",
                 "task_id": task_id,
             })
         except Exception as e:
-            indexing_tasks[task_id] = (f"failed_during_indexing: {str(e)}", time.time())
+            update_status(task_id, f"failed_during_indexing: {str(e)}")
             logger.error({
                 "message": "Error during document loading or indexing",
                 "task_id": task_id,
@@ -120,7 +121,7 @@ async def process_and_ingest_files_background(
             }, exc_info=True)
 
     except Exception as e:
-        indexing_tasks[task_id] = (f"failed: {str(e)}", time.time())
+        update_status(task_id, f"failed: {str(e)}")
         logger.error({
             "message": "Error in background indexing task",
             "task_id": task_id,

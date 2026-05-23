@@ -474,7 +474,7 @@ async def ingest_files(
             current_user,
             visibility,
             task_id,
-            indexing_tasks,
+            _update_task_status,
             postgres_storage,
         )
 
