@@ -596,6 +596,21 @@ class VectorStore:
                 if score >= RELEVANCE_SCORE_THRESHOLD
             ]
 
+            if selected_sources:
+                allowed = set(selected_sources)
+                before = len(above_threshold)
+                above_threshold = [
+                    d for d in above_threshold
+                    if d.metadata.get("source") in allowed
+                ]
+                leaked = before - len(above_threshold)
+                if leaked:
+                    logger.warning({
+                        "message": "Milvus expr filter leaked documents from wrong sources — enforced in Python",
+                        "leaked_count": leaked,
+                        "selected_sources": selected_sources,
+                    })
+
             logger.info({
                 "message": "Document retrieval complete",
                 "query": query[:80],
@@ -603,6 +618,7 @@ class VectorStore:
                 "above_threshold": len(above_threshold),
                 "threshold": RELEVANCE_SCORE_THRESHOLD,
                 "user_id": user_id,
+                "selected_sources": selected_sources,
             })
 
             return above_threshold
