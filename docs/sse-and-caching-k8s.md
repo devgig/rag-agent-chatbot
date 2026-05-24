@@ -143,14 +143,15 @@ become durable conversation history.
 
 ## Conversation State Persistence
 
-Conversation history lives in PostgreSQL (`conversations` table, JSONB
-column). After each successful query the agent writes the full message
-list; the SSE handler then emits a final `history` event so the client
-can replace its local optimistic state with the authoritative version.
+Conversation history lives in PostgreSQL — one row per message in a
+`messages` table keyed by `(chat_id, position)`. After each turn the
+agent appends only the new messages; the SSE handler then emits a final
+`history` event so the client can replace its local optimistic state
+with the authoritative version.
 
-A background `_batch_save_worker` flushes pending writes every second and
-also write-throughs to L2 so peer pods see fresh data on the next miss.
-On pod shutdown, pending saves flush before the connection pool closes.
+Each `append_messages()` call persists immediately and write-throughs to
+L2 so peer pods see fresh data on the next miss. On pod shutdown,
+pending operations complete before the connection pool closes.
 
 ---
 

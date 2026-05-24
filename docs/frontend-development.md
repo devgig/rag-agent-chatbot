@@ -6,26 +6,26 @@ React application providing the user interface for Spark Chat.
 
 The frontend provides a chat interface with:
 - Document upload and RAG (Retrieval Augmented Generation)
-- Real-time streaming responses via WebSocket with auto-reconnection
+- Real-time streaming responses via SSE (Server-Sent Events)
 - Theme switching (light/dark mode)
 - Sidebar configuration for data sources and chat history
 
 ## Key Components
 
-- **QuerySection**: Main chat interface with WebSocket streaming, token batching, and auto-reconnect
-- **Sidebar**: Configuration panel for document sources and chat history management
+- **QuerySection**: Main chat interface with SSE streaming with abort support and token batching
+- **Sidebar**: Configuration panel with single-select context source (radio buttons), private/public badges, and chat history management
 - **DocumentIngestion**: File upload interface for RAG document ingestion
 - **WelcomeSection**: Landing page with RAG agent card
 - **ThemeToggle**: Dark/light mode switcher with localStorage persistence
 
 ## Architecture
 
-Built with React 19, Vite 6, TypeScript, and CSS modules. Communicates with the backend via REST API and WebSocket connections for real-time chat streaming.
+Built with React 19, Vite 6, TypeScript, and CSS modules. Communicates with the backend via REST API and SSE (Server-Sent Events) for real-time chat streaming.
 
-### WebSocket Features
-- **Auto-reconnect**: Exponential backoff reconnection (up to 5 attempts) on unexpected disconnections
-- **Token batching**: Accumulates streaming tokens and flushes every 50ms to reduce re-renders
-- **Connection status**: User-visible error messages when connection is lost or reconnecting
+### Streaming Features
+- **SSE-based**: Each query is a POST that returns a text/event-stream; no persistent connection needed
+- **Token batching**: Accumulates streaming tokens with requestAnimationFrame-based throttle
+- **Cancellation**: AbortController support; partial responses saved to Redis
 - **Istio session affinity**: Chat ID passed as query parameter for consistent hashing
 
 ## Local Development
@@ -70,11 +70,11 @@ src/
 ├── App.tsx                  # Root component, global state
 ├── index.css                # CSS variables, theme definitions
 ├── lib/
-│   └── api.ts               # Backend URL resolution, WebSocket URL generation
+│   └── api.ts               # Backend URL resolution, SSE stream helpers
 ├── types/
 │   └── config.ts            # TypeScript interfaces
 ├── components/
-│   ├── QuerySection.tsx     # Chat UI, WebSocket client, markdown rendering
+│   ├── QuerySection.tsx     # Chat UI, SSE client, markdown rendering
 │   ├── Sidebar.tsx          # Source/chat management, collapsible sections
 │   ├── WelcomeSection.tsx   # Landing page
 │   ├── DocumentIngestion.tsx # File upload with drag-and-drop

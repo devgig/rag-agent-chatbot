@@ -7,8 +7,9 @@ FastAPI Python application serving as the API backend for Spark Chat.
 The backend handles:
 - LLM integration via OpenAI-compatible APIs
 - Document ingestion and vector storage for RAG
-- WebSocket connections for real-time chat streaming
+- SSE (Server-Sent Events) for real-time chat streaming
 - Chat history management via PostgreSQL
+- Per-user document scoping (private/public visibility)
 
 ## Authentication
 
@@ -23,7 +24,7 @@ See `kustomize/gateway/base/istio-request-authentication.yaml` and `kustomize/ga
 
 ```
 FastAPI App (main.py)
-├── WebSocket: /ws/chat/{chat_id}  (real-time chat)
+├── SSE: POST /chat/{id}/query  (streaming chat)
 ├── REST: /ingest, /sources, /chats, /models, etc.
 ├── ChatAgent (agent.py)           (LangGraph: START → generate → END)
 │   ├── Inline vector search       (direct Milvus query via VectorStore)
@@ -35,7 +36,9 @@ FastAPI App (main.py)
 └── VectorStore (vector_store.py)  (Milvus integration)
     ├── Batched embeddings          (32 texts per request)
     ├── Persistent connections      (reused across operations)
-    └── Sanitized filter expressions (injection prevention)
+    ├── Sanitized filter expressions (injection prevention)
+    ├── Per-user visibility filter   (private/public document scoping)
+    └── Python-side source enforcement (safety net for Milvus expr)
 ```
 
 ## Key Performance Features
@@ -46,6 +49,7 @@ FastAPI App (main.py)
 - **Batched Embeddings**: Embedding requests are batched (32 per request) to reduce HTTP round-trips during document ingestion
 - **Persistent Milvus Connections**: Single connection reused across flush, delete, and query operations
 - **Input Validation**: File upload size limits (configurable via `MAX_UPLOAD_SIZE_MB`) and sanitized Milvus filter expressions
+- **Per-User Document Scoping**: Documents tagged with user_id and visibility (private/public) at ingestion; Milvus filter expressions enforce isolation at query time with Python-side enforcement as a safety net
 - **Same-Origin in Production**: Backend routed behind `/api/backend-svc` on the frontend hostname, eliminating CORS. `CORS_ALLOWED_ORIGINS` remains for local development only
 
 ## Local Development
@@ -124,10 +128,11 @@ docker run -d --name milvus \
 | `POSTGRES_PASSWORD` | Database password | (required) |
 | `MILVUS_ADDRESS` | Milvus connection URI | `tcp://milvus:19530` |
 | `MODELS` | Comma-separated model names | (required) |
-| `CONFIG_PATH` | Runtime config file path | `./config.json` |
+| `CACHE_L2_TTL_SECONDS` | Redis L2 cache TTL | `28800` |
 | `UPLOADS_DIR` | File upload directory | `uploads` |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated CORS origins | `http://localhost:3000` |
 | `MAX_UPLOAD_SIZE_MB` | Max upload file size in MB | `50` |
+| `RELEVANCE_SCORE_THRESHOLD` | Min similarity score for retrieved chunks [0-1] | `0.4` |
 
 ## Docker Troubleshooting
 

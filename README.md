@@ -118,7 +118,7 @@ sequenceDiagram
     Frontend->>Backend: POST /chat/{id}/query (Authorization: Bearer ...)
     Backend-->>Frontend: 200 OK, Content-Type: text/event-stream
 
-    Backend->>Milvus: Similarity search (top-k=5)
+    Backend->>Milvus: Similarity search (top-k=5, filtered by selected source)
     Milvus-->>Backend: Relevant chunks
 
     Backend->>Backend: Format context into system prompt
@@ -141,7 +141,7 @@ sequenceDiagram
 | **Frontend** | React, Vite, Tailwind, nginx | Static web UI served by nginx |
 | **Backend** | FastAPI, LangGraph | API server, RAG pipeline, SSE token streaming |
 | **Vector Store** | Milvus | Document embeddings, similarity search |
-| **Conversations** | PostgreSQL | Chat history, document sources |
+| **Conversations** | PostgreSQL | Chat history, document sources, user preferences |
 | **L2 Cache / Partials** | Redis (Bitnami HA + Sentinel) | Cross-pod cache, partial-response store on cancel |
 | **Chat LLM** | KServe `InferenceService` (vLLM runtime, `nvidia/Llama-3.1-Nemotron-Nano-8B-v1`) — served as `nemotron-nano-8b` | Response generation from retrieved context |
 | **Embeddings** | all-MiniLM-L6-v2 | Document vectorization |
@@ -182,7 +182,7 @@ kubectl apply -k kustomize/frontend/overlays/dev
 
 ### Step 4. Try it out
 
-Upload a document using the "Upload Documents" button in the sidebar under "Context", select it in the "Select Sources" section, then ask questions about its content.
+Upload a document using the "Upload Documents" button in the sidebar under "Context", select it as your active context, then ask questions about its content.
 
 ## Troubleshooting
 

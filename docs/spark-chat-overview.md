@@ -17,7 +17,7 @@ This project is designed to be customizable, serving as a framework that develop
 
   - **Vector Indexing & Retrieval**: Milvus-powered document retrieval with batched embeddings for fast ingestion
 
-  - **Real-time LLM Streaming**: Custom streaming infrastructure with WebSocket auto-reconnection and token batching
+  - **Real-time LLM Streaming**: Server-Sent Events (SSE) with per-user session affinity and two-tier caching
 
   - **JWT Authentication**: Google OAuth with RS256 JWT validation via JWKS
 
@@ -39,7 +39,7 @@ This project is designed to be customizable, serving as a framework that develop
 | Component | Technology | Description |
 |-----------|------------|-------------|
 | **Frontend** | React, Vite, Tailwind CSS, nginx | Chat UI with document upload, source selection, and real-time streaming |
-| **Backend** | Python 3.12, FastAPI, LangGraph | REST + WebSocket API handling RAG pipeline, ingestion, and chat management |
+| **Backend** | Python 3.12, FastAPI, LangGraph | REST + SSE API handling RAG pipeline, ingestion, and chat management |
 | **Embedding** | sentence-transformers (CPU) | Generates vector embeddings for document chunks |
 | **LLM** | KServe `InferenceService` (vLLM runtime, GPU) | Serves the chat model via OpenAI-compatible API |
 | **Vector Store** | Milvus | HNSW-indexed vector storage with cosine similarity search |
@@ -112,11 +112,12 @@ vLLM chunked prefill with `max_num_batched_tokens=2048` allowed prompt processin
 ### RAG Pipeline Flow
 
 ```
-User Query (via WebSocket)
+User Query (POST /chat/{id}/query → SSE stream)
   │
   ├─ 1. Vector Search (inline)
   │     └─ Milvus similarity_search_with_relevance_scores()
   │     └─ Filtered by selected sources, k=5, threshold=0.4
+  │     └─ Python-side enforcement strips any leaked non-selected sources
   │
   ├─ 2. Context Formatting
   │     └─ Jinja2 template injects retrieved documents into system prompt
@@ -124,7 +125,7 @@ User Query (via WebSocket)
   └─ 3. Single LLM Call (streaming)
         └─ OpenAI-compatible API → KServe (vLLM runtime)
         └─ temperature=0, top_p=1, stream=True
-        └─ Tokens streamed to frontend via WebSocket
+        └─ Stream Response → SSE → Frontend
   │
   └─ 4. Persist to PostgreSQL
 ```
@@ -138,18 +139,20 @@ File Upload (POST /ingest)
   ├─ Parsing: PyPDF, UnstructuredLoader, or raw text fallback
   ├─ Chunking: 1000 chars / 200 char overlap (RecursiveCharacterTextSplitter)
   ├─ Embedding: Batched (32 texts/request) via embedding service
-  └─ Indexing: Upserted into Milvus collection with source metadata
+  └─ Indexing: Upserted into Milvus with source, user_id, and visibility metadata
 ```
 
 ### Backend API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/ws/chat/{chat_id}` | WebSocket | Real-time chat with streaming responses |
+| `/chat/{chat_id}/query` | POST (SSE) | Stream chat response via Server-Sent Events |
 | `/ingest` | POST | Upload and ingest documents |
 | `/ingest/status/{task_id}` | GET | Check ingestion progress |
 | `/sources` | GET | List available document sources |
-| `/delete/sources/{source_name}` | DELETE | Remove a document source |
+| `/sources/{source_name}` | DELETE | Remove a document source |
+| `/selected_sources` | GET/POST | Get or update the user's selected context source |
+| `/chat/{chat_id}/history` | GET | Retrieve conversation history |
 | `/chats` | GET | List all conversations |
 | `/chat/new` | POST | Create a new chat |
 | `/chat/rename` | POST | Rename a chat |
@@ -170,7 +173,7 @@ cd rag-agent-chatbot
 Build container images, push to your registry, and apply Kustomize manifests. See the [README](../README.md) for detailed deployment instructions.
 
 #### 3. Try it out
-Upload a document using the "Upload Documents" button in the sidebar under "Context", select it in the "Select Sources" section, then ask questions about its content.
+Upload a document using the "Upload Documents" button in the sidebar under "Context", select it as your active context, then ask questions about its content.
 
 ## Customizations
 
@@ -182,8 +185,8 @@ Upload a document using the "Upload Documents" button in the sidebar under "Cont
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed origins | `http://localhost:3000` |
 | `MAX_UPLOAD_SIZE_MB` | Maximum file upload size in MB | `50` |
 | `MAX_TOTAL_UPLOAD_MB` | Total upload limit across all files | `200` |
-| `MAX_WS_MESSAGE_BYTES` | WebSocket message size limit | `65536` |
-| `MAX_WS_CONNECTIONS_PER_USER` | Max concurrent WebSocket connections per user | `5` |
+| `MAX_QUERY_BYTES` | Maximum query message size | `65536` |
+| `MAX_STREAMS_PER_USER` | Max concurrent SSE streams per user | `5` |
 | `POSTGRES_HOST` | PostgreSQL hostname | `postgres` |
 | `MILVUS_ADDRESS` | Milvus connection URI | `tcp://milvus:19530` |
 | `RELEVANCE_SCORE_THRESHOLD` | Minimum embedding similarity for retrieval | `0.4` |

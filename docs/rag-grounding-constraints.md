@@ -18,22 +18,20 @@ The `generate()` node **always** performs a vector search before calling the LLM
 
 ```python
 # Document search runs unconditionally before any LLM call
-config_obj = self.config_manager.read_config()
-sources = config_obj.selected_sources or []
+prefs = await self.conversation_store.get_user_preferences(user_id)
+sources = prefs.get("selected_sources") or []
 
-if sources:
-    retrieved_docs = await asyncio.to_thread(
-        self.vector_store.get_documents, user_query, 5, sources
-    )
-else:
-    retrieved_docs = await asyncio.to_thread(
-        self.vector_store.get_documents, user_query
-    )
+retrieved_docs = await self.vector_store.get_documents(
+    user_query,
+    user_id,
+    k=5,
+    selected_sources=sources or None,
+)
 ```
 
 The retrieved context is baked directly into the system prompt before the LLM sees anything. The model has no mechanism to skip retrieval — it is never consulted about whether to search.
 
-If source-filtered retrieval returns nothing, the system falls back to searching all documents before concluding no results exist.
+When a source is selected, Milvus filters to that source only. If no relevant chunks exist in the selected source, the LLM receives empty context and tells the user it has no information — there is no silent fallback to other documents.
 
 ---
 
@@ -180,5 +178,6 @@ While not a grounding constraint per se, deterministic sampling reduces the mode
 | **Mandatory retrieval** | Vector search hardcoded in `generate()` before every LLM call | Model skipping retrieval entirely |
 | **Prompt** | System prompt with context and explicit rules | Model choosing to use general knowledge |
 | **Relevance threshold** | Score filtering at 0.4 cutoff | Low-quality/tangential chunks reaching the model |
+| **Source isolation** | Milvus `expr` filter + Python-side enforcement | Documents from non-selected sources leaking into context |
 | **Architecture** | Local models, self-hosted DB, single-pass pipeline, no web access | External knowledge sources or iterative escape |
 | **Sampling** | temperature=0, top_p=1 | Creative hallucination beyond context |
