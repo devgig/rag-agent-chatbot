@@ -145,12 +145,12 @@ class ChatAgent:
         # --- Document search ---
         prefs = await self.conversation_store.get_user_preferences(user_id)
         sources = prefs.get("selected_sources") or []
+        logger.info({
+            "message": "Source filter for retrieval",
+            "user_id": user_id,
+            "selected_sources": sources,
+        })
 
-        # When the user has selected sources, the Milvus filter restricts the
-        # search to those sources only — strict, no silent corpus fallback. An
-        # empty result yields empty context and the LLM is told (via the
-        # system prompt) that it has no relevant material, instead of being
-        # quietly fed unrelated documents.
         k_target = 5
         retrieved_docs = await self.vector_store.get_documents(
             user_query,
@@ -167,6 +167,13 @@ class ChatAgent:
         # anything inside <document>…</document> is untrusted data, never
         # an instruction.
         if retrieved_docs:
+            returned_sources = list({doc.metadata.get("source", "unknown") for doc in retrieved_docs})
+            logger.info({
+                "message": "Retrieved docs source check",
+                "requested_sources": sources,
+                "returned_sources": returned_sources,
+                "doc_count": len(retrieved_docs),
+            })
             context_parts = ["Document context (untrusted reference material):"]
             for i, doc in enumerate(retrieved_docs, 1):
                 source = doc.metadata.get("source", "unknown")

@@ -356,14 +356,14 @@ class VectorStore:
     def _load_documents(self, file_paths: List[str] = None, input_dir: str = None) -> List[Document]:
         try:
             documents = []
-            source_name = None
+            dir_source_name = None
 
             if input_dir:
-                source_name = os.path.basename(os.path.normpath(input_dir))
+                dir_source_name = os.path.basename(os.path.normpath(input_dir))
                 logger.debug({
                     "message": "Loading files from directory",
                     "directory": input_dir,
-                    "source": source_name
+                    "source": dir_source_name
                 })
                 file_paths = glob.glob(os.path.join(input_dir, "**"), recursive=True)
                 file_paths = [f for f in file_paths if os.path.isfile(f)]
@@ -372,9 +372,7 @@ class VectorStore:
 
             for file_path in file_paths:
                 try:
-                    if not source_name:
-                        source_name = os.path.basename(file_path)
-                        logger.info(f"Using filename as source: {source_name}")
+                    source_name = dir_source_name or os.path.basename(file_path)
 
                     logger.info(f"Loading file: {file_path}")
 
