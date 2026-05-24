@@ -1,8 +1,8 @@
 # Streaming Chat over SSE with a Two-Tier Cache in Kubernetes
 
-This document explains how the chat backend streams LLM responses, why we
-moved from WebSocket to Server-Sent Events, and how the L1/L2 cache plus
-Istio session affinity work together.
+This document explains how the chat backend streams LLM responses via
+Server-Sent Events (SSE), and how the L1/L2 cache plus Istio session
+affinity work together.
 
 ---
 
@@ -16,30 +16,20 @@ LLM responses are streamed token-by-token. The transport needs to:
 - Let any backend pod handle any user request, while still keeping a hot
   in-process cache when affinity allows
 
-The previous WebSocket design satisfied #1 well but pinned each chat
-session to a single pod for its full lifetime. Rolling deploys dropped
-mid-conversation users; KEDA scale-up didn't help existing connections.
+## Why SSE
 
----
+Chat traffic is overwhelmingly server→client streaming. The client sends
+one JSON body per query; the server streams many tokens back. SSE is a
+natural fit:
 
-## Why SSE Instead of WebSocket
+- **Per-request scope**: Only the in-flight response is pinned to a pod, not the whole chat session
+- **Standard auth**: `Authorization: Bearer` header — no special Istio bypass needed
+- **Simple reconnect**: Cancel and re-POST a new query
+- **Plain HTTP**: Normal `fetch()` rules apply, no protocol upgrade
 
-Chat traffic in this app is overwhelmingly server→client streaming. The
-client sends one JSON body per query; the server streams many tokens
-back. SSE is a better fit for that shape:
-
-| | WebSocket (old) | SSE (current) |
-|---|---|---|
-| Pinned to a pod | Whole chat session | Just the in-flight response |
-| Auth | In-band first message | Standard `Authorization: Bearer` header |
-| Istio policy | `/ws/*` bypass needed | Plain HTTP — no special case |
-| Reconnect | Custom logic + exponential backoff | Cancel & re-POST a new query |
-| Headers / cookies | Browser API can't set them on upgrade | Normal `fetch()` rules apply |
-| Binary frames | Yes | No (UTF-8 only — fine for tokens) |
-
-Tradeoff: SSE is one-way. Anything the client wants to push at the server
-goes through a separate POST/REST call. For this app that's only the
-chat message itself, so it costs nothing.
+SSE is one-way. Anything the client wants to push at the server goes
+through a separate POST/REST call. For this app that's only the chat
+message itself, so it costs nothing.
 
 ---
 
@@ -213,7 +203,7 @@ Backend Pod (FastAPI + uvicorn)
 
 | Decision | Rationale |
 | --- | --- |
-| SSE instead of WebSocket | Chat is server-push dominant; SSE rides plain HTTP, simplifies auth and gateway config |
+| SSE streaming | Chat is server-push dominant; SSE rides plain HTTP, simplifies auth and gateway config |
 | `consistentHash` on `authorization` header | Same user → same pod → warm L1, without cookies |
 | L1 + L2 (Redis) cache, both 8h TTL | L1 fast path for affinitized user; L2 catches misses on cold pod or after rebalance |
 | Partial response in Redis with TTL | Auto-cleanup; doesn't pollute Postgres history with truncated drafts |

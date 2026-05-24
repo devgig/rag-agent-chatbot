@@ -62,7 +62,7 @@ Source: `assets/backend/pyproject.toml`
 | [Pydantic](https://github.com/pydantic/pydantic) | >=2.11.7 | MIT | Data validation and settings management |
 | [python-dotenv](https://github.com/theskumar/python-dotenv) | >=1.1.1 | BSD-3-Clause | Environment variable loading from .env files |
 | [python-multipart](https://github.com/Kludex/python-multipart) | >=0.0.20 | Apache-2.0 | Multipart form data parser |
-| [websockets](https://github.com/python-websockets/websockets) | >=15.0.1 | BSD-3-Clause | WebSocket client and server library |
+| [sse-starlette](https://github.com/sysid/sse-starlette) | >=2.0.0 | MIT | Server-Sent Events support for Starlette/FastAPI |
 | [requests](https://github.com/psf/requests) | >=2.28.0 | Apache-2.0 | HTTP library for Python |
 | [asyncpg](https://github.com/MagicStack/asyncpg) | >=0.29.0 | Apache-2.0 | Async PostgreSQL client |
 
