@@ -380,6 +380,62 @@ async def stream_chat_query(...):
 
 ---
 
+## Pod Loss and Conversation Resilience
+
+Every layer is designed so that losing a backend pod — rolling deploy, KEDA scale-down, crash, or node eviction — does not lose conversation state.
+
+```
+                    Pod dies
+                       │
+      ┌────────────────┼────────────────┐
+      ▼                ▼                ▼
+ Mid-stream         Between          Cold start
+ (generating)       queries          (new pod)
+      │                │                │
+      ▼                ▼                ▼
+ Partial saved     Nothing lost     L1 empty,
+ to Redis          (already in      L2 (Redis)
+                   PG + L2)         warms L1
+```
+
+### Why nothing is lost
+
+| State | Stored in | Survives pod loss? |
+|-------|-----------|-------------------|
+| Completed messages | PostgreSQL (`messages` table, one row per message) | Yes — persisted immediately after each turn |
+| Recent messages (hot cache) | L1 in-process LRU (per pod) | No — but L2 has them |
+| Recent messages (warm cache) | L2 Redis (shared across pods, 8h TTL) | Yes — write-through on every save |
+| Partial response (mid-stream) | Redis (`sparkchat:partial:{chat_id}`, 8h TTL) | Yes — buffered tokens written on disconnect |
+| User preferences (selected source) | PostgreSQL (`user_preferences` table) | Yes |
+| Chat metadata (names) | PostgreSQL (`chat_metadata` table) | Yes |
+
+### SSE makes pod loss cheap
+
+Each query is an independent `POST → SSE stream`. The connection only lasts for that one response — there is no long-lived session pinned to a pod. If the pod dies mid-stream:
+
+1. The backend detects the disconnect and writes the partial response buffer to Redis
+2. The frontend shows the partial with a `(stopped)` marker
+3. The user's next query goes to any healthy pod (Istio consistent hashing will prefer the same pod, but falls back gracefully)
+4. The new pod reads conversation history from L2 (Redis) or PostgreSQL — L1 warms on first read
+
+### KEDA scaling
+
+KEDA scales the backend from 1–5 replicas based on load. When a new pod comes up, it has an empty L1 cache but reads from L2 (Redis) on first request, warming L1 for subsequent reads. When a pod scales down, completed conversations are already in PostgreSQL and Redis — nothing is lost.
+
+### Istio session affinity
+
+```yaml
+# consistentHash on Authorization header
+trafficPolicy:
+  loadBalancer:
+    consistentHash:
+      httpHeaderName: authorization
+```
+
+Istio hashes on the JWT in the `Authorization` header, routing a user's requests to the same pod whenever possible. This maximizes L1 cache hits. When the hash ring changes (pod added/removed), users may land on a different pod — L2 catches the L1 miss, and L1 warms transparently.
+
+---
+
 ## KServe Integration
 
 The LLM is served by a KServe `InferenceService` in the `kserve` namespace, completely decoupled from this application:
@@ -403,7 +459,7 @@ Backend Pod                                    ├─ vLLM runtime
 
 **Why KServe:**
 - **Decoupled lifecycle**: Model serving is managed independently of the application. Changing the model, tuning vLLM flags, or adjusting GPU memory doesn't require an app deploy.
-- **GPU sharing path**: KServe InferenceServices can share the GPU via time-slicing or MPS (see `docs/gpu-sharing-and-kserve.md`).
+- **GPU sharing path**: KServe InferenceServices can share the GPU via time-slicing or MPS once configured at the GPU Operator level.
 - **Scale-to-zero**: Infrequently used models can scale down, freeing GPU memory.
 - **Standard API**: The backend uses the OpenAI-compatible `/v1/chat/completions` endpoint — any model behind that API is a drop-in replacement.
 
