@@ -58,26 +58,48 @@ export default function DocumentIngestion({
     setIngestMessage("");
 
     try {
-      if (files && files.length > 0) {
-        const formData = new FormData();
-        for (let i = 0; i < files.length; i++) {
-          formData.append("files", files[i]);
-        }
-        formData.append("visibility", visibility);
-
-        const res = await apiFetch("/ingest", {
-          method: "POST",
-          body: formData,
-        });
-
-        const data = await res.json();
-        setIngestMessage(data.message);
-
-        if (res.ok && onSuccessfulIngestion) {
-          onSuccessfulIngestion();
-        }
-      } else {
+      if (!files || files.length === 0) {
         setIngestMessage("Please select files or specify a directory path.");
+        return;
+      }
+
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append("files", files[i]);
+      }
+      formData.append("visibility", visibility);
+
+      const res = await apiFetch("/ingest", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.task_id) {
+        setIngestMessage(data.message || "Error during ingestion.");
+        return;
+      }
+
+      // /ingest returns 200 as soon as the upload lands on disk; the actual
+      // chunking + Milvus indexing + Postgres source row happen in a
+      // background task. Poll /ingest/status until it terminates so we only
+      // fire onSuccessfulIngestion (which triggers the sidebar's /sources
+      // refetch) once the row actually exists.
+      setIngestMessage("Indexing... this can take a minute for large PDFs.");
+      const finalStatus = await pollIngestStatus(data.task_id);
+
+      if (finalStatus === "completed") {
+        setIngestMessage("Ingestion complete.");
+        if (onSuccessfulIngestion) onSuccessfulIngestion();
+      } else if (finalStatus.startsWith("failed")) {
+        setIngestMessage(`Ingestion failed: ${finalStatus}`);
+      } else {
+        setIngestMessage(
+          "Ingestion is taking longer than expected. The source will appear once indexing finishes."
+        );
+        // Still trigger a refresh — by the time the user notices, it may
+        // well be ready.
+        if (onSuccessfulIngestion) onSuccessfulIngestion();
       }
     } catch (error) {
       console.error("Error during ingestion:", error);
@@ -85,6 +107,33 @@ export default function DocumentIngestion({
     } finally {
       setIsIngesting(false);
     }
+  };
+
+  // Poll /ingest/status/{task_id}. Returns the final status string, or
+  // the last status seen if we time out. Backoff stays gentle (every 2s,
+  // up to 5 minutes) because chunk+embed+Milvus-insert for a multi-MB PDF
+  // can take a minute or more on CPU-only embedding pods.
+  const pollIngestStatus = async (taskId: string): Promise<string> => {
+    const POLL_INTERVAL_MS = 2000;
+    const MAX_ATTEMPTS = 150;  // 5 minutes
+    let lastStatus = "queued";
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      try {
+        const r = await apiFetch(`/ingest/status/${taskId}`);
+        if (!r.ok) continue;  // transient 5xx — keep trying
+        const body = await r.json();
+        lastStatus = body.status || lastStatus;
+        if (lastStatus === "completed" || lastStatus.startsWith("failed")) {
+          return lastStatus;
+        }
+      } catch (err) {
+        // Network blip — keep polling. The background task is independent
+        // of this request, so transient failures aren't fatal.
+        console.warn("ingest status poll failed:", err);
+      }
+    }
+    return lastStatus;
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {

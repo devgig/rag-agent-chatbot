@@ -81,16 +81,14 @@ async def process_and_ingest_files_background(
             })
 
             update_status(task_id, "indexing_documents")
-            await asyncio.to_thread(
+            chunks_per_file = await asyncio.to_thread(
                 vector_store.index_documents, documents, user_id, visibility
             )
 
             if file_paths and postgres_storage:
                 for file_path in file_paths:
                     file_name = os.path.basename(file_path)
-                    chunk_count = len(
-                        [d for d in documents if d.metadata.get("filename") == file_name]
-                    )
+                    chunk_count = chunks_per_file.get(file_name, 0)
                     await postgres_storage.add_document_source(
                         source_name=file_name,
                         user_id=user_id,

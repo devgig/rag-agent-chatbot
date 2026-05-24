@@ -16,7 +16,8 @@
 #
 import glob
 import os
-from typing import List, Optional, Callable
+from collections import Counter
+from typing import Dict, List, Optional, Callable
 
 import httpx
 import requests
@@ -475,12 +476,17 @@ class VectorStore:
         documents: List[Document],
         user_id: str,
         visibility: str = "private",
-    ) -> None:
+    ) -> Dict[str, int]:
         """Index documents with per-user ownership.
 
         Every chunk carries ``user_id`` (uploader) and ``visibility``
         ("public" or "private"). Retrieval filters by these fields so
         private chunks only surface for their owner.
+
+        Returns a ``{filename: chunk_count}`` map so callers can record the
+        real post-split chunk count per source. The previous pre-split count
+        was always 1 for single-Document loaders (e.g. PyPDF), making
+        ``/sources`` chunk numbers meaningless.
         """
         if visibility not in ("public", "private"):
             raise ValueError(f"Invalid visibility: {visibility!r}")
@@ -503,6 +509,10 @@ class VectorStore:
                 chunk.metadata["user_id"] = user_id
                 chunk.metadata["visibility"] = visibility
 
+            chunks_per_file = Counter(
+                chunk.metadata.get("filename", "") for chunk in splits
+            )
+
             logger.debug({
                 "message": "Split documents into chunks",
                 "chunk_count": len(splits)
@@ -512,6 +522,7 @@ class VectorStore:
             self.flush_store()
 
             logger.debug({"message": "Document indexing completed"})
+            return dict(chunks_per_file)
         except Exception as e:
             logger.error({
                 "message": "Error during document indexing",
