@@ -892,13 +892,16 @@ class PostgreSQLConversationStorage:
             self._db_operations += 1
             result = []
             for row in rows:
-                if row['user_id'] == user_id:
-                    ownership = "yours"
-                else:
-                    ownership = "public"
+                # ownership reflects *visibility*, not uploader — a public
+                # document is "public" even if you uploaded it. can_delete
+                # carries the uploader identity separately so the frontend
+                # can still show the delete button on public docs you own
+                # (DELETE /sources/{name} is uploader-gated server-side).
+                ownership = "private" if row['visibility'] == "private" else "public"
                 result.append({
                     "source_name": row['source_name'],
                     "ownership": ownership,
+                    "can_delete": row['user_id'] == user_id,
                     "chunk_count": row['chunk_count'],
                     "created_at": (
                         row['created_at'].isoformat()

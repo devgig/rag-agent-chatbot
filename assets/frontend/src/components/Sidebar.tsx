@@ -298,35 +298,25 @@ export default function Sidebar({
     return expandedSections.has(section);
   };
 
-  const handleSourceToggle = async (source: string) => {
-    let newSelectedSources: string[];
-
-    if (selectedSources.includes(source)) {
-      // Remove source if already selected
-      newSelectedSources = selectedSources.filter(s => s !== source);
-    } else {
-      // Add source if not selected
-      newSelectedSources = [...selectedSources, source];
-    }
-
-    setSelectedSources(newSelectedSources);
+  const handleSourceSelect = async (source: string) => {
+    const newSelected = [source];
+    const prev = selectedSources;
+    setSelectedSources(newSelected);
 
     try {
       const response = await apiFetch("/selected_sources", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newSelectedSources)
+        body: JSON.stringify(newSelected)
       });
 
       if (!response.ok) {
-        console.error("Failed to update selected sources");
-        // Revert the local state if the update failed
-        setSelectedSources(selectedSources);
+        console.error("Failed to update selected source");
+        setSelectedSources(prev);
       }
     } catch (error) {
-      console.error("Error updating selected sources:", error);
-      // Revert the local state if the update failed
-      setSelectedSources(selectedSources);
+      console.error("Error updating selected source:", error);
+      setSelectedSources(prev);
     }
   };
 
@@ -590,32 +580,34 @@ export default function Sidebar({
               </div>
               <div className={`${styles.sectionContent} ${isSectionExpanded('context') ? styles.expanded : ''}`}>
                 <div className={styles.configItem}>
-                  <label>Select Sources</label>
+                  <label>Select Context</label>
                   <div className={styles.sourcesContainer}>
                     {availableSources.length === 0 ? (
                       <div className={styles.noSources}>No sources available</div>
                     ) : (
                       availableSources.map(source => {
                         const name = source.source_name;
-                        const isOwn = source.ownership === "yours";
+                        const isPrivate = source.ownership === "private";
+                        const canDelete = source.can_delete ?? isPrivate;
                         return (
                           <div key={name} className={styles.sourceItem}>
                             <input
-                              type="checkbox"
+                              type="radio"
+                              name="selected-source"
                               id={`source-${name}`}
                               checked={selectedSources.includes(name)}
-                              onChange={() => handleSourceToggle(name)}
+                              onChange={() => handleSourceSelect(name)}
                             />
                             <label htmlFor={`source-${name}`} className={styles.sourceLabel}>
                               {name}
                             </label>
                             <span
-                              className={`${styles.sourceBadge} ${isOwn ? styles.sourceBadgeYours : styles.sourceBadgePublic}`}
-                              title={isOwn ? "You uploaded this" : "Public — visible to all users"}
+                              className={`${styles.sourceBadge} ${isPrivate ? styles.sourceBadgePrivate : styles.sourceBadgePublic}`}
+                              title={isPrivate ? "Private — only you can see this" : "Public — visible to all users"}
                             >
-                              {isOwn ? "yours" : "public"}
+                              {isPrivate ? "private" : "public"}
                             </span>
-                            {isOwn && (
+                            {canDelete && (
                               <button
                                 className={styles.deleteSourceButton}
                                 onClick={(e) => handleDeleteSource(name, e)}

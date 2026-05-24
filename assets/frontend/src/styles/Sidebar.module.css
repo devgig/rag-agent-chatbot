@@ -629,7 +629,7 @@ input:checked + .toggleSlider:before {
   margin-left: 4px;
 }
 
-.sourceBadgeYours {
+.sourceBadgePrivate {
   background-color: rgba(59, 130, 246, 0.12);
   color: #2563eb;
 }
@@ -639,7 +639,7 @@ input:checked + .toggleSlider:before {
   color: #4b5563;
 }
 
-:global(.dark) .sourceBadgeYours {
+:global(.dark) .sourceBadgePrivate {
   background-color: rgba(96, 165, 250, 0.18);
   color: #93c5fd;
 }

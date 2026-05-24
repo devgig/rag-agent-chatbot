@@ -546,14 +546,14 @@ class VectorStore:
         query: str,
         user_id: str,
         k: int = 5,
+        selected_sources: Optional[List[str]] = None,
     ) -> List[Document]:
         """Retrieve documents visible to this user, filtered by similarity.
 
         Visibility filter (``visibility == "public" OR user_id == <user>``) is
-        applied in Milvus. **Source-set partitioning happens in the caller**
-        (see ``agent.generate``) — keeping it out of Milvus lets us answer the
-        common "look in selected sources, fall back to corpus if empty" UX
-        pattern in a single Milvus query instead of two.
+        always applied in Milvus. If ``selected_sources`` is non-empty, a
+        ``source IN (...)`` clause is AND-ed onto the filter so non-selected
+        chunks are never retrieved — strict, no silent corpus fallback.
 
         Chunks below ``RELEVANCE_SCORE_THRESHOLD`` are dropped before return.
         Async-native via ``asimilarity_search_with_relevance_scores`` so the
@@ -567,12 +567,18 @@ class VectorStore:
             return []
         try:
             filter_expr = _build_visibility_filter(user_id)
+            if selected_sources:
+                quoted = ", ".join(
+                    f'"{_sanitize_milvus_string(s)}"' for s in selected_sources
+                )
+                filter_expr = f"({filter_expr}) && source in [{quoted}]"
 
             logger.debug({
                 "message": "Retrieving with filter",
                 "filter": filter_expr,
                 "k": k,
                 "user_id": user_id,
+                "selected_sources": selected_sources or None,
             })
 
             results_with_scores = await self._store.asimilarity_search_with_relevance_scores(

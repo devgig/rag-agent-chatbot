@@ -14,11 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 */
-export type SourceOwnership = "public" | "yours";
+export type SourceOwnership = "public" | "private";
 
 export interface Source {
   source_name: string;
   ownership: SourceOwnership;
+  can_delete?: boolean;
   chunk_count?: number;
   created_at?: string | null;
 }

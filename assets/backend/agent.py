@@ -146,33 +146,18 @@ class ChatAgent:
         prefs = await self.conversation_store.get_user_preferences(user_id)
         sources = prefs.get("selected_sources") or []
 
-        # Single oversampled query, partition by selected sources in Python.
-        # Previously this was two sequential queries when the user had sources
-        # selected (filtered first, un-filtered fallback if empty) — each one
-        # an embedding round-trip + Milvus RPC. Now we issue one un-filtered
-        # query at higher k, partition locally, and preserve the "fall back to
-        # corpus" UX without the extra hop.
+        # When the user has selected sources, the Milvus filter restricts the
+        # search to those sources only — strict, no silent corpus fallback. An
+        # empty result yields empty context and the LLM is told (via the
+        # system prompt) that it has no relevant material, instead of being
+        # quietly fed unrelated documents.
         k_target = 5
-        k_oversample = max(k_target * 5, 25) if sources else k_target
-        all_docs = await self.vector_store.get_documents(
-            user_query, user_id, k=k_oversample
+        retrieved_docs = await self.vector_store.get_documents(
+            user_query,
+            user_id,
+            k=k_target,
+            selected_sources=sources or None,
         )
-
-        if sources:
-            selected_set = set(sources)
-            in_selected = [
-                d for d in all_docs if d.metadata.get("source") in selected_set
-            ][:k_target]
-            if in_selected:
-                retrieved_docs = in_selected
-            else:
-                logger.info({
-                    "message": "No hits in selected sources; falling back to corpus",
-                    "selected_sources": sources,
-                })
-                retrieved_docs = all_docs[:k_target]
-        else:
-            retrieved_docs = all_docs[:k_target]
 
         # Format context string. Each retrieved chunk is wrapped in a
         # <document> tag with the source name as an attribute, and stray

@@ -539,7 +539,7 @@ async def get_indexing_status(task_id: str, current_user: str = Depends(get_curr
 async def get_sources(current_user: str = Depends(get_current_user)):
     """Return sources visible to the caller (public + their own).
 
-    Each entry has ``source_name`` and ``ownership`` ("public" or "yours")
+    Each entry has ``source_name`` and ``ownership`` ("public" or "private")
     so the frontend can badge sources accordingly.
     """
     try:
