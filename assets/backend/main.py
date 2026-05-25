@@ -328,9 +328,6 @@ async def stream_chat_query(
         try:
             await clear_partial_response(current_user, chat_id)
             try:
-                # PR 6: the agent now emits both ``history`` and ``done`` events
-                # itself after persisting the turn, so this handler doesn't need
-                # to re-query Postgres for the final history.
                 async for event in agent.query(
                     query_text=body.message,
                     chat_id=chat_id,

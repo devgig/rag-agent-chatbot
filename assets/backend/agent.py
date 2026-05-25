@@ -442,10 +442,10 @@ class ChatAgent:
     ) -> None:
         """Run the graph execution in background task.
 
-        After the graph completes, the new turn's messages are appended to
-        Postgres (one row per message — see ``postgres_storage`` PR 6) and a
-        final ``history`` event is pushed into the SSE stream so the HTTP
-        handler doesn't have to re-fetch from the DB.
+        After the graph completes, ``done`` + SENTINEL are pushed immediately
+        so the SSE stream closes without waiting for persistence.  The
+        Postgres/Redis save is kicked off as a fire-and-forget task so the
+        UI never stalls on I/O.
         """
         try:
             async for final_state in self.graph.astream(
@@ -455,37 +455,28 @@ class ChatAgent:
             ):
                 self.last_state = final_state
         finally:
-            try:
-                if self.last_state and self.last_state.get("messages"):
-                    try:
-                        logger.debug(
-                            f'Saving messages to conversation store for chat: {chat_id} '
-                            f'(user={user_id})'
-                        )
-                        new_messages = [
-                            msg for msg in self.last_state["messages"]
-                            if not isinstance(msg, SystemMessage)
-                        ]
-                        combined = await self.conversation_store.append_messages_to_chat(
-                            user_id, chat_id, new_messages
-                        )
-                        # Push the post-save history directly into the stream
-                        # so the SSE handler doesn't re-query Postgres for
-                        # data we already have in hand.
-                        await token_q.put({
-                            "type": "history",
-                            "messages": [
-                                self.conversation_store._message_to_dict(m)
-                                for m in combined
-                            ],
-                        })
-                    except Exception as save_err:
-                        logger.warning({
-                            "message": "Failed to persist conversation",
-                            "chat_id": chat_id,
-                            "user_id": user_id,
-                            "error": str(save_err),
-                        })
-                await token_q.put({"type": "done"})
-            finally:
-                await token_q.put(SENTINEL)
+            await token_q.put({"type": "done"})
+            await token_q.put(SENTINEL)
+
+            if self.last_state and self.last_state.get("messages"):
+                asyncio.create_task(
+                    self._persist_conversation(chat_id, user_id)
+                )
+
+    async def _persist_conversation(self, chat_id: str, user_id: str) -> None:
+        """Save the completed turn to Postgres + Redis (fire-and-forget)."""
+        try:
+            new_messages = [
+                msg for msg in self.last_state["messages"]
+                if not isinstance(msg, SystemMessage)
+            ]
+            await self.conversation_store.append_messages_to_chat(
+                user_id, chat_id, new_messages
+            )
+        except Exception as exc:
+            logger.warning({
+                "message": "Failed to persist conversation",
+                "chat_id": chat_id,
+                "user_id": user_id,
+                "error": str(exc),
+            })
