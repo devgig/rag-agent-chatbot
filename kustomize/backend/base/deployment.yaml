@@ -122,6 +122,10 @@ spec:
             secretKeyRef:
               name: redis-credentials
               key: password
+        - name: OTEL_SERVICE_NAME
+          value: "rag-agent"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://alloy.grafana-alloy.svc.cluster.local:4317"
         volumeMounts:
         - name: tmp-volume
           mountPath: /tmp

@@ -59,6 +59,13 @@ from postgres_storage import PostgreSQLConversationStorage
 from utils import process_and_ingest_files_background
 from vector_store import create_vector_store_with_config
 
+if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
+    from phoenix.otel import register
+    register(
+        project_name=os.getenv("OTEL_SERVICE_NAME", "rag-agent"),
+        auto_instrument=True,
+    )
+
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
 POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", 5432))
 POSTGRES_DB = os.getenv("POSTGRES_DB", "chatbot")
