@@ -26,13 +26,11 @@ from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemM
 from langgraph.graph import END, START, StateGraph
 import httpx
 from openai import AsyncOpenAI
-from opentelemetry import trace
+from opentelemetry import trace, context
 
 from logger import logger
 from prompts import Prompts
 from postgres_storage import PostgreSQLConversationStorage
-
-_tracer = trace.get_tracer("rag-agent.agent")
 
 
 SENTINEL = object()
@@ -146,8 +144,12 @@ class ChatAgent:
             "query": user_query[:100],
         })
 
+        # Get tracer at call time so it uses the TracerProvider set by register()
+        tracer = trace.get_tracer("rag-agent.generate")
+        parent_ctx = context.get_current()
+
         # --- Document search ---
-        with _tracer.start_as_current_span("retrieval") as retrieval_span:
+        with tracer.start_as_current_span("retrieval", context=parent_ctx) as retrieval_span:
             prefs = await self.conversation_store.get_user_preferences(user_id)
             sources = prefs.get("selected_sources") or []
             retrieval_span.set_attribute("retrieval.selected_sources", sources)
@@ -171,7 +173,7 @@ class ChatAgent:
             "selected_sources": sources,
         })
 
-        with _tracer.start_as_current_span("format_context") as ctx_span:
+        with tracer.start_as_current_span("format_context", context=parent_ctx) as ctx_span:
             if retrieved_docs:
                 returned_sources = list({doc.metadata.get("source", "unknown") for doc in retrieved_docs})
                 logger.info({
@@ -211,9 +213,8 @@ class ChatAgent:
             {"role": "user", "content": user_query},
         ]
 
-        with _tracer.start_as_current_span("llm_streaming") as llm_span:
-            llm_span.set_attribute("llm.model", self.current_model)
-            llm_span.set_attribute("llm.prompt_length", sum(len(m["content"]) for m in messages))
+        with tracer.start_as_current_span("llm_streaming", context=parent_ctx) as llm_span:
+            llm_span.set_attribute("llm.model_name", self.current_model)
 
             t0 = time.monotonic()
             stream = await self.model_client.chat.completions.create(
@@ -234,9 +235,9 @@ class ChatAgent:
                 self._usage_accumulator["prompt_tokens"] += getattr(usage, "prompt_tokens", 0)
                 self._usage_accumulator["completion_tokens"] += getattr(usage, "completion_tokens", 0)
                 self._usage_accumulator["total_tokens"] += getattr(usage, "total_tokens", 0)
-                llm_span.set_attribute("llm.prompt_tokens", self._usage_accumulator["prompt_tokens"])
-                llm_span.set_attribute("llm.completion_tokens", self._usage_accumulator["completion_tokens"])
-                llm_span.set_attribute("llm.total_tokens", self._usage_accumulator["total_tokens"])
+                llm_span.set_attribute("llm.token_count.prompt", self._usage_accumulator["prompt_tokens"])
+                llm_span.set_attribute("llm.token_count.completion", self._usage_accumulator["completion_tokens"])
+                llm_span.set_attribute("llm.token_count.total", self._usage_accumulator["total_tokens"])
 
         raw_output = "".join(llm_output_buffer)
 
