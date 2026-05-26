@@ -29,5 +29,4 @@ dependencies = [
     "arize-phoenix-otel>=0.9.0",
     "openinference-instrumentation-langchain>=0.1.30",
     "openinference-instrumentation-openai>=0.1.0",
-    "openinference-instrumentation-langgraph>=0.1.0",
 ]
