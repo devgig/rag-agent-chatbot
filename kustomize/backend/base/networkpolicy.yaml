@@ -16,6 +16,7 @@
 #   - milvus-system ns, port 19530
 #   - embedding pods inside rag-agent ns, port 8000
 #   - kserve ns, port 8000 (LLM via ExternalName → nemotron-nano-8b)
+#   - grafana-alloy ns, port 4317 (OTLP trace export)
 # Everything else (including the public internet) is denied.
 #
 # Ingress is left open here — the existing Istio HTTPRoute already gates
@@ -100,3 +101,12 @@ spec:
       ports:
         - protocol: TCP
           port: 8000
+
+    # Alloy OTLP trace export (gRPC)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: grafana-alloy
+      ports:
+        - protocol: TCP
+          port: 4317
