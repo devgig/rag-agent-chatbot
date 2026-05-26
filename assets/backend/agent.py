@@ -29,11 +29,10 @@ from openai import AsyncOpenAI
 from config import MODEL_CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW
 from conversation_context import (
     ConversationBuffer,
-    cosine_similarity,
     count_tokens,
     select_history_window,
-    INTENT_DRIFT_THRESHOLD,
     MAX_HISTORY_TOKENS,
+    MAX_TURNS_PER_CHAT,
     OUTPUT_RESERVE_TOKENS,
 )
 from logger import logger
@@ -144,7 +143,9 @@ class ChatAgent:
 
     async def _load_history_from_db(self, user_id: str, chat_id: str) -> list[dict]:
         """Load conversation history from Postgres, convert to role/content dicts."""
-        messages = await self.conversation_store.get_messages(user_id, chat_id)
+        messages = await self.conversation_store.get_messages(
+            user_id, chat_id, limit=MAX_TURNS_PER_CHAT
+        )
         result = []
         for msg in messages:
             if isinstance(msg, HumanMessage):
@@ -157,8 +158,8 @@ class ChatAgent:
         """Retrieve documents and generate a response with multi-turn context.
 
         History (user/assistant pairs only, never prior RAG chunks) is included
-        for conversational continuity. Intent drift detection excludes history
-        when the user changes topic.
+        for conversational continuity.  No new network calls are added beyond
+        what the original single-turn flow already made.
         """
         await self.stream_callback({'type': 'node_start', 'data': 'generate'})
 
@@ -183,26 +184,7 @@ class ChatAgent:
             else:
                 history = []
 
-        # --- Intent drift detection ---
-        query_embedding = await self.vector_store.embeddings.aembed_query(user_query)
-
-        include_history = False
-        if history:
-            prev_embedding = self.context_buffer.get_query_embedding(chat_id)
-            if prev_embedding is not None:
-                sim = cosine_similarity(query_embedding, prev_embedding)
-                include_history = sim >= INTENT_DRIFT_THRESHOLD
-                if not include_history:
-                    logger.info({
-                        "message": "intent_drift_topic_shift",
-                        "chat_id": chat_id,
-                        "similarity": round(sim, 4),
-                        "threshold": INTENT_DRIFT_THRESHOLD,
-                    })
-            else:
-                include_history = True
-
-        # --- Document search (always uses raw query) ---
+        # --- Document search ---
         prefs = await self.conversation_store.get_user_preferences(user_id)
         sources = prefs.get("selected_sources") or []
         logger.info({
@@ -249,25 +231,25 @@ class ChatAgent:
 
         # --- Build messages with evidence scoping ---
         system_prompt = self.system_prompt_template.render({"context": context_str})
-        system_tokens = count_tokens(system_prompt)
-        query_tokens = count_tokens(user_query)
-
         messages = [{"role": "system", "content": system_prompt}]
 
-        if include_history and history:
+        if history:
+            system_tokens = count_tokens(system_prompt)
+            query_tokens = count_tokens(user_query)
             available_for_history = min(
                 MAX_HISTORY_TOKENS,
                 self._get_context_window() - system_tokens - query_tokens - OUTPUT_RESERVE_TOKENS,
             )
             if available_for_history > 0:
                 window = select_history_window(history, available_for_history)
-                messages.extend(window)
-                logger.debug({
-                    "message": "history_included",
-                    "chat_id": chat_id,
-                    "turns_in_window": len(window) // 2,
-                    "total_history_turns": len(history) // 2,
-                })
+                if window:
+                    messages.extend(window)
+                    logger.debug({
+                        "message": "history_included",
+                        "chat_id": chat_id,
+                        "turns_in_window": len(window) // 2,
+                        "total_history_turns": len(history) // 2,
+                    })
 
         messages.append({"role": "user", "content": user_query})
 
@@ -296,7 +278,6 @@ class ChatAgent:
 
         # --- Update conversation buffer ---
         self.context_buffer.append(chat_id, user_query, raw_output)
-        self.context_buffer.set_query_embedding(chat_id, query_embedding)
 
         response = AIMessage(content=raw_output)
 
@@ -304,7 +285,6 @@ class ChatAgent:
             "message": "GRAPH: generate complete",
             "chat_id": chat_id,
             "response_length": len(raw_output),
-            "history_included": include_history,
         })
         await self.stream_callback({'type': 'node_end', 'data': 'generate'})
         return {"messages": state.get("messages", []) + [response]}

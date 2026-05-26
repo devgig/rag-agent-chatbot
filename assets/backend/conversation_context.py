@@ -23,17 +23,19 @@ MAX_HISTORY_TOKENS = int(os.getenv("MAX_HISTORY_TOKENS", "4096"))
 OUTPUT_RESERVE_TOKENS = int(os.getenv("OUTPUT_RESERVE_TOKENS", "2048"))
 INTENT_DRIFT_THRESHOLD = float(os.getenv("INTENT_DRIFT_THRESHOLD", "0.3"))
 
-_encoder = None
+_NOT_TRIED = object()
+_encoder = _NOT_TRIED
 
 
 def _get_encoder():
     global _encoder
-    if _encoder is not None:
+    if _encoder is not _NOT_TRIED:
         return _encoder
     try:
         import tiktoken
         _encoder = tiktoken.get_encoding("cl100k_base")
     except Exception:
+        logger.info("tiktoken unavailable, using character-based token estimation")
         _encoder = None
     return _encoder
 

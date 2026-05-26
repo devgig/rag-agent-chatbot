@@ -1,4 +1,4 @@
-"""Integration tests for ChatAgent multi-turn context and intent drift."""
+"""Integration tests for ChatAgent multi-turn context."""
 import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from conversation_context import ConversationBuffer, cosine_similarity
+from conversation_context import ConversationBuffer
 
 
 @dataclass
@@ -46,14 +46,7 @@ class FakeUsage:
     total_tokens = 150
 
 
-async def fake_stream(chunks):
-    """Simulate an async iterable of chunks."""
-    for chunk in chunks:
-        yield chunk
-
-
 class FakeStreamContext:
-    """Wraps an async generator to behave like the OpenAI streaming response."""
     def __init__(self, chunks):
         self._chunks = chunks
 
@@ -67,7 +60,6 @@ class FakeStreamContext:
 
 @pytest.fixture
 def mock_deps():
-    """Set up mocked dependencies for ChatAgent."""
     vector_store = MagicMock()
     vector_store.embeddings = MagicMock()
     vector_store.get_documents = AsyncMock(return_value=[
@@ -86,16 +78,9 @@ def mock_deps():
     return vector_store, config_manager, postgres_storage
 
 
-@pytest.mark.asyncio
-async def test_generate_includes_history_on_continuation(mock_deps):
-    """When intent drift says 'continuation', history should appear in the LLM messages."""
-    vector_store, config_manager, postgres_storage = mock_deps
-
-    # Embeddings: return similar vectors for "continuation"
-    base_emb = [0.5] * 384
-    vector_store.embeddings.aembed_query = AsyncMock(return_value=base_emb)
-
+def _make_agent(mock_deps):
     from agent import ChatAgent
+    vector_store, config_manager, postgres_storage = mock_deps
 
     with patch.object(ChatAgent, 'set_current_model'):
         agent = ChatAgent(vector_store, config_manager, postgres_storage)
@@ -103,99 +88,59 @@ async def test_generate_includes_history_on_continuation(mock_deps):
         agent.system_prompt_template = MagicMock()
         agent.system_prompt_template.render = MagicMock(return_value="System prompt")
 
-        # Pre-populate buffer with history and a similar embedding
-        agent.context_buffer.append("chat1", "What is Redpanda?", "Redpanda is a streaming platform.")
-        agent.context_buffer.set_query_embedding("chat1", base_emb)
-
-        # Mock LLM streaming response
         chunks = [
             FakeChunk(content="Test response"),
             FakeChunk(finish_reason="stop", usage=FakeUsage()),
         ]
-
         model_client = AsyncMock()
         model_client.chat.completions.create = AsyncMock(return_value=FakeStreamContext(chunks))
         agent.model_client = model_client
-
-        captured_events = []
-        agent.stream_callback = AsyncMock(side_effect=lambda e: captured_events.append(e))
+        agent.stream_callback = AsyncMock()
         agent._usage_accumulator = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-
-        from langchain_core.messages import HumanMessage
-        state = {
-            "chat_id": "chat1",
-            "user_id": "user1",
-            "messages": [HumanMessage(content="Tell me more about Redpanda")],
-        }
-
-        await agent.generate(state)
-
-        # Verify the LLM call included history messages
-        call_args = model_client.chat.completions.create.call_args
-        messages = call_args.kwargs["messages"]
-
-        roles = [m["role"] for m in messages]
-        assert "system" in roles
-        assert "user" in roles
-        # History should be present (user + assistant from buffer)
-        assert roles.count("user") == 2  # history user + current user
-        assert "assistant" in roles
+        return agent, model_client
 
 
 @pytest.mark.asyncio
-async def test_generate_excludes_history_on_topic_shift(mock_deps):
-    """When intent drift detects a topic change, history should be excluded."""
-    vector_store, config_manager, postgres_storage = mock_deps
+async def test_generate_includes_history(mock_deps):
+    """When history exists, it should appear in the LLM messages."""
+    agent, model_client = _make_agent(mock_deps)
 
-    # Return a very different embedding to trigger topic shift
-    new_emb = [-0.5] * 384
-    vector_store.embeddings.aembed_query = AsyncMock(return_value=new_emb)
+    agent.context_buffer.append("chat1", "What is Redpanda?", "Redpanda is a streaming platform.")
 
-    from agent import ChatAgent
+    from langchain_core.messages import HumanMessage
+    state = {
+        "chat_id": "chat1",
+        "user_id": "user1",
+        "messages": [HumanMessage(content="Tell me more about Redpanda")],
+    }
 
-    with patch.object(ChatAgent, 'set_current_model'):
-        agent = ChatAgent(vector_store, config_manager, postgres_storage)
-        agent.current_model = "test-model"
-        agent.system_prompt_template = MagicMock()
-        agent.system_prompt_template.render = MagicMock(return_value="System prompt")
+    await agent.generate(state)
 
-        # Pre-populate buffer with history and an OPPOSITE embedding
-        old_emb = [0.5] * 384
-        agent.context_buffer.append("chat1", "What is Redpanda?", "Redpanda is a streaming platform.")
-        agent.context_buffer.set_query_embedding("chat1", old_emb)
+    call_args = model_client.chat.completions.create.call_args
+    messages = call_args.kwargs["messages"]
+    roles = [m["role"] for m in messages]
+    assert roles.count("user") == 2
+    assert "assistant" in roles
 
-        # Verify the embeddings are actually dissimilar
-        sim = cosine_similarity(new_emb, old_emb)
-        assert sim < 0  # opposite vectors
 
-        chunks = [
-            FakeChunk(content="Pasta recipe"),
-            FakeChunk(finish_reason="stop", usage=FakeUsage()),
-        ]
+@pytest.mark.asyncio
+async def test_generate_works_without_history(mock_deps):
+    """First message in a chat should work with no history."""
+    agent, model_client = _make_agent(mock_deps)
 
-        model_client = AsyncMock()
-        model_client.chat.completions.create = AsyncMock(return_value=FakeStreamContext(chunks))
-        agent.model_client = model_client
+    from langchain_core.messages import HumanMessage
+    state = {
+        "chat_id": "chat1",
+        "user_id": "user1",
+        "messages": [HumanMessage(content="Hello")],
+    }
 
-        captured_events = []
-        agent.stream_callback = AsyncMock(side_effect=lambda e: captured_events.append(e))
-        agent._usage_accumulator = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    await agent.generate(state)
 
-        from langchain_core.messages import HumanMessage
-        state = {
-            "chat_id": "chat1",
-            "user_id": "user1",
-            "messages": [HumanMessage(content="How do I make pasta?")],
-        }
-
-        await agent.generate(state)
-
-        # Verify the LLM call did NOT include history
-        call_args = model_client.chat.completions.create.call_args
-        messages = call_args.kwargs["messages"]
-
-        roles = [m["role"] for m in messages]
-        assert roles == ["system", "user"]  # no history
+    call_args = model_client.chat.completions.create.call_args
+    messages = call_args.kwargs["messages"]
+    roles = [m["role"] for m in messages]
+    assert roles == ["system", "user"]
 
 
 @pytest.mark.asyncio
@@ -204,128 +149,80 @@ async def test_generate_loads_from_postgres_on_cold_start(mock_deps):
     vector_store, config_manager, postgres_storage = mock_deps
 
     from langchain_core.messages import HumanMessage, AIMessage
-
-    # Postgres returns existing history
     postgres_storage.get_messages = AsyncMock(return_value=[
         HumanMessage(content="Prior question"),
         AIMessage(content="Prior answer"),
     ])
 
-    # Same-topic embedding so history is included
-    base_emb = [0.5] * 384
-    vector_store.embeddings.aembed_query = AsyncMock(return_value=base_emb)
+    agent, model_client = _make_agent(mock_deps)
 
-    from agent import ChatAgent
+    state = {
+        "chat_id": "chat1",
+        "user_id": "user1",
+        "messages": [HumanMessage(content="Follow up question")],
+    }
 
-    with patch.object(ChatAgent, 'set_current_model'):
-        agent = ChatAgent(vector_store, config_manager, postgres_storage)
-        agent.current_model = "test-model"
-        agent.system_prompt_template = MagicMock()
-        agent.system_prompt_template.render = MagicMock(return_value="System prompt")
+    await agent.generate(state)
 
-        # Set a prior embedding so drift detection can work
-        agent.context_buffer.set_query_embedding("chat1", base_emb)
-
-        chunks = [
-            FakeChunk(content="Response"),
-            FakeChunk(finish_reason="stop", usage=FakeUsage()),
-        ]
-
-        model_client = AsyncMock()
-        model_client.chat.completions.create = AsyncMock(return_value=FakeStreamContext(chunks))
-        agent.model_client = model_client
-
-        agent.stream_callback = AsyncMock()
-        agent._usage_accumulator = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-
-        state = {
-            "chat_id": "chat1",
-            "user_id": "user1",
-            "messages": [HumanMessage(content="Follow up question")],
-        }
-
-        await agent.generate(state)
-
-        # Verify Postgres was called for history
-        postgres_storage.get_messages.assert_called_once_with("user1", "chat1")
-
-        # Verify history was included in LLM call
-        call_args = model_client.chat.completions.create.call_args
-        messages = call_args.kwargs["messages"]
-        roles = [m["role"] for m in messages]
-        assert "assistant" in roles  # from Postgres history
+    postgres_storage.get_messages.assert_called_once()
+    call_args = model_client.chat.completions.create.call_args
+    messages = call_args.kwargs["messages"]
+    roles = [m["role"] for m in messages]
+    assert "assistant" in roles
 
 
 @pytest.mark.asyncio
 async def test_buffer_updated_after_generate(mock_deps):
     """After generate completes, the buffer should contain the new turn."""
-    vector_store, config_manager, postgres_storage = mock_deps
+    agent, _ = _make_agent(mock_deps)
 
-    base_emb = [0.5] * 384
-    vector_store.embeddings.aembed_query = AsyncMock(return_value=base_emb)
+    from langchain_core.messages import HumanMessage
+    state = {
+        "chat_id": "chat1",
+        "user_id": "user1",
+        "messages": [HumanMessage(content="New question")],
+    }
 
-    from agent import ChatAgent
+    await agent.generate(state)
 
-    with patch.object(ChatAgent, 'set_current_model'):
-        agent = ChatAgent(vector_store, config_manager, postgres_storage)
-        agent.current_model = "test-model"
-        agent.system_prompt_template = MagicMock()
-        agent.system_prompt_template.render = MagicMock(return_value="System prompt")
-
-        chunks = [
-            FakeChunk(content="Generated answer"),
-            FakeChunk(finish_reason="stop", usage=FakeUsage()),
-        ]
-
-        model_client = AsyncMock()
-        model_client.chat.completions.create = AsyncMock(return_value=FakeStreamContext(chunks))
-        agent.model_client = model_client
-
-        agent.stream_callback = AsyncMock()
-        agent._usage_accumulator = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-
-        from langchain_core.messages import HumanMessage
-        state = {
-            "chat_id": "chat1",
-            "user_id": "user1",
-            "messages": [HumanMessage(content="New question")],
-        }
-
-        await agent.generate(state)
-
-        # Buffer should now have the turn
-        history = agent.context_buffer.get("chat1")
-        assert history is not None
-        assert len(history) == 2
-        assert history[0] == {"role": "user", "content": "New question"}
-        assert history[1] == {"role": "assistant", "content": "Generated answer"}
-
-        # Embedding should be stored
-        stored_emb = agent.context_buffer.get_query_embedding("chat1")
-        assert stored_emb == base_emb
+    history = agent.context_buffer.get("chat1")
+    assert history is not None
+    assert len(history) == 2
+    assert history[0] == {"role": "user", "content": "New question"}
+    assert history[1] == {"role": "assistant", "content": "Test response"}
 
 
 @pytest.mark.asyncio
 async def test_no_shared_state_between_chats(mock_deps):
-    """Concurrent requests to different chats shouldn't cross-contaminate."""
-    vector_store, config_manager, postgres_storage = mock_deps
+    """Different chats should have independent buffers."""
+    agent, _ = _make_agent(mock_deps)
 
-    vector_store.embeddings.aembed_query = AsyncMock(return_value=[0.5] * 384)
+    agent.context_buffer.append("chatA", "Question A", "Answer A")
+    agent.context_buffer.append("chatB", "Question B", "Answer B")
 
-    from agent import ChatAgent
+    histA = agent.context_buffer.get("chatA")
+    histB = agent.context_buffer.get("chatB")
 
-    with patch.object(ChatAgent, 'set_current_model'):
-        agent = ChatAgent(vector_store, config_manager, postgres_storage)
-        agent.current_model = "test-model"
-        agent.system_prompt_template = MagicMock()
-        agent.system_prompt_template.render = MagicMock(return_value="System prompt")
+    assert histA[0]["content"] == "Question A"
+    assert histB[0]["content"] == "Question B"
+    assert histA != histB
 
-        agent.context_buffer.append("chatA", "Question A", "Answer A")
-        agent.context_buffer.append("chatB", "Question B", "Answer B")
 
-        histA = agent.context_buffer.get("chatA")
-        histB = agent.context_buffer.get("chatB")
+@pytest.mark.asyncio
+async def test_no_extra_embedding_call(mock_deps):
+    """generate() should NOT make its own embedding call — only Milvus does that internally."""
+    vector_store, _, _ = mock_deps
+    vector_store.embeddings.aembed_query = AsyncMock()
 
-        assert histA[0]["content"] == "Question A"
-        assert histB[0]["content"] == "Question B"
-        assert histA != histB
+    agent, _ = _make_agent(mock_deps)
+
+    from langchain_core.messages import HumanMessage
+    state = {
+        "chat_id": "chat1",
+        "user_id": "user1",
+        "messages": [HumanMessage(content="Hello")],
+    }
+
+    await agent.generate(state)
+
+    vector_store.embeddings.aembed_query.assert_not_called()
