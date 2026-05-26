@@ -19,16 +19,20 @@
 import asyncio
 import contextlib
 import re
+import time
 from typing import AsyncIterator, List, Dict, Any, TypedDict, Optional, Callable, Awaitable
 
 from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 import httpx
 from openai import AsyncOpenAI
+from opentelemetry import trace
 
 from logger import logger
 from prompts import Prompts
 from postgres_storage import PostgreSQLConversationStorage
+
+_tracer = trace.get_tracer("rag-agent.agent")
 
 
 SENTINEL = object()
@@ -143,56 +147,62 @@ class ChatAgent:
         })
 
         # --- Document search ---
-        prefs = await self.conversation_store.get_user_preferences(user_id)
-        sources = prefs.get("selected_sources") or []
+        with _tracer.start_as_current_span("retrieval") as retrieval_span:
+            prefs = await self.conversation_store.get_user_preferences(user_id)
+            sources = prefs.get("selected_sources") or []
+            retrieval_span.set_attribute("retrieval.selected_sources", sources)
+
+            k_target = 5
+            retrieved_docs = await self.vector_store.get_documents(
+                user_query,
+                user_id,
+                k=k_target,
+                selected_sources=sources or None,
+            )
+
+            retrieval_span.set_attribute("retrieval.doc_count", len(retrieved_docs))
+            if retrieved_docs:
+                returned_sources = list({doc.metadata.get("source", "unknown") for doc in retrieved_docs})
+                retrieval_span.set_attribute("retrieval.returned_sources", returned_sources)
+
         logger.info({
             "message": "Source filter for retrieval",
             "user_id": user_id,
             "selected_sources": sources,
         })
 
-        k_target = 5
-        retrieved_docs = await self.vector_store.get_documents(
-            user_query,
-            user_id,
-            k=k_target,
-            selected_sources=sources or None,
-        )
-
-        # Format context string. Each retrieved chunk is wrapped in a
-        # <document> tag with the source name as an attribute, and stray
-        # control sequences that could look like a closing tag or another
-        # instruction frame are neutralized before insertion. This is the
-        # prompt-injection defense — the system prompt tells the model that
-        # anything inside <document>…</document> is untrusted data, never
-        # an instruction.
-        if retrieved_docs:
-            returned_sources = list({doc.metadata.get("source", "unknown") for doc in retrieved_docs})
-            logger.info({
-                "message": "Retrieved docs source check",
-                "requested_sources": sources,
-                "returned_sources": returned_sources,
-                "doc_count": len(retrieved_docs),
-            })
-            context_parts = ["Document context (untrusted reference material):"]
-            for i, doc in enumerate(retrieved_docs, 1):
-                source = doc.metadata.get("source", "unknown")
-                content = _neutralize_doc_content(doc.page_content.strip())
-                safe_source = _neutralize_doc_content(source)
-                context_parts.append(
-                    f'<document index="{i}" source="{safe_source}">\n'
-                    f"{content}\n"
-                    f"</document>"
-                )
-            context_str = "\n\n".join(context_parts)
-            logger.info({
-                "message": "Documents retrieved for RAG",
-                "doc_count": len(retrieved_docs),
-                "context_length": len(context_str),
-            })
-        else:
-            context_str = "No document context available for this query."
-            logger.warning({"message": "No documents retrieved", "query": user_query})
+        with _tracer.start_as_current_span("format_context") as ctx_span:
+            if retrieved_docs:
+                returned_sources = list({doc.metadata.get("source", "unknown") for doc in retrieved_docs})
+                logger.info({
+                    "message": "Retrieved docs source check",
+                    "requested_sources": sources,
+                    "returned_sources": returned_sources,
+                    "doc_count": len(retrieved_docs),
+                })
+                context_parts = ["Document context (untrusted reference material):"]
+                for i, doc in enumerate(retrieved_docs, 1):
+                    source = doc.metadata.get("source", "unknown")
+                    content = _neutralize_doc_content(doc.page_content.strip())
+                    safe_source = _neutralize_doc_content(source)
+                    context_parts.append(
+                        f'<document index="{i}" source="{safe_source}">\n'
+                        f"{content}\n"
+                        f"</document>"
+                    )
+                context_str = "\n\n".join(context_parts)
+                ctx_span.set_attribute("context.length", len(context_str))
+                ctx_span.set_attribute("context.doc_count", len(retrieved_docs))
+                logger.info({
+                    "message": "Documents retrieved for RAG",
+                    "doc_count": len(retrieved_docs),
+                    "context_length": len(context_str),
+                })
+            else:
+                context_str = "No document context available for this query."
+                ctx_span.set_attribute("context.length", 0)
+                ctx_span.set_attribute("context.doc_count", 0)
+                logger.warning({"message": "No documents retrieved", "query": user_query})
 
         # --- LLM call with context baked into system prompt ---
         system_prompt = self.system_prompt_template.render({"context": context_str})
@@ -201,22 +211,32 @@ class ChatAgent:
             {"role": "user", "content": user_query},
         ]
 
-        stream = await self.model_client.chat.completions.create(
-            model=self.current_model,
-            messages=messages,
-            temperature=0,
-            top_p=1,
-            stream=True,
-            stream_options={"include_usage": True},
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
-        )
+        with _tracer.start_as_current_span("llm_streaming") as llm_span:
+            llm_span.set_attribute("llm.model", self.current_model)
+            llm_span.set_attribute("llm.prompt_length", sum(len(m["content"]) for m in messages))
 
-        llm_output_buffer, _, usage = await self._stream_response(stream, self.stream_callback)
+            t0 = time.monotonic()
+            stream = await self.model_client.chat.completions.create(
+                model=self.current_model,
+                messages=messages,
+                temperature=0,
+                top_p=1,
+                stream=True,
+                stream_options={"include_usage": True},
+                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            )
 
-        if usage:
-            self._usage_accumulator["prompt_tokens"] += getattr(usage, "prompt_tokens", 0)
-            self._usage_accumulator["completion_tokens"] += getattr(usage, "completion_tokens", 0)
-            self._usage_accumulator["total_tokens"] += getattr(usage, "total_tokens", 0)
+            llm_output_buffer, _, usage = await self._stream_response(stream, self.stream_callback)
+            stream_duration = time.monotonic() - t0
+
+            llm_span.set_attribute("llm.stream_duration_ms", round(stream_duration * 1000, 1))
+            if usage:
+                self._usage_accumulator["prompt_tokens"] += getattr(usage, "prompt_tokens", 0)
+                self._usage_accumulator["completion_tokens"] += getattr(usage, "completion_tokens", 0)
+                self._usage_accumulator["total_tokens"] += getattr(usage, "total_tokens", 0)
+                llm_span.set_attribute("llm.prompt_tokens", self._usage_accumulator["prompt_tokens"])
+                llm_span.set_attribute("llm.completion_tokens", self._usage_accumulator["completion_tokens"])
+                llm_span.set_attribute("llm.total_tokens", self._usage_accumulator["total_tokens"])
 
         raw_output = "".join(llm_output_buffer)
 
@@ -263,13 +283,11 @@ class ChatAgent:
         tool_calls_buffer = {}
         saw_tool_finish = False
         usage = None
-        # State for stripping <think>...</think> blocks from streamed tokens.
-        # Tokens arrive in arbitrary chunks so the tags may span multiple chunks.
-        # Models like Nemotron Nano may output <think> as the very first token
-        # or start reasoning without tags — we handle both cases.
         _in_think_block = False
         _seen_first_content = False
-        _pending = ""  # buffered text that might be a partial <think> or </think> tag
+        _pending = ""
+        _stream_start = time.monotonic()
+        _ttft_recorded = False
 
         async for chunk in stream:
             if hasattr(chunk, "usage") and chunk.usage is not None:
@@ -332,6 +350,13 @@ class ChatAgent:
                             break
 
                     if emit:
+                        if not _ttft_recorded:
+                            _ttft_recorded = True
+                            ttft_ms = round((time.monotonic() - _stream_start) * 1000, 1)
+                            span = trace.get_current_span()
+                            if span.is_recording():
+                                span.set_attribute("llm.ttft_ms", ttft_ms)
+                                span.add_event("first_token", {"ttft_ms": ttft_ms})
                         await stream_callback({"type": "token", "data": emit})
                         llm_output_buffer.append(emit)
                 for tc in getattr(delta, "tool_calls", []) or []:
