@@ -281,8 +281,8 @@ class ChatAgent:
 
         response = AIMessage(content=raw_output)
 
-        logger.debug({
-            "message": "GRAPH: generate complete",
+        logger.info({
+            "message": "generate_returning",
             "chat_id": chat_id,
             "response_length": len(raw_output),
         })
@@ -481,6 +481,7 @@ class ChatAgent:
 
         Persistence is fire-and-forget so the UI never stalls on I/O.
         """
+        import time as _time
         final_state = None
         try:
             async for state in self.graph.astream(
@@ -490,8 +491,11 @@ class ChatAgent:
             ):
                 final_state = state
         finally:
+            _t0 = _time.monotonic()
             await token_q.put({"type": "done"})
             await token_q.put(SENTINEL)
+            logger.info({"message": "stream_closed", "chat_id": chat_id,
+                         "ms_after_graph": round((_time.monotonic() - _t0) * 1000, 1)})
 
             if final_state and final_state.get("messages"):
                 new_messages = [
