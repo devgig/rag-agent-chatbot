@@ -40,7 +40,7 @@ def _json_loads(raw: Any) -> Any:
         raw = raw.encode("utf-8")
     return orjson.loads(raw)
 
-REDIS_HOST = os.getenv("REDIS_HOST", "redis.redis-system.svc.cluster.local")
+REDIS_HOST = os.getenv("REDIS_HOST", "redis-master.redis-system.svc.cluster.local")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or None
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))
