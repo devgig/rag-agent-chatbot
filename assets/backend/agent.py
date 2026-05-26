@@ -26,15 +26,6 @@ from langgraph.graph import END, START, StateGraph
 import httpx
 from openai import AsyncOpenAI
 
-from config import MODEL_CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW
-from conversation_context import (
-    ConversationBuffer,
-    count_tokens,
-    select_history_window,
-    MAX_HISTORY_TOKENS,
-    MAX_TURNS_PER_CHAT,
-    OUTPUT_RESERVE_TOKENS,
-)
 from logger import logger
 from prompts import Prompts
 from postgres_storage import PostgreSQLConversationStorage
@@ -90,16 +81,10 @@ class State(TypedDict, total=False):
 
 
 class ChatAgent:
-    """Conversational agent with multi-turn context and evidence-scoped RAG.
+    """Conversational agent with direct RAG pipeline.
 
-    Maintains an in-memory conversation buffer per chat. History is included
-    in the LLM prompt for continuity, but prior RAG chunks are never carried
-    forward — the model sees only the current turn's retrieved documents as
-    evidence. This is the structural defense against generation contamination.
-
-    Intent drift detection (cosine similarity between consecutive query
-    embeddings) flushes history on topic changes so irrelevant context can't
-    confuse the model.
+    Performs document search and LLM generation in a single graph node,
+    bypassing the former MCP subprocess architecture.
     """
 
     def __init__(self, vector_store, config_manager, postgres_storage: PostgreSQLConversationStorage):
@@ -109,10 +94,10 @@ class ChatAgent:
         self.current_model = None
         self.model_client: Optional[AsyncOpenAI] = None
         self.system_prompt_template = None
-        self.context_buffer = ConversationBuffer()
 
         self.graph = self._build_graph()
         self.stream_callback = None
+        self.last_state = None
 
     @classmethod
     async def create(cls, vector_store, config_manager, postgres_storage: PostgreSQLConversationStorage):
@@ -120,7 +105,7 @@ class ChatAgent:
         agent = cls(vector_store, config_manager, postgres_storage)
         agent.system_prompt_template = Prompts.get_template("supervisor_agent")
         agent.set_current_model(config_manager.get_selected_model())
-        logger.debug("Agent initialized with multi-turn RAG pipeline.")
+        logger.debug("Agent initialized with direct RAG pipeline.")
         return agent
 
     def set_current_model(self, model_name: str) -> None:
@@ -138,51 +123,24 @@ class ChatAgent:
             timeout=httpx.Timeout(LLM_REQUEST_TIMEOUT, connect=10.0),
         )
 
-    def _get_context_window(self) -> int:
-        return MODEL_CONTEXT_WINDOWS.get(self.current_model, DEFAULT_CONTEXT_WINDOW)
-
-    async def _load_history_from_db(self, user_id: str, chat_id: str) -> list[dict]:
-        """Load conversation history from Postgres, convert to role/content dicts."""
-        messages = await self.conversation_store.get_messages(
-            user_id, chat_id, limit=MAX_TURNS_PER_CHAT
-        )
-        result = []
-        for msg in messages:
-            if isinstance(msg, HumanMessage):
-                result.append({"role": "user", "content": msg.content})
-            elif isinstance(msg, AIMessage):
-                result.append({"role": "assistant", "content": msg.content})
-        return result
-
     async def generate(self, state: State) -> Dict[str, Any]:
-        """Retrieve documents and generate a response with multi-turn context.
+        """Search documents and generate AI response in a single pass.
 
-        History (user/assistant pairs only, never prior RAG chunks) is included
-        for conversational continuity.  No new network calls are added beyond
-        what the original single-turn flow already made.
+        Replaces the former two-iteration flow (generate→tool_node→generate)
+        with inline vector search followed by a single LLM call.
         """
         await self.stream_callback({'type': 'node_start', 'data': 'generate'})
 
-        chat_id = state.get("chat_id")
-        user_id = state.get("user_id")
         user_query = self._extract_user_query(state)
+        user_id = state.get("user_id")
         if not user_id:
             raise ValueError("agent.generate requires user_id in state")
         logger.debug({
-            "message": "GRAPH: generate — multi-turn RAG",
-            "chat_id": chat_id,
+            "message": "GRAPH: generate — inline search + LLM",
+            "chat_id": state.get("chat_id"),
             "user_id": user_id,
             "query": user_query[:100],
         })
-
-        # --- Conversation history from buffer (or Postgres on cold start) ---
-        history = self.context_buffer.get(chat_id)
-        if history is None:
-            history = await self._load_history_from_db(user_id, chat_id)
-            if history:
-                self.context_buffer.set_from_db(chat_id, history)
-            else:
-                history = []
 
         # --- Document search ---
         prefs = await self.conversation_store.get_user_preferences(user_id)
@@ -201,6 +159,13 @@ class ChatAgent:
             selected_sources=sources or None,
         )
 
+        # Format context string. Each retrieved chunk is wrapped in a
+        # <document> tag with the source name as an attribute, and stray
+        # control sequences that could look like a closing tag or another
+        # instruction frame are neutralized before insertion. This is the
+        # prompt-injection defense — the system prompt tells the model that
+        # anything inside <document>…</document> is untrusted data, never
+        # an instruction.
         if retrieved_docs:
             returned_sources = list({doc.metadata.get("source", "unknown") for doc in retrieved_docs})
             logger.info({
@@ -209,7 +174,7 @@ class ChatAgent:
                 "returned_sources": returned_sources,
                 "doc_count": len(retrieved_docs),
             })
-            context_parts = ["Document context for this turn (untrusted reference material):"]
+            context_parts = ["Document context (untrusted reference material):"]
             for i, doc in enumerate(retrieved_docs, 1):
                 source = doc.metadata.get("source", "unknown")
                 content = _neutralize_doc_content(doc.page_content.strip())
@@ -229,31 +194,13 @@ class ChatAgent:
             context_str = "No document context available for this query."
             logger.warning({"message": "No documents retrieved", "query": user_query})
 
-        # --- Build messages with evidence scoping ---
+        # --- LLM call with context baked into system prompt ---
         system_prompt = self.system_prompt_template.render({"context": context_str})
-        messages = [{"role": "system", "content": system_prompt}]
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_query},
+        ]
 
-        if history:
-            system_tokens = count_tokens(system_prompt)
-            query_tokens = count_tokens(user_query)
-            available_for_history = min(
-                MAX_HISTORY_TOKENS,
-                self._get_context_window() - system_tokens - query_tokens - OUTPUT_RESERVE_TOKENS,
-            )
-            if available_for_history > 0:
-                window = select_history_window(history, available_for_history)
-                if window:
-                    messages.extend(window)
-                    logger.debug({
-                        "message": "history_included",
-                        "chat_id": chat_id,
-                        "turns_in_window": len(window) // 2,
-                        "total_history_turns": len(history) // 2,
-                    })
-
-        messages.append({"role": "user", "content": user_query})
-
-        # --- LLM call ---
         stream = await self.model_client.chat.completions.create(
             model=self.current_model,
             messages=messages,
@@ -276,14 +223,11 @@ class ChatAgent:
         if self._usage_accumulator.get("total_tokens", 0) > 0:
             await self.stream_callback({"type": "usage", "data": dict(self._usage_accumulator)})
 
-        # --- Update conversation buffer ---
-        self.context_buffer.append(chat_id, user_query, raw_output)
-
         response = AIMessage(content=raw_output)
 
-        logger.info({
-            "message": "generate_returning",
-            "chat_id": chat_id,
+        logger.debug({
+            "message": "GRAPH: generate complete",
+            "chat_id": state.get("chat_id"),
             "response_length": len(raw_output),
         })
         await self.stream_callback({'type': 'node_end', 'data': 'generate'})
@@ -319,9 +263,13 @@ class ChatAgent:
         tool_calls_buffer = {}
         saw_tool_finish = False
         usage = None
+        # State for stripping <think>...</think> blocks from streamed tokens.
+        # Tokens arrive in arbitrary chunks so the tags may span multiple chunks.
+        # Models like Nemotron Nano may output <think> as the very first token
+        # or start reasoning without tags — we handle both cases.
         _in_think_block = False
         _seen_first_content = False
-        _pending = ""
+        _pending = ""  # buffered text that might be a partial <think> or </think> tag
 
         async for chunk in stream:
             if hasattr(chunk, "usage") and chunk.usage is not None:
@@ -337,6 +285,7 @@ class ChatAgent:
 
                 content = getattr(delta, "content", None)
                 if content:
+                    # On first content chunk, check if model starts with <think>
                     if not _seen_first_content:
                         _seen_first_content = True
                         stripped = content.lstrip()
@@ -346,27 +295,32 @@ class ChatAgent:
                             if not content:
                                 continue
 
+                    # --- strip <think>…</think> blocks from streamed output ---
                     _pending += content
                     emit = ""
 
                     while _pending:
                         if _in_think_block:
+                            # Look for closing </think> tag
                             close_idx = _pending.find("</think>")
                             if close_idx != -1:
                                 _pending = _pending[close_idx + len("</think>"):]
                                 _in_think_block = False
                                 continue
+                            # Check for partial </think> at the end of buffer
                             if _pending.endswith(("<", "</", "</t", "</th", "</thi", "</thin", "</think", "</think>")):
-                                break
+                                break  # wait for more data
                             _pending = ""
                             break
                         else:
+                            # Look for opening <think> tag
                             open_idx = _pending.find("<think>")
                             if open_idx != -1:
                                 emit += _pending[:open_idx]
                                 _pending = _pending[open_idx + len("<think>"):]
                                 _in_think_block = True
                                 continue
+                            # Check for partial <think> at the end of buffer
                             for i in range(1, min(len("<think>"), len(_pending) + 1)):
                                 if _pending.endswith("<think>"[:i]):
                                     emit += _pending[:-i]
@@ -441,6 +395,7 @@ class ChatAgent:
                 "message_count": len(initial_state["messages"]),
             })
 
+            self.last_state = None
             self._usage_accumulator = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             token_q: asyncio.Queue[Any] = asyncio.Queue()
             self.stream_callback = lambda event: self._queue_writer(event, token_q)
@@ -461,13 +416,21 @@ class ChatAgent:
                 logger.debug({
                     "message": "GRAPH: EXECUTION COMPLETED",
                     "chat_id": chat_id,
+                    "has_response": bool(self.last_state.get("messages")) if self.last_state else False
                 })
 
         except Exception as e:
             logger.error({"message": "GRAPH: EXECUTION FAILED", "error": str(e), "chat_id": chat_id}, exc_info=True)
             yield {"type": "error", "data": f"Error performing query: {str(e)}"}
 
+
     async def _queue_writer(self, event: Dict[str, Any], token_q: asyncio.Queue) -> None:
+        """Write events to the streaming queue.
+        
+        Args:
+            event: Event data to queue
+            token_q: Queue for streaming events
+        """
         await token_q.put(event)
 
     async def _run_graph(
@@ -477,42 +440,38 @@ class ChatAgent:
         user_id: str,
         token_q: asyncio.Queue,
     ) -> None:
-        """Run the graph and signal stream completion immediately.
+        """Run the graph execution in background task.
 
-        Persistence is fire-and-forget so the UI never stalls on I/O.
+        After the graph completes, ``done`` + SENTINEL are pushed immediately
+        so the SSE stream closes without waiting for persistence.  The
+        Postgres/Redis save is kicked off as a fire-and-forget task so the
+        UI never stalls on I/O.
         """
-        import time as _time
-        final_state = None
         try:
-            async for state in self.graph.astream(
+            async for final_state in self.graph.astream(
                 initial_state,
                 stream_mode="values",
                 stream_writer=lambda event: self._queue_writer(event, token_q)
             ):
-                final_state = state
+                self.last_state = final_state
         finally:
-            _t0 = _time.monotonic()
             await token_q.put({"type": "done"})
             await token_q.put(SENTINEL)
-            logger.info({"message": "stream_closed", "chat_id": chat_id,
-                         "ms_after_graph": round((_time.monotonic() - _t0) * 1000, 1)})
 
-            if final_state and final_state.get("messages"):
-                new_messages = [
-                    msg for msg in final_state["messages"]
-                    if not isinstance(msg, SystemMessage)
-                ]
+            if self.last_state and self.last_state.get("messages"):
                 asyncio.create_task(
-                    self._persist_conversation(chat_id, user_id, new_messages)
+                    self._persist_conversation(chat_id, user_id)
                 )
 
-    async def _persist_conversation(
-        self, chat_id: str, user_id: str, messages: List[AnyMessage]
-    ) -> None:
+    async def _persist_conversation(self, chat_id: str, user_id: str) -> None:
         """Save the completed turn to Postgres + Redis (fire-and-forget)."""
         try:
+            new_messages = [
+                msg for msg in self.last_state["messages"]
+                if not isinstance(msg, SystemMessage)
+            ]
             await self.conversation_store.append_messages_to_chat(
-                user_id, chat_id, messages
+                user_id, chat_id, new_messages
             )
         except Exception as exc:
             logger.warning({
