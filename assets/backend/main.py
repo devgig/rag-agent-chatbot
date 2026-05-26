@@ -65,6 +65,7 @@ if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
         register(
             project_name=os.getenv("OTEL_SERVICE_NAME", "rag-agent"),
             auto_instrument=True,
+            batch=True,
         )
     except Exception as _otel_err:
         logger.warning(f"OTel initialization failed, tracing disabled: {_otel_err}")
