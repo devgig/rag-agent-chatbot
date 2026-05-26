@@ -27,6 +27,16 @@ from logger import logger
 from models import ChatConfig
 
 
+_env_ctx = os.getenv("MODEL_CONTEXT_WINDOWS", "")
+MODEL_CONTEXT_WINDOWS: dict[str, int] = {}
+if _env_ctx:
+    for entry in _env_ctx.split(","):
+        if ":" in entry:
+            name, size = entry.rsplit(":", 1)
+            MODEL_CONTEXT_WINDOWS[name.strip()] = int(size.strip())
+DEFAULT_CONTEXT_WINDOW = int(os.getenv("DEFAULT_CONTEXT_WINDOW", "131072"))
+
+
 # Skip the os.path.getmtime stat() call on every read_config() and just
 # return the cached value if the last freshness check is younger than this.
 # config.json changes rarely (only on /selected_model and /selected_sources
