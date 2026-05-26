@@ -124,8 +124,12 @@ spec:
               key: password
         - name: OTEL_SERVICE_NAME
           value: "rag-agent"
-        - name: OTEL_EXPORTER_OTLP_ENDPOINT
-          value: "http://alloy.grafana-alloy.svc.cluster.local:4317"
+        # OTEL_EXPORTER_OTLP_ENDPOINT disabled — Phoenix auto-instrumentation
+        # retries on transient gRPC errors with exponential backoff, blocking
+        # the response path. Re-enable when Alloy is healthy and Phoenix
+        # supports non-blocking export.
+        # - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        #   value: "http://alloy.grafana-alloy.svc.cluster.local:4317"
         - name: OTEL_EXPORTER_OTLP_TIMEOUT
           value: "2000"
         - name: OTEL_BSP_EXPORT_TIMEOUT_MILLIS
