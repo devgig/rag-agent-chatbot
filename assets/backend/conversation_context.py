@@ -15,8 +15,6 @@ import os
 from collections import OrderedDict
 from typing import Optional
 
-import tiktoken
-
 from logger import logger
 
 MAX_CHATS = int(os.getenv("CONTEXT_BUFFER_MAX_CHATS", "500"))
@@ -25,11 +23,26 @@ MAX_HISTORY_TOKENS = int(os.getenv("MAX_HISTORY_TOKENS", "4096"))
 OUTPUT_RESERVE_TOKENS = int(os.getenv("OUTPUT_RESERVE_TOKENS", "2048"))
 INTENT_DRIFT_THRESHOLD = float(os.getenv("INTENT_DRIFT_THRESHOLD", "0.3"))
 
-_encoder = tiktoken.get_encoding("cl100k_base")
+_encoder = None
+
+
+def _get_encoder():
+    global _encoder
+    if _encoder is not None:
+        return _encoder
+    try:
+        import tiktoken
+        _encoder = tiktoken.get_encoding("cl100k_base")
+    except Exception:
+        _encoder = None
+    return _encoder
 
 
 def count_tokens(text: str) -> int:
-    return len(_encoder.encode(text))
+    enc = _get_encoder()
+    if enc is not None:
+        return len(enc.encode(text))
+    return len(text) // 4 + 1
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
