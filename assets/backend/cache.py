@@ -40,8 +40,9 @@ def _json_loads(raw: Any) -> Any:
         raw = raw.encode("utf-8")
     return orjson.loads(raw)
 
-REDIS_HOST = os.getenv("REDIS_HOST", "redis-master.redis-system.svc.cluster.local")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_SENTINEL_HOST = os.getenv("REDIS_HOST", "redis.redis-system.svc.cluster.local")
+REDIS_SENTINEL_PORT = int(os.getenv("REDIS_PORT", "26379"))
+REDIS_MASTER_SET = os.getenv("REDIS_MASTER_SET", "redis-master")
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or None
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 REDIS_KEY_PREFIX = os.getenv("REDIS_KEY_PREFIX", "sparkchat")
@@ -64,22 +65,28 @@ class RedisCache:
         self._client: Optional[aioredis.Redis] = None
 
     async def connect(self) -> None:
-        """Create the Redis connection pool. Idempotent."""
+        """Discover the Redis master via Sentinel and connect. Idempotent."""
         if self._client is not None:
             return
         try:
-            self._client = aioredis.Redis(
-                host=REDIS_HOST,
-                port=REDIS_PORT,
+            sentinel = aioredis.Sentinel(
+                [(REDIS_SENTINEL_HOST, REDIS_SENTINEL_PORT)],
                 password=REDIS_PASSWORD,
-                db=REDIS_DB,
-                decode_responses=True,
+                sentinel_kwargs={"password": REDIS_PASSWORD},
                 socket_connect_timeout=5,
                 socket_timeout=5,
-                health_check_interval=30,
+            )
+            self._client = sentinel.master_for(
+                REDIS_MASTER_SET,
+                db=REDIS_DB,
+                decode_responses=True,
             )
             await self._client.ping()
-            logger.info(f"Redis L2 cache connected: {REDIS_HOST}:{REDIS_PORT} db={REDIS_DB}")
+            logger.info(
+                f"Redis L2 cache connected via Sentinel: "
+                f"{REDIS_SENTINEL_HOST}:{REDIS_SENTINEL_PORT} "
+                f"master={REDIS_MASTER_SET} db={REDIS_DB}"
+            )
         except Exception as exc:
             logger.warning(f"Redis L2 cache unavailable, continuing without: {exc}")
             self._client = None
