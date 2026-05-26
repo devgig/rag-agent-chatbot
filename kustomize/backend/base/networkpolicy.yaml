@@ -1,12 +1,8 @@
 # NetworkPolicy: scope backend egress to the services it actually talks to.
 #
-# Why: the backend pod has Istio ambient explicitly disabled
-# (istio.io/dataplane-mode: none — see deployment.yaml) so the JWKS fetch,
-# the Postgres connection, the Redis connection, the Milvus connection, and
-# the embedding HTTP call all traverse the cluster network unauthenticated.
-# A NetworkPolicy at the CNI layer is the right complement: it doesn't add
-# authentication, but it limits which destinations a compromised backend
-# pod could reach.
+# Defense in depth alongside Istio ambient mTLS. The mesh handles
+# authentication and encryption; this policy limits which destinations
+# the backend can reach at the CNI layer.
 #
 # Egress allowed:
 #   - kube-dns (UDP/53) for service resolution
