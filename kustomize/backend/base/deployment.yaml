@@ -126,6 +126,12 @@ spec:
           value: "rag-agent"
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://alloy.grafana-alloy.svc.cluster.local:4317"
+        - name: OTEL_EXPORTER_OTLP_TIMEOUT
+          value: "2000"
+        - name: OTEL_BSP_EXPORT_TIMEOUT_MILLIS
+          value: "2000"
+        - name: OTEL_BSP_SCHEDULE_DELAY_MILLIS
+          value: "5000"
         volumeMounts:
         - name: tmp-volume
           mountPath: /tmp

@@ -60,11 +60,14 @@ from utils import process_and_ingest_files_background
 from vector_store import create_vector_store_with_config
 
 if os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"):
-    from phoenix.otel import register
-    register(
-        project_name=os.getenv("OTEL_SERVICE_NAME", "rag-agent"),
-        auto_instrument=True,
-    )
+    try:
+        from phoenix.otel import register
+        register(
+            project_name=os.getenv("OTEL_SERVICE_NAME", "rag-agent"),
+            auto_instrument=True,
+        )
+    except Exception as _otel_err:
+        logger.warning(f"OTel initialization failed, tracing disabled: {_otel_err}")
 
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
 POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", 5432))
