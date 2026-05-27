@@ -26,7 +26,7 @@ from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemM
 from langgraph.graph import END, START, StateGraph
 import httpx
 from openai import AsyncOpenAI
-from opentelemetry import trace, context
+from opentelemetry import trace
 
 from logger import logger
 from prompts import Prompts
@@ -144,9 +144,9 @@ class ChatAgent:
             "query": user_query[:100],
         })
 
-        # Get tracer at call time so it uses the TracerProvider set by register()
         tracer = trace.get_tracer("rag-agent.generate")
-        parent_ctx = context.get_current()
+        parent_span = trace.get_current_span()
+        parent_ctx = trace.set_span_in_context(parent_span)
 
         # --- Document search ---
         with tracer.start_as_current_span("retrieval", context=parent_ctx) as retrieval_span:
